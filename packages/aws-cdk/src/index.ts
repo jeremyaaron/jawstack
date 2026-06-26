@@ -9,7 +9,7 @@ import * as lambdaEventSources from "aws-cdk-lib/aws-lambda-event-sources";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as scheduler from "aws-cdk-lib/aws-scheduler";
 import * as sqs from "aws-cdk-lib/aws-sqs";
-import { Duration, RemovalPolicy } from "aws-cdk-lib";
+import { CfnOutput, Duration, RemovalPolicy } from "aws-cdk-lib";
 import type {
   CostProfile,
   ManifestAuth,
@@ -129,6 +129,10 @@ export class JawStackResourceWorkflowApp extends Construct {
     this.workerQueues = workerConstruct.workerQueues;
     this.schedulerFunctions = schedulerConstruct.schedulerFunctions;
     this.schedulerDlqs = schedulerConstruct.schedulerDlqs;
+
+    new CfnOutput(this, "ApiUrl", {
+      value: this.httpApi.apiEndpoint,
+    });
   }
 }
 

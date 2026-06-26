@@ -58,11 +58,18 @@ describe("create-jawstack", () => {
     expect(packageJson.name).toBe("my-product-app");
     expect(packageJson.dependencies["@jawstack/core"]).toContain("packages/core");
     expect(packageJson.dependencies["@jawstack/angular"]).toContain("packages/angular");
+    expect(packageJson.dependencies["@jawstack/aws-cdk"]).toContain("packages/aws-cdk");
+    expect(packageJson.dependencies["@jawstack/aws-runtime"]).toContain("packages/aws-runtime");
     expect(packageJson.dependencies["@jawstack/cli"]).toContain("packages/cli");
     expect(packageJson.scripts).toMatchObject({
+      "build:aws": "node scripts/build-aws-entrypoints.mjs",
+      "deploy:dev": "jawstack deploy dev",
+      "destroy:dev": "jawstack destroy dev",
       doctor: "jawstack doctor",
+      "doctor:deploy": "jawstack doctor --deploy --stage dev",
       "dev:api": "tsx src/api.ts",
       "dev:web": "vite --host 127.0.0.1",
+      "smoke:dev": "jawstack smoke dev",
       test: "vitest run --config vitest.config.ts",
       typecheck: "tsc --noEmit -p tsconfig.json",
     });
@@ -70,6 +77,12 @@ describe("create-jawstack", () => {
     await expect(readFile(join(targetDirectory, "jawstack.config.ts"), "utf8")).resolves.toContain(
       "defineJawStackApp",
     );
+    await expect(readFile(join(targetDirectory, "cdk.json"), "utf8")).resolves.toContain(
+      "pnpm build:aws",
+    );
+    await expect(
+      readFile(join(targetDirectory, "scripts", "build-aws-entrypoints.mjs"), "utf8"),
+    ).resolves.toContain("src/aws/api.ts");
     await expect(readFile(join(targetDirectory, ".gitignore"), "utf8")).resolves.toContain("dist/");
   });
 
@@ -119,6 +132,10 @@ describe("create-jawstack", () => {
         "--filter",
         "@jawstack/angular",
         "--filter",
+        "@jawstack/aws-cdk",
+        "--filter",
+        "@jawstack/aws-runtime",
+        "--filter",
         "@jawstack/cli",
         "run",
         "build",
@@ -146,6 +163,14 @@ describe("create-jawstack", () => {
       timeout: 120_000,
     });
     await execFileAsync("pnpm", ["doctor"], {
+      cwd: targetDirectory,
+      timeout: 120_000,
+    });
+    await execFileAsync("pnpm", ["build:aws"], {
+      cwd: targetDirectory,
+      timeout: 120_000,
+    });
+    await execFileAsync("pnpm", ["synth"], {
       cwd: targetDirectory,
       timeout: 120_000,
     });

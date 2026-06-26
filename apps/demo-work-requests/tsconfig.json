@@ -5,9 +5,18 @@
     "lib": ["ES2022", "DOM"],
     "paths": {
       "@jawstack/angular": ["../../packages/angular/src/index.ts"],
+      "@jawstack/aws-cdk": ["../../packages/aws-cdk/src/index.ts"],
+      "@jawstack/aws-runtime": ["../../packages/aws-runtime/src/index.ts"],
+      "@jawstack/cli": ["../../packages/cli/src/index.ts"],
       "@jawstack/core": ["../../packages/core/src/index.ts"]
     },
     "rootDir": "../.."
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "vite.config.ts", "vitest.config.ts"]
+  "include": [
+    "src/**/*.ts",
+    "test/**/*.ts",
+    "jawstack.config.ts",
+    "vite.config.ts",
+    "vitest.config.ts"
+  ]
 }

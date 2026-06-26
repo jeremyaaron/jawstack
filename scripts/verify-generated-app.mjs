@@ -16,6 +16,10 @@ try {
     "--filter",
     "@jawstack/angular",
     "--filter",
+    "@jawstack/aws-cdk",
+    "--filter",
+    "@jawstack/aws-runtime",
+    "--filter",
     "@jawstack/cli",
     "--filter",
     "create-jawstack",
@@ -35,6 +39,8 @@ try {
   run("pnpm", ["typecheck"], appDirectory);
   run("pnpm", ["test"], appDirectory);
   run("pnpm", ["build"], appDirectory);
+  run("pnpm", ["build:aws"], appDirectory);
+  run("pnpm", ["synth"], appDirectory);
   run("pnpm", ["exec", "jawstack", "doctor"], appDirectory);
 
   process.stdout.write(`Generated app verification passed at ${appDirectory}\n`);
@@ -59,12 +65,20 @@ function validateGeneratedPackage(directory) {
 
   assertEqual(packageJson.name, "generated-work-requests", "generated package name");
   assertScript(packageJson, "build");
+  assertScript(packageJson, "build:aws");
+  assertScript(packageJson, "deploy:dev");
+  assertScript(packageJson, "destroy:dev");
   assertScript(packageJson, "doctor");
+  assertScript(packageJson, "doctor:deploy");
+  assertScript(packageJson, "synth");
+  assertScript(packageJson, "smoke:dev");
   assertScript(packageJson, "test");
   assertScript(packageJson, "typecheck");
   assertScript(packageJson, "dev:api");
   assertScript(packageJson, "dev:web");
   assertLocalDependency(packageJson, "@jawstack/angular", "packages/angular");
+  assertLocalDependency(packageJson, "@jawstack/aws-cdk", "packages/aws-cdk");
+  assertLocalDependency(packageJson, "@jawstack/aws-runtime", "packages/aws-runtime");
   assertLocalDependency(packageJson, "@jawstack/cli", "packages/cli");
   assertLocalDependency(packageJson, "@jawstack/core", "packages/core");
 

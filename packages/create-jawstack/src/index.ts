@@ -113,6 +113,14 @@ export async function generateJawStackApp(
       localPackageRoot === undefined
         ? jawstackVersion
         : localPackageDependency(localPackageRoot, "angular"),
+    __JAWSTACK_AWS_CDK_DEPENDENCY__:
+      localPackageRoot === undefined
+        ? jawstackVersion
+        : localPackageDependency(localPackageRoot, "aws-cdk"),
+    __JAWSTACK_AWS_RUNTIME_DEPENDENCY__:
+      localPackageRoot === undefined
+        ? jawstackVersion
+        : localPackageDependency(localPackageRoot, "aws-runtime"),
     __JAWSTACK_CLI_DEPENDENCY__:
       localPackageRoot === undefined
         ? jawstackVersion

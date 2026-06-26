@@ -167,6 +167,11 @@ describe("@jawstack/aws-cdk", () => {
       IntegrationType: "AWS_PROXY",
       PayloadFormatVersion: "2.0",
     });
+    expect(Object.values(template.toJSON().Outputs ?? {})).toContainEqual({
+      Value: {
+        "Fn::GetAtt": [expect.stringMatching(/^WorkflowApiHttpApi/), "ApiEndpoint"],
+      },
+    });
   });
 
   it("grants API Lambda table access", () => {

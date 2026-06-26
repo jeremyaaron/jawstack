@@ -53,12 +53,33 @@ importers:
       '@angular/router':
         specifier: 21.2.17
         version: 21.2.17(@angular/common@21.2.17(@angular/core@21.2.17(@angular/compiler@21.2.17)(rxjs@7.8.2)(zone.js@0.16.2))(rxjs@7.8.2))(@angular/core@21.2.17(@angular/compiler@21.2.17)(rxjs@7.8.2)(zone.js@0.16.2))(@angular/platform-browser@21.2.17(@angular/common@21.2.17(@angular/core@21.2.17(@angular/compiler@21.2.17)(rxjs@7.8.2)(zone.js@0.16.2))(rxjs@7.8.2))(@angular/core@21.2.17(@angular/compiler@21.2.17)(rxjs@7.8.2)(zone.js@0.16.2)))(rxjs@7.8.2)
+      '@aws-sdk/client-dynamodb':
+        specifier: ^3.1075.0
+        version: 3.1075.0
+      '@aws-sdk/client-eventbridge':
+        specifier: ^3.1075.0
+        version: 3.1075.0
       '@jawstack/angular':
         specifier: workspace:*
         version: link:../../packages/angular
+      '@jawstack/aws-cdk':
+        specifier: workspace:*
+        version: link:../../packages/aws-cdk
+      '@jawstack/aws-runtime':
+        specifier: workspace:*
+        version: link:../../packages/aws-runtime
+      '@jawstack/cli':
+        specifier: workspace:*
+        version: link:../../packages/cli
       '@jawstack/core':
         specifier: workspace:*
         version: link:../../packages/core
+      aws-cdk-lib:
+        specifier: ^2.260.0
+        version: 2.260.0(constructs@10.6.0)
+      constructs:
+        specifier: ^10.6.0
+        version: 10.6.0
       rxjs:
         specifier: ^7.8.2
         version: 7.8.2
@@ -72,6 +93,12 @@ importers:
       '@angular/compiler':
         specifier: 21.2.17
         version: 21.2.17
+      aws-cdk:
+        specifier: ^2.1128.1
+        version: 2.1128.1
+      esbuild:
+        specifier: ^0.28.1
+        version: 0.28.1
       jsdom:
         specifier: ^26.1.0
         version: 26.1.0
@@ -1929,6 +1956,11 @@ packages:
       - table
       - yaml
       - mime-types
+
+  aws-cdk@2.1128.1:
+    resolution: {integrity: sha512-y9OHn5/BOcIiq409vPvpypMIr7/8M1ScFe8IkFMSCN1/GI/5c73fQ4pfzNq+VDkj86T5zxs7BQ1qU2lQQytdXA==}
+    engines: {node: '>= 18.0.0'}
+    hasBin: true
 
   balanced-match@1.0.2:
     resolution: {integrity: sha512-3oSeUO0TMV67hN1AmbXsK4yaqU7tjiHlbxRDZOpH0KW9+CeX4bRAaX0Anxt0tx2MrpRpWwQaPwIlISEJhYU5Pw==}
@@ -4975,6 +5007,8 @@ snapshots:
       '@aws-cdk/asset-node-proxy-agent-v6': 2.1.2
       '@aws-cdk/cloud-assembly-schema': 54.5.0
       constructs: 10.6.0
+
+  aws-cdk@2.1128.1: {}
 
   balanced-match@1.0.2: {}
 

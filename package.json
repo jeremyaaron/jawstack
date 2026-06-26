@@ -15,6 +15,7 @@
     "lint": "pnpm --filter './packages/*' --filter './apps/*' run lint",
     "dev:web": "pnpm --filter demo-work-requests run dev:web",
     "dev:api": "pnpm --filter demo-work-requests run dev:api",
+    "aws:dev:smoke": "node scripts/aws-dev-smoke.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "pkg:check": "pkg-guard check --workspaces",
