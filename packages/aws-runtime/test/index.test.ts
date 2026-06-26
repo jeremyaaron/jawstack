@@ -6,13 +6,18 @@ import {
 } from "@aws-sdk/client-dynamodb";
 import { PutEventsCommand } from "@aws-sdk/client-eventbridge";
 import { unmarshall } from "@aws-sdk/util-dynamodb";
-import type {
-  ActivityRecord,
-  ApiSuccess,
-  CommandCommitInput,
-  JawStackEvent,
-  ProjectionWrite,
-  ResourceState,
+import {
+  createInMemoryPersistence,
+  HeaderAuthProvider,
+  TestAuthProvider,
+  workRequestResource,
+  type AuthContext,
+  type ActivityRecord,
+  type ApiSuccess,
+  type CommandCommitInput,
+  type JawStackEvent,
+  type ProjectionWrite,
+  type ResourceState,
 } from "@jawstack/core";
 import { describe, expect, it } from "vitest";
 
@@ -21,6 +26,8 @@ import {
   buildCommandTransactWriteItems,
   buildProjectionTransactWriteItem,
   buildResourceStateTransactWriteItem,
+  createApiGatewayLambdaHandler,
+  createLambdaHttpHandler,
   describePackage,
   DynamoDbCommandUnitOfWork,
   DynamoDbOutboxDispatcher,
@@ -50,6 +57,10 @@ import {
   toResourceStateItem,
   toWorkerIdempotencyItem,
   workerIdempotencyKey,
+  type LambdaHttpAdapterOptions,
+  type LambdaHttpEvent,
+  type LambdaHttpResponse,
+  type LambdaRepositoryFactoryInput,
 } from "../src/index";
 
 describe("@jawstack/aws-runtime", () => {
@@ -1016,6 +1027,193 @@ describe("@jawstack/aws-runtime", () => {
     expect(dynamoDbClient.commands[1]).toBeInstanceOf(UpdateItemCommand);
     expect(eventBridgeClient.commands[0]).toBeInstanceOf(PutEventsCommand);
   });
+
+  it("creates a generated-compatible Lambda HTTP handler", async () => {
+    const fixture = lambdaFixture();
+    const handler = createLambdaHttpHandler(fixture.options);
+
+    const response = await handler(lambdaEvent("GET", "/api/health"));
+
+    expect(response.statusCode).toBe(200);
+    expect(jsonBody(response)).toMatchObject({
+      ok: true,
+      data: {
+        status: "ok",
+      },
+    });
+  });
+
+  it("serves manifest, list, detail, and activity routes through Lambda", async () => {
+    const fixture = lambdaFixture();
+    const handler = createApiGatewayLambdaHandler(fixture.options);
+
+    await handler(
+      lambdaEvent("POST", "/api/resources/workRequest/commands/create", {
+        body: {
+          input: {
+            title: "Fix checkout",
+          },
+        },
+      }),
+    );
+
+    const manifest = await handler(lambdaEvent("GET", "/api/manifest"));
+    const list = await handler(lambdaEvent("GET", "/api/resources/workRequest"));
+    const detail = await handler(lambdaEvent("GET", "/api/resources/workRequest/wr_lambda"));
+    const activity = await handler(
+      lambdaEvent("GET", "/api/resources/workRequest/wr_lambda/activity"),
+    );
+
+    expect(manifest.statusCode).toBe(200);
+    expect(jsonBody(manifest)).toMatchObject({
+      ok: true,
+      data: {
+        schemaVersion: 1,
+        appName: "lambda-test",
+      },
+    });
+    expect(jsonBody(list)).toMatchObject({
+      ok: true,
+      data: {
+        items: [
+          {
+            itemId: "wr_lambda",
+          },
+        ],
+      },
+    });
+    expect(jsonBody(detail)).toMatchObject({
+      ok: true,
+      data: {
+        resourceId: "wr_lambda",
+        state: {
+          title: "Fix checkout",
+        },
+      },
+    });
+    expect(jsonBody(activity)).toMatchObject({
+      ok: true,
+      data: {
+        items: [
+          {
+            activityId: "act_lambda",
+          },
+        ],
+      },
+    });
+  });
+
+  it("runs create commands through the Lambda adapter", async () => {
+    const fixture = lambdaFixture();
+    const response = await createApiGatewayLambdaHandler(fixture.options)(
+      lambdaEvent("POST", "/api/resources/workRequest/commands/create", {
+        body: {
+          input: {
+            title: "Fix checkout",
+          },
+        },
+        headers: {
+          "x-jawstack-request-id": "req_header",
+          "x-jawstack-correlation-id": "corr_header",
+        },
+      }),
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(jsonBody(response)).toMatchObject({
+      ok: true,
+      data: {
+        resourceId: "wr_lambda",
+        status: "open",
+      },
+      meta: {
+        requestId: "req_header",
+        correlationId: "corr_header",
+      },
+    });
+  });
+
+  it("passes command idempotency scope to the Lambda repository factory", async () => {
+    const scopes: unknown[] = [];
+    const fixture = lambdaFixture({
+      onRepositoryFactoryInput: (input) => {
+        scopes.push(input.idempotencyScope);
+      },
+    });
+    const handler = createApiGatewayLambdaHandler(fixture.options);
+
+    await handler(
+      lambdaEvent("POST", "/api/resources/workRequest/commands/create", {
+        body: {
+          input: {
+            title: "Fix checkout",
+          },
+          idempotencyKey: "idem_lambda",
+        },
+      }),
+    );
+
+    expect(scopes).toContainEqual({
+      resourceType: "workRequest",
+      commandName: "create",
+      subject: "user_123",
+    });
+  });
+
+  it("maps Lambda command validation failures", async () => {
+    const fixture = lambdaFixture();
+    const response = await createApiGatewayLambdaHandler(fixture.options)(
+      lambdaEvent("POST", "/api/resources/workRequest/commands/create", {
+        body: {
+          input: {
+            title: "",
+          },
+        },
+      }),
+    );
+
+    expect(response.statusCode).toBe(400);
+    expect(jsonBody(response)).toMatchObject({
+      ok: false,
+      error: {
+        code: "command.validation",
+      },
+    });
+  });
+
+  it("maps Lambda auth failures", async () => {
+    const fixture = lambdaFixture({
+      authProvider: new HeaderAuthProvider(),
+    });
+    const response = await createApiGatewayLambdaHandler(fixture.options)(
+      lambdaEvent("GET", "/api/resources/workRequest", {
+        headers: {},
+      }),
+    );
+
+    expect(response.statusCode).toBe(401);
+    expect(jsonBody(response)).toMatchObject({
+      ok: false,
+      error: {
+        code: "auth.missing",
+      },
+    });
+  });
+
+  it("maps missing Lambda resources", async () => {
+    const fixture = lambdaFixture();
+    const response = await createApiGatewayLambdaHandler(fixture.options)(
+      lambdaEvent("GET", "/api/resources/workRequest/wr_missing"),
+    );
+
+    expect(response.statusCode).toBe(404);
+    expect(jsonBody(response)).toMatchObject({
+      ok: false,
+      error: {
+        code: "resource.not_found",
+      },
+    });
+  });
 });
 
 function resourceState(
@@ -1134,6 +1332,89 @@ function commandCommitInput(options: {
       response: apiSuccess(),
     },
   };
+}
+
+function lambdaFixture(
+  overrides: Partial<{
+    authProvider: LambdaHttpAdapterOptions["authProvider"];
+    onRepositoryFactoryInput: (input: LambdaRepositoryFactoryInput) => void;
+  }> = {},
+): Readonly<{
+  options: LambdaHttpAdapterOptions;
+}> {
+  const persistence = createInMemoryPersistence();
+  const authProvider =
+    overrides.authProvider ??
+    new TestAuthProvider({
+      subject: "user_123",
+      displayName: "Avery",
+      tenantId: "tenant_123",
+      roles: ["user", "manager"],
+      claims: {},
+      mode: "test",
+    } satisfies AuthContext);
+
+  return {
+    options: {
+      appName: "lambda-test",
+      stage: "dev",
+      registry: [workRequestResource],
+      repository: persistence.repository,
+      unitOfWork: persistence.unitOfWork,
+      authProvider,
+      clock: () => new Date("2026-06-25T12:00:00.000Z"),
+      source: "jawstack.test",
+      ids: {
+        resourceId: () => "wr_lambda",
+        eventId: () => "evt_lambda",
+        activityId: () => "act_lambda",
+        requestId: () => "req_generated",
+        correlationId: () => "corr_generated",
+      },
+      ...(overrides.onRepositoryFactoryInput === undefined
+        ? {}
+        : {
+            repositoryFactory: (input) => {
+              overrides.onRepositoryFactoryInput?.(input);
+              return persistence.repository;
+            },
+          }),
+    },
+  };
+}
+
+function lambdaEvent(
+  method: string,
+  path: string,
+  options: Partial<{
+    headers: Record<string, string>;
+    body: unknown;
+    requestId: string;
+  }> = {},
+): LambdaHttpEvent {
+  return {
+    version: "2.0",
+    rawPath: path,
+    rawQueryString: "",
+    headers: {
+      "x-jawstack-request-id": "req_lambda",
+      "x-jawstack-correlation-id": "corr_lambda",
+      ...(options.headers ?? {}),
+    },
+    requestContext: {
+      requestId: options.requestId ?? "lambda_request",
+      http: {
+        method,
+        path,
+      },
+    },
+    ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
+    isBase64Encoded: false,
+  };
+}
+
+function jsonBody(response: LambdaHttpResponse): unknown {
+  return JSON.parse(response.body) as unknown;
 }
 
 class RecordingAwsClient {

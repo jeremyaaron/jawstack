@@ -15,16 +15,25 @@ import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
 import type {
   ActivityRecord,
   ApiSuccess,
+  AuthContext,
+  AuthProvider,
   CommandCommitInput,
   CommandUnitOfWork,
+  CostProfile,
   IdempotencyCommit,
   IdempotencyRecord,
   JawStackEvent,
+  LocalHttpRequestContext,
   LocalHttpReadableRepository,
+  ManifestAuth,
   ProjectionWrite,
+  ResourceDefinition,
+  ResourceRegistry,
   ResourceState,
+  RuntimeErrorCode,
+  IdGenerator,
 } from "@jawstack/core";
-import { JawStackRuntimeError } from "@jawstack/core";
+import { createManifest, executeCommand, JawStackRuntimeError } from "@jawstack/core";
 
 export const packageName = "@jawstack/aws-runtime";
 
@@ -218,6 +227,57 @@ export type DynamoDbOutboxSweeperOptions = Readonly<{
   clock?: () => Date;
   staleAfterMs?: number;
   batchLimit?: number;
+}>;
+
+export type LambdaHttpEvent = Readonly<{
+  version?: string;
+  rawPath?: string;
+  rawQueryString?: string;
+  path?: string;
+  httpMethod?: string;
+  headers?: Record<string, string | undefined> | undefined;
+  body?: string | null;
+  isBase64Encoded?: boolean;
+  requestContext?: Readonly<{
+    requestId?: string;
+    http?: Readonly<{
+      method?: string;
+      path?: string;
+    }>;
+  }>;
+}>;
+
+export type LambdaHttpResponse = Readonly<{
+  statusCode: number;
+  headers: Record<string, string>;
+  body: string;
+  isBase64Encoded: false;
+}>;
+
+export type LambdaHttpRequestContext = LocalHttpRequestContext &
+  Readonly<{
+    event: LambdaHttpEvent;
+  }>;
+
+export type LambdaRepositoryFactoryInput = Readonly<{
+  context: LambdaHttpRequestContext;
+  auth?: AuthContext;
+  idempotencyScope?: DynamoDbIdempotencyScope;
+}>;
+
+export type LambdaHttpAdapterOptions = Readonly<{
+  appName: string;
+  stage: string;
+  registry: ResourceRegistry | readonly ResourceDefinition[];
+  repository: LocalHttpReadableRepository;
+  unitOfWork: CommandUnitOfWork;
+  authProvider: AuthProvider;
+  repositoryFactory?: (input: LambdaRepositoryFactoryInput) => LocalHttpReadableRepository;
+  auth?: ManifestAuth;
+  costProfile?: CostProfile;
+  ids?: Partial<IdGenerator>;
+  clock?: () => Date;
+  source?: string;
 }>;
 
 const INVERTED_TIMESTAMP_MAX = 9_999_999_999_999;
@@ -532,6 +592,241 @@ export class DynamoDbOutboxSweeper {
       markedPublished,
     };
   }
+}
+
+export function createApiGatewayLambdaHandler(
+  options: LambdaHttpAdapterOptions,
+): (event: LambdaHttpEvent) => Promise<LambdaHttpResponse> {
+  return async (event) => {
+    const context = createLambdaHttpRequestContext(event);
+    const requestId =
+      headerValue(context.headers, "x-jawstack-request-id") ?? lambdaRequestId(event);
+    const correlationId = headerValue(context.headers, "x-jawstack-correlation-id") ?? requestId;
+
+    try {
+      const result = await handleLambdaHttpRequest(context, options, requestId, correlationId);
+      return lambdaJsonResponse(result.statusCode, result.body);
+    } catch (error) {
+      const apiErrorResponse =
+        error instanceof JawStackRuntimeError
+          ? apiError(error.code, error.message, requestId, correlationId, error.details)
+          : apiError(
+              "runtime.internal",
+              "An internal runtime error occurred.",
+              requestId,
+              correlationId,
+            );
+
+      return lambdaJsonResponse(httpStatusForError(apiErrorResponse.error.code), apiErrorResponse);
+    }
+  };
+}
+
+export const createLambdaHttpHandler = createApiGatewayLambdaHandler;
+
+async function handleLambdaHttpRequest(
+  context: LambdaHttpRequestContext,
+  options: LambdaHttpAdapterOptions,
+  requestId: string,
+  correlationId: string,
+): Promise<Readonly<{ statusCode: number; body: unknown }>> {
+  const segments = pathSegments(context.url);
+
+  if (
+    context.method === "GET" &&
+    segments.length === 2 &&
+    segments[0] === "api" &&
+    segments[1] === "health"
+  ) {
+    return {
+      statusCode: 200,
+      body: apiSuccess({ status: "ok" }, requestId, correlationId),
+    };
+  }
+
+  if (
+    context.method === "GET" &&
+    segments.length === 2 &&
+    segments[0] === "api" &&
+    segments[1] === "manifest"
+  ) {
+    const manifest = createManifest({
+      appName: options.appName,
+      stage: options.stage,
+      stable: true,
+      resources: options.registry,
+      auth: options.auth ?? { mode: "dev", provider: "lambda" },
+      costProfile: options.costProfile ?? {},
+    });
+
+    return {
+      statusCode: 200,
+      body: apiSuccess(manifest, requestId, correlationId),
+    };
+  }
+
+  if (segments[0] !== "api" || segments[1] !== "resources") {
+    return {
+      statusCode: 404,
+      body: apiError("resource.not_found", "Route not found.", requestId, correlationId),
+    };
+  }
+
+  const auth = await options.authProvider.resolve(context);
+  const resourceType = segments[2];
+
+  if (resourceType === undefined) {
+    return {
+      statusCode: 404,
+      body: apiError(
+        "resource.not_found",
+        "Resource type route not found.",
+        requestId,
+        correlationId,
+      ),
+    };
+  }
+
+  if (context.method === "GET" && segments.length === 3) {
+    const projectionName = `${resourceType}.list`;
+    const repository = repositoryForRequest(options, { context, auth });
+    const items = await repository.listProjection?.(projectionName);
+
+    return {
+      statusCode: 200,
+      body: apiSuccess({ items: items ?? [] }, requestId, correlationId),
+    };
+  }
+
+  if (context.method === "GET" && segments.length === 4) {
+    const resourceId = segments[3] ?? "";
+    const repository = repositoryForRequest(options, { context, auth });
+    const state = await repository.getState(resourceType, resourceId);
+
+    if (state === undefined) {
+      const error = apiError(
+        "resource.not_found",
+        `Resource "${resourceType}" with ID "${resourceId}" was not found.`,
+        requestId,
+        correlationId,
+      );
+      return { statusCode: 404, body: error };
+    }
+
+    return {
+      statusCode: 200,
+      body: apiSuccess(state, requestId, correlationId),
+    };
+  }
+
+  if (context.method === "GET" && segments.length === 5 && segments[4] === "activity") {
+    const resourceId = segments[3] ?? "";
+    const repository = repositoryForRequest(options, { context, auth });
+    const state = await repository.getState(resourceType, resourceId);
+
+    if (state === undefined) {
+      const error = apiError(
+        "resource.not_found",
+        `Resource "${resourceType}" with ID "${resourceId}" was not found.`,
+        requestId,
+        correlationId,
+      );
+      return { statusCode: 404, body: error };
+    }
+
+    const activity = await repository.getActivity?.(resourceType, resourceId);
+    return {
+      statusCode: 200,
+      body: apiSuccess({ items: activity ?? [] }, requestId, correlationId),
+    };
+  }
+
+  if (context.method === "POST" && segments.length === 5 && segments[3] === "commands") {
+    return executeLambdaCommand(
+      {
+        context,
+        options,
+        requestId,
+        correlationId,
+        auth,
+        resourceType,
+        commandName: segments[4] ?? "",
+      },
+      await readLambdaJsonBody(context.event),
+    );
+  }
+
+  if (context.method === "POST" && segments.length === 6 && segments[4] === "commands") {
+    return executeLambdaCommand(
+      {
+        context,
+        options,
+        requestId,
+        correlationId,
+        auth,
+        resourceType,
+        resourceId: segments[3] ?? "",
+        commandName: segments[5] ?? "",
+      },
+      await readLambdaJsonBody(context.event),
+    );
+  }
+
+  return {
+    statusCode: 404,
+    body: apiError("resource.not_found", "Route not found.", requestId, correlationId),
+  };
+}
+
+async function executeLambdaCommand(
+  input: Readonly<{
+    context: LambdaHttpRequestContext;
+    options: LambdaHttpAdapterOptions;
+    requestId: string;
+    correlationId: string;
+    auth: AuthContext;
+    resourceType: string;
+    resourceId?: string;
+    commandName: string;
+  }>,
+  bodyValue: unknown,
+): Promise<Readonly<{ statusCode: number; body: unknown }>> {
+  const body = commandRequestBody(bodyValue);
+  const repository = repositoryForRequest(input.options, {
+    context: input.context,
+    auth: input.auth,
+    idempotencyScope: {
+      resourceType: input.resourceType,
+      commandName: input.commandName,
+      subject: input.auth.subject,
+    },
+  });
+  const result = await executeCommand(
+    {
+      requestId: input.requestId,
+      correlationId: input.correlationId,
+      resourceType: input.resourceType,
+      ...(input.resourceId === undefined ? {} : { resourceId: input.resourceId }),
+      commandName: input.commandName,
+      input: body.input,
+      ...(body.idempotencyKey === undefined ? {} : { idempotencyKey: body.idempotencyKey }),
+      requestContext: input.context,
+    },
+    {
+      registry: input.options.registry,
+      repository,
+      unitOfWork: input.options.unitOfWork,
+      authProvider: new StaticAuthProvider(input.auth),
+      ...(input.options.ids === undefined ? {} : { ids: input.options.ids }),
+      ...(input.options.clock === undefined ? {} : { clock: input.options.clock }),
+      ...(input.options.source === undefined ? {} : { source: input.options.source }),
+    },
+  );
+
+  return {
+    statusCode: result.ok ? 200 : httpStatusForError(result.error.code),
+    body: result,
+  };
 }
 
 export function resourceStateKey(resourceType: string, resourceId: string): DynamoDbKey {
@@ -968,6 +1263,202 @@ function requireCommandName(options: DynamoDbCommandTransactionOptions): string 
   }
 
   return options.idempotency.commandName;
+}
+
+class StaticAuthProvider implements AuthProvider {
+  constructor(private readonly auth: AuthContext) {}
+
+  resolve(): AuthContext {
+    return this.auth;
+  }
+}
+
+function createLambdaHttpRequestContext(event: LambdaHttpEvent): LambdaHttpRequestContext {
+  const method = lambdaHttpMethod(event);
+  const url = lambdaUrl(event);
+
+  return {
+    method,
+    url,
+    headers: normalizeHeaders(event.headers ?? {}),
+    event,
+  };
+}
+
+function lambdaHttpMethod(event: LambdaHttpEvent): string {
+  return (event.requestContext?.http?.method ?? event.httpMethod ?? "GET").toUpperCase();
+}
+
+function lambdaUrl(event: LambdaHttpEvent): string {
+  const path = event.rawPath ?? event.path ?? event.requestContext?.http?.path ?? "/";
+  const queryString = event.rawQueryString;
+  return queryString === undefined || queryString.length === 0 ? path : `${path}?${queryString}`;
+}
+
+function lambdaRequestId(event: LambdaHttpEvent): string {
+  return event.requestContext?.requestId ?? `req_${crypto.randomUUID()}`;
+}
+
+function normalizeHeaders(
+  headers: Record<string, string | undefined>,
+): Record<string, string | undefined> {
+  return Object.fromEntries(
+    Object.entries(headers).map(([key, value]) => [key.toLowerCase(), value]),
+  );
+}
+
+function headerValue(
+  headers: Readonly<Record<string, string | readonly string[] | undefined>>,
+  name: string,
+): string | undefined {
+  const value = headers[name.toLowerCase()];
+
+  if (Array.isArray(value)) {
+    const first = value[0];
+    return typeof first === "string" ? first : undefined;
+  }
+
+  return typeof value === "string" ? value : undefined;
+}
+
+function pathSegments(url: string): string[] {
+  const parsed = new URL(url, "https://lambda.local");
+  return parsed.pathname
+    .split("/")
+    .filter((segment) => segment.length > 0)
+    .map(decodeURIComponent);
+}
+
+async function readLambdaJsonBody(event: LambdaHttpEvent): Promise<unknown> {
+  const rawBody = event.body;
+
+  if (rawBody === undefined || rawBody === null || rawBody.trim().length === 0) {
+    return {};
+  }
+
+  const decoded =
+    event.isBase64Encoded === true ? Buffer.from(rawBody, "base64").toString("utf8") : rawBody;
+
+  if (decoded.trim().length === 0) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(decoded);
+  } catch {
+    throw new JawStackRuntimeError("command.validation", "Request body must be valid JSON.");
+  }
+}
+
+function commandRequestBody(value: unknown): Readonly<{
+  input: unknown;
+  idempotencyKey?: string;
+}> {
+  if (!isRecord(value)) {
+    throw new JawStackRuntimeError("command.validation", "Command request body must be an object.");
+  }
+
+  const idempotencyKey = value.idempotencyKey;
+
+  if (idempotencyKey !== undefined && typeof idempotencyKey !== "string") {
+    throw new JawStackRuntimeError(
+      "command.validation",
+      "Command idempotencyKey must be a string when provided.",
+    );
+  }
+
+  return {
+    input: value.input ?? {},
+    ...(idempotencyKey === undefined ? {} : { idempotencyKey }),
+  };
+}
+
+function repositoryForRequest(
+  options: LambdaHttpAdapterOptions,
+  input: LambdaRepositoryFactoryInput,
+): LocalHttpReadableRepository {
+  return options.repositoryFactory?.(input) ?? options.repository;
+}
+
+function lambdaJsonResponse(statusCode: number, body: unknown): LambdaHttpResponse {
+  return {
+    statusCode,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+    },
+    body: `${JSON.stringify(body)}\n`,
+    isBase64Encoded: false,
+  };
+}
+
+function apiSuccess<T>(data: T, requestId: string, correlationId: string): ApiSuccess<T> {
+  return {
+    ok: true,
+    data,
+    meta: {
+      requestId,
+      correlationId,
+    },
+  };
+}
+
+function apiError(
+  code: RuntimeErrorCode,
+  message: string,
+  requestId: string,
+  correlationId: string,
+  details?: unknown,
+): Readonly<{
+  ok: false;
+  error: Readonly<{
+    code: RuntimeErrorCode;
+    message: string;
+    details?: unknown;
+  }>;
+  meta: Readonly<{
+    requestId: string;
+    correlationId: string;
+  }>;
+}> {
+  return {
+    ok: false,
+    error: {
+      code,
+      message,
+      ...(details === undefined ? {} : { details }),
+    },
+    meta: {
+      requestId,
+      correlationId,
+    },
+  };
+}
+
+function httpStatusForError(code: RuntimeErrorCode): number {
+  switch (code) {
+    case "command.validation":
+      return 400;
+    case "auth.missing":
+      return 401;
+    case "auth.forbidden":
+      return 403;
+    case "resource.not_found":
+      return 404;
+    case "resource.conflict":
+    case "idempotency.conflict":
+      return 409;
+    case "command.rejected":
+    case "resource.invalid_state":
+      return 422;
+    case "runtime.unavailable":
+      return 503;
+    case "runtime.internal":
+      return 500;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 async function sendDynamoDb<TOutput>(
