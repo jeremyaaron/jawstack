@@ -9,8 +9,11 @@ import {
   type AuthContext,
   type CommandCommitInput,
   type IdGenerator,
+  type ResourceDefinition,
   type ResourceState,
   type WorkRequestState,
+  createManifest,
+  createResourceRegistry,
   defineCommand,
   defineDetailView,
   defineListView,
@@ -21,6 +24,8 @@ import {
   executeCommand,
   field,
   packageName,
+  serializeManifest,
+  validateResourceRegistry,
   workRequestResource,
 } from "../src/index";
 
@@ -686,5 +691,259 @@ describe("@jawstack/core in-memory Work Request runtime", () => {
       expectedVersion: 1,
       actualVersion: 2,
     });
+  });
+});
+
+describe("@jawstack/core registry and manifest", () => {
+  it("creates a stable Work Request manifest without executable values", () => {
+    const manifest = createManifest({
+      appName: "work-requests",
+      stage: "test",
+      stable: true,
+      resources: [workRequestResource],
+      auth: {
+        mode: "test",
+        provider: "test",
+      },
+      costProfile: {
+        lambda: {
+          timeoutSeconds: 10,
+          buildHook: () => "excluded",
+        },
+      },
+    });
+
+    const serialized = serializeManifest(manifest);
+
+    expect(serialized).not.toContain("decide");
+    expect(serialized).not.toContain("safeParse");
+    expect(serialized).not.toContain("buildHook");
+    expect(serialized).toMatchInlineSnapshot(`
+      "{
+        "appName": "work-requests",
+        "auth": {
+          "mode": "test",
+          "provider": "test"
+        },
+        "costProfile": {
+          "lambda": {
+            "timeoutSeconds": 10
+          }
+        },
+        "resources": [
+          {
+            "commands": [
+              {
+                "create": true,
+                "emits": [
+                  {
+                    "eventType": "workRequest.created",
+                    "schemaVersion": 1
+                  }
+                ],
+                "name": "create",
+                "roles": [
+                  "user"
+                ],
+                "title": "Create Work Request"
+              },
+              {
+                "create": false,
+                "emits": [
+                  {
+                    "eventType": "workRequest.assigned",
+                    "schemaVersion": 1
+                  }
+                ],
+                "name": "assign",
+                "roles": [
+                  "manager"
+                ],
+                "title": "Assign"
+              },
+              {
+                "create": false,
+                "emits": [
+                  {
+                    "eventType": "workRequest.statusChanged",
+                    "schemaVersion": 1
+                  }
+                ],
+                "name": "changeStatus",
+                "roles": [
+                  "manager"
+                ],
+                "title": "Change Status"
+              },
+              {
+                "create": false,
+                "emits": [
+                  {
+                    "eventType": "workRequest.commentAdded",
+                    "schemaVersion": 1
+                  }
+                ],
+                "name": "comment",
+                "roles": [
+                  "user"
+                ],
+                "title": "Comment"
+              },
+              {
+                "create": false,
+                "emits": [
+                  {
+                    "eventType": "workRequest.closed",
+                    "schemaVersion": 1
+                  }
+                ],
+                "name": "close",
+                "roles": [
+                  "manager"
+                ],
+                "title": "Close"
+              }
+            ],
+            "fields": [
+              {
+                "kind": "string",
+                "label": "Title",
+                "name": "title",
+                "required": true
+              },
+              {
+                "kind": "text",
+                "label": "Description",
+                "name": "description",
+                "required": false
+              },
+              {
+                "defaultValue": "open",
+                "kind": "enum",
+                "label": "Status",
+                "name": "status",
+                "required": false,
+                "values": [
+                  "open",
+                  "inReview",
+                  "blocked",
+                  "closed"
+                ]
+              },
+              {
+                "kind": "string",
+                "label": "Assignee",
+                "name": "assigneeId",
+                "required": false
+              },
+              {
+                "kind": "datetime",
+                "label": "Updated",
+                "name": "updatedAt",
+                "required": true
+              }
+            ],
+            "name": "workRequest",
+            "schedules": [],
+            "title": "Work Request",
+            "views": {
+              "detail": {
+                "kind": "jawstack.view.detail",
+                "sections": [
+                  "summary",
+                  "activity",
+                  "comments"
+                ],
+                "titleField": "title"
+              },
+              "list": {
+                "columns": [
+                  "title",
+                  "status",
+                  "assigneeId",
+                  "updatedAt"
+                ],
+                "kind": "jawstack.view.list",
+                "title": "Work Requests"
+              }
+            },
+            "workers": []
+          }
+        ],
+        "schemaVersion": 1,
+        "stage": "test"
+      }
+      "
+    `);
+  });
+
+  it("reports structured findings for duplicate and invalid registry definitions", () => {
+    const malformed = {
+      ...workRequestResource,
+      name: "WorkRequest",
+      state: {
+        kind: "jawstack.state",
+        fields: {
+          title: field.string(),
+        },
+      },
+      commands: {
+        BadCommand: {
+          ...workRequestResource.commands.create,
+          input: {},
+          roles: [],
+          emits: [{ eventType: "created", schemaVersion: 0 }],
+          decide: undefined,
+        },
+      },
+      views: {
+        list: defineListView({ columns: ["missing"] }),
+        detail: defineDetailView({ titleField: "missing", sections: ["summary"] }),
+      },
+    } as unknown as ResourceDefinition;
+
+    const result = validateResourceRegistry([workRequestResource, workRequestResource, malformed]);
+
+    expect(result.findings.map((finding) => finding.id)).toEqual([
+      "resource.name.duplicate",
+      "resource.name.invalid",
+      "command.name.invalid",
+      "command.input.invalid",
+      "command.handler.missing",
+      "command.roles.empty",
+      "event.type.invalid",
+      "event.schema-version.missing",
+      "view.list.column.unknown",
+      "view.detail.title-field.unknown",
+    ]);
+    expect(result.findings[0]).toMatchObject({
+      severity: "error",
+      location: {
+        path: "resources[1]",
+        resource: "workRequest",
+      },
+    });
+  });
+
+  it("fails fast when creating a registry from invalid resources", () => {
+    expect(() => createResourceRegistry([workRequestResource, workRequestResource])).toThrow(
+      JawStackDefinitionError,
+    );
+  });
+
+  it("includes generatedAt for non-stable manifests", () => {
+    const manifest = createManifest({
+      appName: "work-requests",
+      stage: "dev",
+      generatedAt: "2026-06-25T12:00:00.000Z",
+      resources: [workRequestResource],
+      auth: {
+        mode: "dev",
+        provider: "dev",
+      },
+      costProfile: {},
+    });
+
+    expect(manifest.generatedAt).toBe("2026-06-25T12:00:00.000Z");
   });
 });

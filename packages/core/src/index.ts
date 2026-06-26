@@ -362,6 +362,95 @@ export type ResourceRegistry = Readonly<{
   getResource(resourceType: string): ResourceDefinition | undefined;
 }>;
 
+export type FindingSeverity = "error" | "warning" | "info";
+
+export type Finding = Readonly<{
+  id: string;
+  severity: FindingSeverity;
+  title: string;
+  message: string;
+  location?: Readonly<{
+    file?: string;
+    path?: string;
+    resource?: string;
+    command?: string;
+  }>;
+  impact?: string;
+  fix?: string;
+}>;
+
+export type RegistryValidationResult = Readonly<{
+  resources: readonly ResourceDefinition[];
+  findings: readonly Finding[];
+}>;
+
+export type ManifestField = Readonly<{
+  name: string;
+  kind: FieldKind;
+  required: boolean;
+  label?: string;
+  description?: string;
+  defaultValue?: unknown;
+  values?: readonly string[];
+}>;
+
+export type ManifestCommand = Readonly<{
+  name: string;
+  title: string;
+  roles: readonly string[];
+  emits: readonly EventDeclaration[];
+  create: boolean;
+}>;
+
+export type ManifestWorker = Readonly<{
+  name: string;
+  eventTypes: readonly string[];
+  maxConcurrency?: number;
+}>;
+
+export type ManifestSchedule = Readonly<{
+  name: string;
+  expression: string;
+  targetHandler?: string;
+}>;
+
+export type ManifestResource = Readonly<{
+  name: string;
+  title: string;
+  fields: readonly ManifestField[];
+  commands: readonly ManifestCommand[];
+  views: ResourceViews;
+  workers: readonly ManifestWorker[];
+  schedules: readonly ManifestSchedule[];
+}>;
+
+export type ManifestAuth = Readonly<{
+  mode: AuthMode;
+  provider: string;
+}>;
+
+export type CostProfile = Readonly<Record<string, unknown>>;
+
+export type JawStackManifest = Readonly<{
+  schemaVersion: 1;
+  appName: string;
+  stage: string;
+  generatedAt?: string;
+  resources: readonly ManifestResource[];
+  auth: ManifestAuth;
+  costProfile: CostProfile;
+}>;
+
+export type CreateManifestInput = Readonly<{
+  appName: string;
+  stage: string;
+  resources: ResourceRegistry | readonly ResourceDefinition[];
+  auth: ManifestAuth;
+  costProfile: CostProfile;
+  stable?: boolean;
+  generatedAt?: string;
+}>;
+
 export type CommandExecutorOptions = Readonly<{
   registry: ResourceRegistry | readonly ResourceDefinition[];
   repository: ResourceRepository;
@@ -537,6 +626,22 @@ function assertNonEmptyString(value: unknown, code: string, path: string): asser
   }
 }
 
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function isValidName(value: unknown): value is string {
+  return isNonEmptyString(value) && NAME_PATTERN.test(value);
+}
+
+function isValidEventType(value: unknown): value is string {
+  return isNonEmptyString(value) && EVENT_TYPE_PATTERN.test(value);
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value > 0;
+}
+
 function assertName(value: unknown, code: string, path: string): asserts value is string {
   assertNonEmptyString(value, code, path);
 
@@ -562,7 +667,7 @@ function assertPositiveInteger(
   code: string,
   path: string,
 ): asserts value is number {
-  if (!Number.isInteger(value) || typeof value !== "number" || value <= 0) {
+  if (!isPositiveInteger(value)) {
     definitionError(code, "Expected a positive integer.", path);
   }
 }
@@ -974,22 +1079,282 @@ export function defineResource<
   return deepFreeze(resourceDefinition);
 }
 
+function finding(input: Finding): Finding {
+  return deepFreeze(input);
+}
+
+function resourcePath(resourceIndex: number, suffix = ""): string {
+  return `resources[${resourceIndex}]${suffix}`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isCommandInputSchema(value: unknown): value is z.ZodType {
+  return isRecord(value) && typeof value.safeParse === "function";
+}
+
+function validateResourceDefinition(
+  resource: ResourceDefinition,
+  resourceIndex: number,
+): Finding[] {
+  const findings: Finding[] = [];
+
+  if (!isValidName(resource.name)) {
+    findings.push(
+      finding({
+        id: "resource.name.invalid",
+        severity: "error",
+        title: "Invalid resource name",
+        message: "Resource names must be lower-camel-case identifiers.",
+        location: { path: resourcePath(resourceIndex, ".name"), resource: resource.name },
+        impact: "The resource cannot be routed, deployed, or serialized consistently.",
+        fix: "Rename the resource using a value such as workRequest.",
+      }),
+    );
+  }
+
+  if (!isRecord(resource.state) || !isRecord(resource.state.fields)) {
+    findings.push(
+      finding({
+        id: "resource.state.missing",
+        severity: "error",
+        title: "Missing resource state",
+        message: "Each resource must define state fields.",
+        location: { path: resourcePath(resourceIndex, ".state"), resource: resource.name },
+        impact: "The runtime cannot build state records or UI metadata for this resource.",
+        fix: "Add a defineState(...) value to the resource.",
+      }),
+    );
+  }
+
+  const commandEntries = isRecord(resource.commands) ? Object.entries(resource.commands) : [];
+  const seenCommandNames = new Set<string>();
+
+  for (const [commandName, commandUnknown] of commandEntries) {
+    const path = resourcePath(resourceIndex, `.commands.${commandName}`);
+    const command = commandUnknown as Partial<CommandDefinition>;
+
+    if (seenCommandNames.has(commandName)) {
+      findings.push(
+        finding({
+          id: "command.name.duplicate",
+          severity: "error",
+          title: "Duplicate command name",
+          message: `Command "${commandName}" is defined more than once for resource "${resource.name}".`,
+          location: { path, resource: resource.name, command: commandName },
+          impact: "Only one command can be addressed by a given route and manifest entry.",
+          fix: "Keep one command for this name or rename the duplicate command.",
+        }),
+      );
+    }
+
+    seenCommandNames.add(commandName);
+
+    if (!isValidName(commandName)) {
+      findings.push(
+        finding({
+          id: "command.name.invalid",
+          severity: "error",
+          title: "Invalid command name",
+          message: "Command names must be lower-camel-case identifiers.",
+          location: { path, resource: resource.name, command: commandName },
+          impact: "The command cannot be routed, deployed, or serialized consistently.",
+          fix: "Rename the command using a value such as changeStatus.",
+        }),
+      );
+    }
+
+    if (!isCommandInputSchema(command.input)) {
+      findings.push(
+        finding({
+          id: "command.input.invalid",
+          severity: "error",
+          title: "Invalid command input schema",
+          message: `Command "${commandName}" must use a Zod input schema.`,
+          location: { path: `${path}.input`, resource: resource.name, command: commandName },
+          impact: "The runtime cannot validate command input before execution.",
+          fix: "Use a Zod schema such as z.object({ ... }) for command input.",
+        }),
+      );
+    }
+
+    if (typeof command.decide !== "function") {
+      findings.push(
+        finding({
+          id: "command.handler.missing",
+          severity: "error",
+          title: "Missing command handler",
+          message: `Command "${commandName}" must define a decide handler.`,
+          location: { path: `${path}.decide`, resource: resource.name, command: commandName },
+          impact: "The command cannot execute.",
+          fix: "Attach a decide function to the command definition.",
+        }),
+      );
+    }
+
+    if (!Array.isArray(command.roles) || command.roles.length === 0) {
+      findings.push(
+        finding({
+          id: "command.roles.empty",
+          severity: "error",
+          title: "Command has no roles",
+          message: `Command "${commandName}" must declare at least one authorized role.`,
+          location: { path: `${path}.roles`, resource: resource.name, command: commandName },
+          impact: "Authorization cannot decide who may execute this command.",
+          fix: "Add one or more role names to the command.",
+        }),
+      );
+    }
+
+    if (!Array.isArray(command.emits) || command.emits.length === 0) {
+      findings.push(
+        finding({
+          id: "event.schema-version.missing",
+          severity: "error",
+          title: "Command declares no events",
+          message: `Command "${commandName}" must declare emitted events with schema versions.`,
+          location: { path: `${path}.emits`, resource: resource.name, command: commandName },
+          impact: "The runtime cannot validate emitted event drafts for this command.",
+          fix: "Add at least one emitted event declaration.",
+        }),
+      );
+    }
+
+    command.emits?.forEach((event, eventIndex) => {
+      const eventPath = `${path}.emits[${eventIndex}]`;
+
+      if (!isValidEventType(event.eventType)) {
+        findings.push(
+          finding({
+            id: "event.type.invalid",
+            severity: "error",
+            title: "Invalid event type",
+            message: "Event types must follow the resource.action format.",
+            location: {
+              path: `${eventPath}.eventType`,
+              resource: resource.name,
+              command: commandName,
+            },
+            impact: "Event subscribers and manifest consumers cannot rely on this event name.",
+            fix: "Use an event type such as workRequest.statusChanged.",
+          }),
+        );
+      }
+
+      if (!isPositiveInteger(event.schemaVersion)) {
+        findings.push(
+          finding({
+            id: "event.schema-version.missing",
+            severity: "error",
+            title: "Invalid event schema version",
+            message: "Event schema versions must be positive integers.",
+            location: {
+              path: `${eventPath}.schemaVersion`,
+              resource: resource.name,
+              command: commandName,
+            },
+            impact: "Event consumers cannot make versioned compatibility decisions.",
+            fix: "Set schemaVersion to a positive integer starting at 1.",
+          }),
+        );
+      }
+    });
+  }
+
+  const fieldNames = new Set(
+    isRecord(resource.state?.fields) ? Object.keys(resource.state.fields) : [],
+  );
+
+  resource.views.list?.columns.forEach((column, columnIndex) => {
+    if (!fieldNames.has(column)) {
+      findings.push(
+        finding({
+          id: "view.list.column.unknown",
+          severity: "error",
+          title: "Unknown list view column",
+          message: `List view column "${column}" does not reference a known state field.`,
+          location: {
+            path: resourcePath(resourceIndex, `.views.list.columns[${columnIndex}]`),
+            resource: resource.name,
+          },
+          impact: "Generated list views cannot render the configured column.",
+          fix: "Change the column to a state field name or add the missing state field.",
+        }),
+      );
+    }
+  });
+
+  if (resource.views.detail !== undefined && !fieldNames.has(resource.views.detail.titleField)) {
+    findings.push(
+      finding({
+        id: "view.detail.title-field.unknown",
+        severity: "error",
+        title: "Unknown detail title field",
+        message: `Detail title field "${resource.views.detail.titleField}" does not reference a known state field.`,
+        location: {
+          path: resourcePath(resourceIndex, ".views.detail.titleField"),
+          resource: resource.name,
+        },
+        impact: "Generated detail views cannot render a title for the resource.",
+        fix: "Change titleField to a state field name or add the missing state field.",
+      }),
+    );
+  }
+
+  return findings;
+}
+
+export function validateResourceRegistry(
+  resources: readonly ResourceDefinition[],
+): RegistryValidationResult {
+  const findings: Finding[] = [];
+  const seenResourceNames = new Map<string, number>();
+
+  resources.forEach((resource, resourceIndex) => {
+    const firstIndex = seenResourceNames.get(resource.name);
+
+    if (firstIndex !== undefined) {
+      findings.push(
+        finding({
+          id: "resource.name.duplicate",
+          severity: "error",
+          title: "Duplicate resource name",
+          message: `Resource "${resource.name}" is defined more than once.`,
+          location: { path: resourcePath(resourceIndex), resource: resource.name },
+          impact:
+            "Only one resource can own a route namespace, table partition, and manifest entry.",
+          fix: `Rename this resource or remove the duplicate first seen at resources[${firstIndex}].`,
+        }),
+      );
+    }
+
+    seenResourceNames.set(resource.name, resourceIndex);
+    findings.push(...validateResourceDefinition(resource, resourceIndex));
+  });
+
+  return deepFreeze({
+    resources: [...resources],
+    findings,
+  });
+}
+
 export function createResourceRegistry(resources: readonly ResourceDefinition[]): ResourceRegistry {
   if (!Array.isArray(resources) || resources.length === 0) {
     definitionError("registry.resources.empty", "Expected at least one resource.", "resources");
   }
 
+  const validation = validateResourceRegistry(resources);
+  const firstError = validation.findings.find((item) => item.severity === "error");
+
+  if (firstError !== undefined) {
+    definitionError(firstError.id, firstError.message, firstError.location?.path);
+  }
+
   const byName = new Map<string, ResourceDefinition>();
 
   for (const resource of resources) {
-    if (byName.has(resource.name)) {
-      definitionError(
-        "resource.name.duplicate",
-        `Duplicate resource name "${resource.name}".`,
-        "resources",
-      );
-    }
-
     byName.set(resource.name, resource);
   }
 
@@ -999,6 +1364,108 @@ export function createResourceRegistry(resources: readonly ResourceDefinition[])
       return byName.get(resourceType);
     },
   });
+}
+
+function registryResources(
+  registry: ResourceRegistry | readonly ResourceDefinition[],
+): readonly ResourceDefinition[] {
+  return isResourceArray(registry) ? registry : registry.resources;
+}
+
+function manifestField([name, definition]: readonly [string, FieldDefinition]): ManifestField {
+  const base = {
+    name,
+    kind: definition.kind,
+    required: definition.required,
+    ...(definition.label === undefined ? {} : { label: definition.label }),
+    ...(definition.description === undefined ? {} : { description: definition.description }),
+    ...(definition.defaultValue === undefined ? {} : { defaultValue: definition.defaultValue }),
+  };
+
+  if (definition.kind !== "enum") {
+    return base;
+  }
+
+  return {
+    ...base,
+    values: [...definition.values],
+  };
+}
+
+function manifestCommand([name, command]: readonly [string, CommandDefinition]): ManifestCommand {
+  return {
+    name,
+    title: command.title,
+    roles: [...command.roles],
+    emits: command.emits.map((event) => ({ ...event })),
+    create: command.create,
+  };
+}
+
+function manifestResource(resource: ResourceDefinition): ManifestResource {
+  return {
+    name: resource.name,
+    title: resource.title,
+    fields: Object.entries(resource.state.fields).map((entry) => manifestField(entry)),
+    commands: Object.entries(resource.commands).map((entry) => manifestCommand(entry)),
+    views: cloneValue(resource.views),
+    workers: resource.workers.map((worker) => ({
+      name: worker.name,
+      eventTypes: [...worker.eventTypes],
+      ...(worker.maxConcurrency === undefined ? {} : { maxConcurrency: worker.maxConcurrency }),
+    })),
+    schedules: resource.schedules.map((schedule) => ({
+      name: schedule.name,
+      expression: schedule.expression,
+      ...(schedule.targetHandler === undefined ? {} : { targetHandler: schedule.targetHandler }),
+    })),
+  };
+}
+
+function sanitizeManifestRecord(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeManifestRecord(item)).filter((item) => item !== undefined);
+  }
+
+  if (!isRecord(value)) {
+    return typeof value === "function" || typeof value === "symbol" ? undefined : value;
+  }
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .map(([key, entryValue]) => [key, sanitizeManifestRecord(entryValue)] as const)
+      .filter(([, entryValue]) => entryValue !== undefined),
+  );
+}
+
+export function createManifest(input: CreateManifestInput): JawStackManifest {
+  assertNonEmptyString(input.appName, "manifest.app-name.invalid", "appName");
+  assertNonEmptyString(input.stage, "manifest.stage.invalid", "stage");
+  assertNonEmptyString(input.auth.provider, "manifest.auth.provider.invalid", "auth.provider");
+
+  const registry = Array.isArray(input.resources)
+    ? createResourceRegistry(input.resources)
+    : input.resources;
+  const manifest = {
+    schemaVersion: 1,
+    appName: input.appName,
+    stage: input.stage,
+    ...(input.stable === true
+      ? {}
+      : { generatedAt: input.generatedAt ?? new Date().toISOString() }),
+    resources: registryResources(registry).map((resource) => manifestResource(resource)),
+    auth: {
+      mode: input.auth.mode,
+      provider: input.auth.provider,
+    },
+    costProfile: sanitizeManifestRecord(input.costProfile) as CostProfile,
+  } satisfies JawStackManifest;
+
+  return deepFreeze(manifest);
+}
+
+export function serializeManifest(manifest: JawStackManifest, space = 2): string {
+  return `${JSON.stringify(normalizeForStableJson(manifest), null, space)}\n`;
 }
 
 function isResourceArray(
