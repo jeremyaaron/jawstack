@@ -982,9 +982,7 @@ export interface JawStackApiClient {
   list(resourceType: string, options?: ListOptions): Promise<ResourceListResult>;
   get(resourceType: string, resourceId: string): Promise<ResourceDetailResult>;
   activity(resourceType: string, resourceId: string): Promise<ActivityResult>;
-  command<TInput, TOutput>(
-    request: ExecuteCommandRequest<TInput>,
-  ): Promise<TOutput>;
+  command<TInput, TOutput>(request: ExecuteCommandRequest<TInput>): Promise<TOutput>;
 }
 ```
 

@@ -1,0 +1,43 @@
+{
+  "name": "@jawstack/aws-cdk",
+  "version": "0.0.0",
+  "license": "MIT",
+  "type": "module",
+  "packageManager": "pnpm@10.21.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jeremyaaron/jawstack.git",
+    "directory": "packages/aws-cdk"
+  },
+  "bugs": {
+    "url": "https://github.com/jeremyaaron/jawstack/issues"
+  },
+  "homepage": "https://github.com/jeremyaaron/jawstack#readme",
+  "types": "./dist/index.d.ts",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "pkgGuard": {
+    "ignore": [
+      "typescript.extends-unresolved",
+      "typescript.types-source-file"
+    ]
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "lint": "eslint ."
+  }
+}
