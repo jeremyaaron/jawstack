@@ -1,4 +1,4 @@
-import type { z } from "zod";
+import { z } from "zod";
 
 export const packageName = "@jawstack/core";
 
@@ -257,6 +257,8 @@ export type ProjectionWrite = Readonly<{
   delete?: boolean;
 }>;
 
+export type ProjectionRecord = ProjectionWrite;
+
 export type CommandDecision<TState = unknown, TResponse = unknown> = Readonly<{
   nextState: TState;
   activity: readonly ActivityDraft[];
@@ -264,6 +266,14 @@ export type CommandDecision<TState = unknown, TResponse = unknown> = Readonly<{
   projections?: readonly ProjectionWrite[];
   response: TResponse;
 }>;
+
+export type IdempotencyRecord<TResponse = unknown> = Readonly<{
+  key: string;
+  fingerprint: string;
+  response: ApiSuccess<TResponse>;
+}>;
+
+export type IdempotencyCommit<TResponse = unknown> = IdempotencyRecord<TResponse>;
 
 export type CommandDecide<TState = unknown, TInput = unknown, TResponse = unknown> = (
   context: CommandContext<TState, TInput>,
@@ -281,10 +291,12 @@ export type CommandCommitInput<TState = unknown, TResponse = unknown> = Readonly
   outbox: readonly JawStackEvent[];
   projections: readonly ProjectionWrite[];
   response: TResponse;
+  idempotency?: IdempotencyCommit<TResponse>;
 }>;
 
 export type ResourceRepository = Readonly<{
   getState(resourceType: string, resourceId: string): Promise<ResourceState | undefined>;
+  getIdempotency?(key: string): Promise<IdempotencyRecord | undefined>;
 }>;
 
 export type CommandUnitOfWork = Readonly<{
@@ -359,6 +371,155 @@ export type CommandExecutorOptions = Readonly<{
   clock?: () => Date;
   source?: string;
 }>;
+
+export class InMemoryStore {
+  readonly resources = new Map<string, ResourceState>();
+  readonly activity: ActivityRecord[] = [];
+  readonly outbox: JawStackEvent[] = [];
+  readonly projections = new Map<string, ProjectionRecord>();
+  readonly idempotency = new Map<string, IdempotencyRecord>();
+
+  clear(): void {
+    this.resources.clear();
+    this.activity.splice(0);
+    this.outbox.splice(0);
+    this.projections.clear();
+    this.idempotency.clear();
+  }
+}
+
+export class InMemoryRepository implements ResourceRepository {
+  constructor(private readonly store: InMemoryStore = new InMemoryStore()) {}
+
+  getStore(): InMemoryStore {
+    return this.store;
+  }
+
+  async getState<TState = unknown>(
+    resourceType: string,
+    resourceId: string,
+  ): Promise<ResourceState<TState> | undefined> {
+    const state = this.store.resources.get(resourceKey(resourceType, resourceId));
+    return state === undefined ? undefined : cloneValue(state as ResourceState<TState>);
+  }
+
+  async getIdempotency(key: string): Promise<IdempotencyRecord | undefined> {
+    const record = this.store.idempotency.get(key);
+    return record === undefined ? undefined : cloneValue(record);
+  }
+
+  async listProjection(projectionName: string): Promise<ProjectionRecord[]> {
+    return [...this.store.projections.values()]
+      .filter((record) => record.projectionName === projectionName)
+      .sort((left, right) => left.sort.localeCompare(right.sort))
+      .map((record) => cloneValue(record));
+  }
+
+  async getActivity(resourceType: string, resourceId: string): Promise<ActivityRecord[]> {
+    return this.store.activity
+      .filter((record) => record.resourceType === resourceType && record.resourceId === resourceId)
+      .map((record) => cloneValue(record));
+  }
+
+  async getOutbox(): Promise<JawStackEvent[]> {
+    return this.store.outbox.map((record) => cloneValue(record));
+  }
+}
+
+export class InMemoryUnitOfWork implements CommandUnitOfWork {
+  constructor(private readonly store: InMemoryStore = new InMemoryStore()) {}
+
+  getStore(): InMemoryStore {
+    return this.store;
+  }
+
+  async commit<TState = unknown, TResponse = unknown>(
+    input: CommandCommitInput<TState, TResponse>,
+  ): Promise<void> {
+    const key = resourceKey(input.resource.resourceType, input.resource.resourceId);
+    const current = this.store.resources.get(key);
+
+    if (input.idempotency !== undefined) {
+      const existing = this.store.idempotency.get(input.idempotency.key);
+
+      if (existing !== undefined) {
+        if (existing.fingerprint !== input.idempotency.fingerprint) {
+          throw new JawStackRuntimeError(
+            "idempotency.conflict",
+            "Idempotency key was already used for a different command payload.",
+          );
+        }
+
+        return;
+      }
+    }
+
+    if (input.resource.create && current !== undefined) {
+      throw new JawStackRuntimeError(
+        "resource.conflict",
+        `Resource "${input.resource.resourceType}" with ID "${input.resource.resourceId}" already exists.`,
+      );
+    }
+
+    if (!input.resource.create) {
+      if (current === undefined) {
+        throw new JawStackRuntimeError(
+          "resource.not_found",
+          `Resource "${input.resource.resourceType}" with ID "${input.resource.resourceId}" was not found.`,
+        );
+      }
+
+      if (input.resource.expectedVersion !== current.version) {
+        throw new JawStackRuntimeError(
+          "resource.conflict",
+          `Resource "${input.resource.resourceType}" with ID "${input.resource.resourceId}" changed before commit.`,
+          {
+            expectedVersion: input.resource.expectedVersion,
+            actualVersion: current.version,
+          },
+        );
+      }
+    }
+
+    this.store.resources.set(key, cloneValue(input.resource.next));
+    this.store.activity.push(...input.activity.map((record) => cloneValue(record)));
+    this.store.outbox.push(...input.outbox.map((record) => cloneValue(record)));
+
+    for (const projection of input.projections) {
+      this.deleteProjectionItem(projection.projectionName, projection.itemId);
+
+      if (projection.delete !== true) {
+        this.store.projections.set(projectionKey(projection), cloneValue(projection));
+      }
+    }
+
+    if (input.idempotency !== undefined) {
+      this.store.idempotency.set(input.idempotency.key, cloneValue(input.idempotency));
+    }
+  }
+
+  private deleteProjectionItem(projectionName: string, itemId: string): void {
+    const prefix = projectionItemPrefix(projectionName, itemId);
+
+    for (const key of this.store.projections.keys()) {
+      if (key.startsWith(prefix)) {
+        this.store.projections.delete(key);
+      }
+    }
+  }
+}
+
+export function createInMemoryPersistence(store = new InMemoryStore()): Readonly<{
+  store: InMemoryStore;
+  repository: InMemoryRepository;
+  unitOfWork: InMemoryUnitOfWork;
+}> {
+  return {
+    store,
+    repository: new InMemoryRepository(store),
+    unitOfWork: new InMemoryUnitOfWork(store),
+  };
+}
 
 function definitionError(code: string, message: string, path?: string): never {
   throw new JawStackDefinitionError(code, message, path);
@@ -457,6 +618,61 @@ function deepFreeze<T>(value: T): T {
   }
 
   return value;
+}
+
+function cloneValue<T>(value: T): T {
+  return structuredClone(value);
+}
+
+function resourceKey(resourceType: string, resourceId: string): string {
+  return `${resourceType}\u0000${resourceId}`;
+}
+
+function projectionItemPrefix(projectionName: string, itemId: string): string {
+  return `${projectionName}\u0000${itemId}\u0000`;
+}
+
+function projectionKey(projection: ProjectionWrite): string {
+  return `${projectionItemPrefix(projection.projectionName, projection.itemId)}${projection.sort}`;
+}
+
+function normalizeForStableJson(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeForStableJson(item));
+  }
+
+  if (!isPlainFreezableObjectForStableJson(value)) {
+    return value;
+  }
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([, entryValue]) => entryValue !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([entryKey, entryValue]) => [entryKey, normalizeForStableJson(entryValue)]),
+  );
+}
+
+function isPlainFreezableObjectForStableJson(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function stableStringify(value: unknown): string {
+  return JSON.stringify(normalizeForStableJson(value));
+}
+
+function createIdempotencyFingerprint(input: {
+  resourceType: string;
+  resourceId: string | undefined;
+  commandName: string;
+  input: unknown;
+}): string {
+  return stableStringify(input);
 }
 
 function createBaseField<TKind extends FieldKind, TValue>(
@@ -1002,6 +1218,349 @@ function buildNextResourceState<TState>(input: {
   };
 }
 
+export const workRequestStatusValues = ["open", "inReview", "blocked", "closed"] as const;
+
+export type WorkRequestStatus = (typeof workRequestStatusValues)[number];
+
+export type WorkRequestComment = Readonly<{
+  commentId: string;
+  body: string;
+  author: Actor;
+  createdAt: string;
+}>;
+
+export type WorkRequestState = Readonly<{
+  title: string;
+  description?: string;
+  status: WorkRequestStatus;
+  assigneeId?: string;
+  updatedAt: string;
+  comments: readonly WorkRequestComment[];
+}>;
+
+export const createWorkRequestInput = z.object({
+  title: z.string().min(1),
+  description: z.string().optional(),
+});
+
+export const assignWorkRequestInput = z.object({
+  assigneeId: z.string().min(1),
+});
+
+export const changeWorkRequestStatusInput = z.object({
+  status: z.enum(workRequestStatusValues),
+});
+
+export const commentWorkRequestInput = z.object({
+  body: z.string().min(1),
+});
+
+export const closeWorkRequestInput = z.object({
+  reason: z.string().optional(),
+});
+
+export type CreateWorkRequestInput = z.infer<typeof createWorkRequestInput>;
+export type AssignWorkRequestInput = z.infer<typeof assignWorkRequestInput>;
+export type ChangeWorkRequestStatusInput = z.infer<typeof changeWorkRequestStatusInput>;
+export type CommentWorkRequestInput = z.infer<typeof commentWorkRequestInput>;
+export type CloseWorkRequestInput = z.infer<typeof closeWorkRequestInput>;
+
+export type WorkRequestCommandResponse = Readonly<{
+  resourceId: string;
+  status: WorkRequestStatus;
+}>;
+
+export type CreateWorkRequestResponse = WorkRequestCommandResponse;
+export type AssignWorkRequestResponse = WorkRequestCommandResponse &
+  Readonly<{
+    assigneeId: string;
+  }>;
+export type ChangeWorkRequestStatusResponse = WorkRequestCommandResponse;
+export type CommentWorkRequestResponse = WorkRequestCommandResponse &
+  Readonly<{
+    commentId: string;
+  }>;
+export type CloseWorkRequestResponse = WorkRequestCommandResponse;
+
+function getPreviousWorkRequestState(previous: ResourceState | undefined): WorkRequestState {
+  if (previous === undefined) {
+    throw new JawStackRuntimeError("resource.not_found", "Work request state is missing.");
+  }
+
+  return previous.state as WorkRequestState;
+}
+
+function workRequestProjectionSort(updatedAt: string, resourceId: string): string {
+  const timestamp = Date.parse(updatedAt);
+  const safeTimestamp = Number.isFinite(timestamp) ? timestamp : 0;
+  const reverseTimestamp = Number.MAX_SAFE_INTEGER - safeTimestamp;
+  return `${String(reverseTimestamp).padStart(16, "0")}#${resourceId}`;
+}
+
+function workRequestListProjection(resourceId: string, state: WorkRequestState): ProjectionWrite {
+  return {
+    projectionName: "workRequest.list",
+    itemId: resourceId,
+    sort: workRequestProjectionSort(state.updatedAt, resourceId),
+    data: {
+      resourceId,
+      title: state.title,
+      status: state.status,
+      updatedAt: state.updatedAt,
+      ...(state.assigneeId === undefined ? {} : { assigneeId: state.assigneeId }),
+    },
+  };
+}
+
+export const createWorkRequest: CommandDecide<
+  unknown,
+  CreateWorkRequestInput,
+  CreateWorkRequestResponse
+> = ({ auth, input, resourceId, now }) => {
+  const updatedAt = now.toISOString();
+  const nextState: WorkRequestState = {
+    title: input.title,
+    ...(input.description === undefined ? {} : { description: input.description }),
+    status: "open",
+    updatedAt,
+    comments: [],
+  };
+
+  return {
+    nextState,
+    activity: [
+      {
+        activityType: "created",
+        title: "Created work request",
+        data: { title: input.title },
+      },
+    ],
+    events: [
+      {
+        eventType: "workRequest.created",
+        schemaVersion: 1,
+        payload: {
+          title: input.title,
+          ...(input.description === undefined ? {} : { description: input.description }),
+          actor: actorFromAuth(auth),
+        },
+      },
+    ],
+    projections: [workRequestListProjection(resourceId, nextState)],
+    response: { resourceId, status: nextState.status },
+  };
+};
+
+export const assignWorkRequest: CommandDecide<
+  unknown,
+  AssignWorkRequestInput,
+  AssignWorkRequestResponse
+> = ({ previous, input, resourceId, now }) => {
+  const current = getPreviousWorkRequestState(previous);
+  const nextState: WorkRequestState = {
+    ...current,
+    assigneeId: input.assigneeId,
+    updatedAt: now.toISOString(),
+    comments: [...current.comments],
+  };
+
+  return {
+    nextState,
+    activity: [
+      {
+        activityType: "assigned",
+        title: "Assigned work request",
+        data: { assigneeId: input.assigneeId },
+      },
+    ],
+    events: [
+      {
+        eventType: "workRequest.assigned",
+        schemaVersion: 1,
+        payload: { assigneeId: input.assigneeId },
+      },
+    ],
+    projections: [workRequestListProjection(resourceId, nextState)],
+    response: { resourceId, status: nextState.status, assigneeId: input.assigneeId },
+  };
+};
+
+export const changeWorkRequestStatus: CommandDecide<
+  unknown,
+  ChangeWorkRequestStatusInput,
+  ChangeWorkRequestStatusResponse
+> = ({ previous, input, resourceId, now }) => {
+  const current = getPreviousWorkRequestState(previous);
+  const nextState: WorkRequestState = {
+    ...current,
+    status: input.status,
+    updatedAt: now.toISOString(),
+    comments: [...current.comments],
+  };
+
+  return {
+    nextState,
+    activity: [
+      {
+        activityType: "statusChanged",
+        title: "Changed work request status",
+        data: { previousStatus: current.status, status: input.status },
+      },
+    ],
+    events: [
+      {
+        eventType: "workRequest.statusChanged",
+        schemaVersion: 1,
+        payload: { previousStatus: current.status, status: input.status },
+      },
+    ],
+    projections: [workRequestListProjection(resourceId, nextState)],
+    response: { resourceId, status: nextState.status },
+  };
+};
+
+export const commentWorkRequest: CommandDecide<
+  unknown,
+  CommentWorkRequestInput,
+  CommentWorkRequestResponse
+> = ({ auth, previous, input, resourceId, requestId, now }) => {
+  const current = getPreviousWorkRequestState(previous);
+  const comment: WorkRequestComment = {
+    commentId: `comment_${requestId}`,
+    body: input.body,
+    author: actorFromAuth(auth),
+    createdAt: now.toISOString(),
+  };
+  const nextState: WorkRequestState = {
+    ...current,
+    updatedAt: comment.createdAt,
+    comments: [...current.comments, comment],
+  };
+
+  return {
+    nextState,
+    activity: [
+      {
+        activityType: "commentAdded",
+        title: "Added comment",
+        data: { commentId: comment.commentId },
+      },
+    ],
+    events: [
+      {
+        eventType: "workRequest.commentAdded",
+        schemaVersion: 1,
+        payload: {
+          commentId: comment.commentId,
+          body: input.body,
+        },
+      },
+    ],
+    projections: [workRequestListProjection(resourceId, nextState)],
+    response: { resourceId, status: nextState.status, commentId: comment.commentId },
+  };
+};
+
+export const closeWorkRequest: CommandDecide<
+  unknown,
+  CloseWorkRequestInput,
+  CloseWorkRequestResponse
+> = ({ previous, input, resourceId, now }) => {
+  const current = getPreviousWorkRequestState(previous);
+  const nextState: WorkRequestState = {
+    ...current,
+    status: "closed",
+    updatedAt: now.toISOString(),
+    comments: [...current.comments],
+  };
+
+  return {
+    nextState,
+    activity: [
+      {
+        activityType: "closed",
+        title: "Closed work request",
+        ...(input.reason === undefined ? {} : { summary: input.reason }),
+      },
+    ],
+    events: [
+      {
+        eventType: "workRequest.closed",
+        schemaVersion: 1,
+        payload: {
+          ...(input.reason === undefined ? {} : { reason: input.reason }),
+        },
+      },
+    ],
+    projections: [workRequestListProjection(resourceId, nextState)],
+    response: { resourceId, status: nextState.status },
+  };
+};
+
+export const workRequestResource = defineResource({
+  name: "workRequest",
+  title: "Work Request",
+  state: defineState({
+    title: field.string({ required: true, label: "Title" }),
+    description: field.text({ label: "Description" }),
+    status: field.enum({
+      label: "Status",
+      values: workRequestStatusValues,
+      defaultValue: "open",
+    }),
+    assigneeId: field.string({ label: "Assignee" }),
+    updatedAt: field.datetime({ required: true, label: "Updated" }),
+  }),
+  commands: {
+    create: defineCommand({
+      title: "Create Work Request",
+      input: createWorkRequestInput,
+      roles: ["user"],
+      emits: [{ eventType: "workRequest.created", schemaVersion: 1 }],
+      create: true,
+      decide: createWorkRequest,
+    }),
+    assign: defineCommand({
+      title: "Assign",
+      input: assignWorkRequestInput,
+      roles: ["manager"],
+      emits: [{ eventType: "workRequest.assigned", schemaVersion: 1 }],
+      decide: assignWorkRequest,
+    }),
+    changeStatus: defineCommand({
+      title: "Change Status",
+      input: changeWorkRequestStatusInput,
+      roles: ["manager"],
+      emits: [{ eventType: "workRequest.statusChanged", schemaVersion: 1 }],
+      decide: changeWorkRequestStatus,
+    }),
+    comment: defineCommand({
+      title: "Comment",
+      input: commentWorkRequestInput,
+      roles: ["user"],
+      emits: [{ eventType: "workRequest.commentAdded", schemaVersion: 1 }],
+      decide: commentWorkRequest,
+    }),
+    close: defineCommand({
+      title: "Close",
+      input: closeWorkRequestInput,
+      roles: ["manager"],
+      emits: [{ eventType: "workRequest.closed", schemaVersion: 1 }],
+      decide: closeWorkRequest,
+    }),
+  },
+  views: {
+    list: defineListView({
+      title: "Work Requests",
+      columns: ["title", "status", "assigneeId", "updatedAt"],
+    }),
+    detail: defineDetailView({
+      titleField: "title",
+      sections: ["summary", "activity", "comments"],
+    }),
+  },
+});
+
 export async function executeCommand<TResponse = unknown>(
   request: CommandRequest,
   options: CommandExecutorOptions,
@@ -1061,6 +1620,44 @@ export async function executeCommand<TResponse = unknown>(
         correlationId,
         parsedInput.error.issues,
       );
+    }
+
+    const idempotencyKey = request.idempotencyKey?.trim();
+
+    if (request.idempotencyKey !== undefined && idempotencyKey === "") {
+      return apiError(
+        "command.rejected",
+        "Idempotency key must be non-empty when provided.",
+        requestId,
+        correlationId,
+      );
+    }
+
+    const idempotencyFingerprint =
+      idempotencyKey === undefined
+        ? undefined
+        : createIdempotencyFingerprint({
+            resourceType: request.resourceType,
+            resourceId: request.resourceId,
+            commandName: request.commandName,
+            input: parsedInput.data,
+          });
+
+    if (idempotencyKey !== undefined && idempotencyFingerprint !== undefined) {
+      const existing = await options.repository.getIdempotency?.(idempotencyKey);
+
+      if (existing !== undefined) {
+        if (existing.fingerprint !== idempotencyFingerprint) {
+          return apiError(
+            "idempotency.conflict",
+            "Idempotency key was already used for a different command payload.",
+            requestId,
+            correlationId,
+          );
+        }
+
+        return existing.response as ApiSuccess<TResponse>;
+      }
     }
 
     const resourceId = command.create
@@ -1135,6 +1732,8 @@ export async function executeCommand<TResponse = unknown>(
       ids,
     });
 
+    const success = apiSuccess(decision.response as TResponse, requestId, correlationId);
+
     await options.unitOfWork.commit({
       resource: {
         resourceType: request.resourceType,
@@ -1147,9 +1746,18 @@ export async function executeCommand<TResponse = unknown>(
       outbox,
       projections: decision.projections ?? [],
       response: decision.response,
+      ...(idempotencyKey === undefined || idempotencyFingerprint === undefined
+        ? {}
+        : {
+            idempotency: {
+              key: idempotencyKey,
+              fingerprint: idempotencyFingerprint,
+              response: success,
+            },
+          }),
     });
 
-    return apiSuccess(decision.response as TResponse, requestId, correlationId);
+    return success;
   } catch (error) {
     return runtimeErrorToApiError(error, requestId, correlationId);
   }

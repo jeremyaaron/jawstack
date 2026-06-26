@@ -2,10 +2,15 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import {
+  InMemoryRepository,
+  InMemoryStore,
+  InMemoryUnitOfWork,
   JawStackDefinitionError,
   type AuthContext,
   type CommandCommitInput,
+  type IdGenerator,
   type ResourceState,
+  type WorkRequestState,
   defineCommand,
   defineDetailView,
   defineListView,
@@ -16,9 +21,10 @@ import {
   executeCommand,
   field,
   packageName,
+  workRequestResource,
 } from "../src/index";
 
-type WorkRequestState = {
+type TestWorkRequestState = {
   title: string;
   status: "open" | "closed";
 };
@@ -60,7 +66,7 @@ function createTestWorkRequestResource() {
           nextState: {
             title: input.title,
             status: "open",
-          } satisfies WorkRequestState,
+          } satisfies TestWorkRequestState,
           activity: [{ activityType: "created", title: "Created work request" }],
           events: [
             {
@@ -79,9 +85,9 @@ function createTestWorkRequestResource() {
         emits: [{ eventType: "workRequest.closed", schemaVersion: 1 }],
         decide: ({ previous }) => ({
           nextState: {
-            ...(previous?.state as WorkRequestState),
+            ...(previous?.state as TestWorkRequestState),
             status: "closed",
-          } satisfies WorkRequestState,
+          } satisfies TestWorkRequestState,
           activity: [{ activityType: "closed", title: "Closed work request" }],
           events: [
             {
@@ -97,7 +103,7 @@ function createTestWorkRequestResource() {
   });
 }
 
-function createRepository(state?: ResourceState<WorkRequestState>) {
+function createRepository(state?: ResourceState<TestWorkRequestState>) {
   return {
     getState: async () => state,
   };
@@ -122,6 +128,42 @@ function noOpDecision(eventType: string) {
     activity: [{ activityType: "changed", title: "Changed" }],
     events: [{ eventType, schemaVersion: 1, payload: {} }],
     response: {},
+  };
+}
+
+function createSequenceIds(resourceId = "wr_flow"): Partial<IdGenerator> {
+  let request = 0;
+  let correlation = 0;
+  let event = 0;
+  let activity = 0;
+
+  return {
+    requestId: () => `req_${++request}`,
+    correlationId: () => `corr_${++correlation}`,
+    resourceId: () => resourceId,
+    eventId: () => `evt_${++event}`,
+    activityId: () => `act_${++activity}`,
+  };
+}
+
+function createInMemoryWorkRequestRuntime(resourceId = "wr_flow") {
+  const store = new InMemoryStore();
+  const repository = new InMemoryRepository(store);
+  const unitOfWork = new InMemoryUnitOfWork(store);
+
+  return {
+    store,
+    repository,
+    unitOfWork,
+    options: {
+      registry: [workRequestResource],
+      repository,
+      unitOfWork,
+      authProvider: { resolve: () => auth },
+      ids: createSequenceIds(resourceId),
+      clock: () => new Date("2026-06-25T12:00:00.000Z"),
+      source: "jawstack.test",
+    },
   };
 }
 
@@ -328,7 +370,7 @@ describe("@jawstack/core command executor", () => {
   it("executes an update command against existing state", async () => {
     const { commits, unitOfWork } = createUnitOfWork();
 
-    const previous: ResourceState<WorkRequestState> = {
+    const previous: ResourceState<TestWorkRequestState> = {
       resourceType: "workRequest",
       resourceId: "wr_123",
       version: 3,
@@ -441,5 +483,208 @@ describe("@jawstack/core command executor", () => {
     expect(result.ok).toBe(false);
     expect(!result.ok && result.error.code).toBe("resource.not_found");
     expect(commits).toHaveLength(0);
+  });
+});
+
+describe("@jawstack/core in-memory Work Request runtime", () => {
+  it("runs the full Work Request command flow with state, activity, outbox, and projections", async () => {
+    const { repository, options } = createInMemoryWorkRequestRuntime();
+
+    const created = await executeCommand<{ resourceId: string; status: string }>(
+      {
+        resourceType: "workRequest",
+        commandName: "create",
+        input: { title: "Replace intake form", description: "Current form is too slow." },
+        idempotencyKey: "create-work-request",
+        requestContext: {},
+      },
+      options,
+    );
+
+    expect(created.ok).toBe(true);
+    const resourceId = created.ok ? created.data.resourceId : "";
+
+    await executeCommand(
+      {
+        resourceType: "workRequest",
+        resourceId,
+        commandName: "assign",
+        input: { assigneeId: "user_456" },
+        requestContext: {},
+      },
+      options,
+    );
+
+    await executeCommand(
+      {
+        resourceType: "workRequest",
+        resourceId,
+        commandName: "changeStatus",
+        input: { status: "inReview" },
+        requestContext: {},
+      },
+      options,
+    );
+
+    const commented = await executeCommand<{ commentId: string }>(
+      {
+        resourceType: "workRequest",
+        resourceId,
+        commandName: "comment",
+        input: { body: "I checked the workflow and it is ready to close." },
+        requestContext: {},
+      },
+      options,
+    );
+
+    await executeCommand(
+      {
+        resourceType: "workRequest",
+        resourceId,
+        commandName: "close",
+        input: { reason: "Completed" },
+        requestContext: {},
+      },
+      options,
+    );
+
+    const stored = await repository.getState<WorkRequestState>("workRequest", resourceId);
+    const activity = await repository.getActivity("workRequest", resourceId);
+    const outbox = await repository.getOutbox();
+    const projections = await repository.listProjection("workRequest.list");
+
+    expect(stored?.version).toBe(5);
+    expect(stored?.state).toMatchObject({
+      title: "Replace intake form",
+      description: "Current form is too slow.",
+      status: "closed",
+      assigneeId: "user_456",
+    });
+    expect(stored?.state.comments).toHaveLength(1);
+    expect(stored?.state.comments[0]).toMatchObject({
+      commentId: commented.ok ? commented.data.commentId : "",
+      body: "I checked the workflow and it is ready to close.",
+    });
+    expect(activity.map((record) => record.activityType)).toEqual([
+      "created",
+      "assigned",
+      "statusChanged",
+      "commentAdded",
+      "closed",
+    ]);
+    expect(outbox.map((event) => event.eventType)).toEqual([
+      "workRequest.created",
+      "workRequest.assigned",
+      "workRequest.statusChanged",
+      "workRequest.commentAdded",
+      "workRequest.closed",
+    ]);
+    expect(projections).toHaveLength(1);
+    expect(projections[0]?.data).toMatchObject({
+      resourceId,
+      title: "Replace intake form",
+      status: "closed",
+      assigneeId: "user_456",
+    });
+  });
+
+  it("returns the stored response when an idempotency key is replayed with the same payload", async () => {
+    const { repository, options } = createInMemoryWorkRequestRuntime("wr_idempotent");
+    const request = {
+      resourceType: "workRequest",
+      commandName: "create",
+      input: { title: "Replay safely" },
+      idempotencyKey: "idem-create",
+      requestContext: {},
+    };
+
+    const first = await executeCommand(request, options);
+    const second = await executeCommand(request, options);
+    const activity = await repository.getActivity("workRequest", "wr_idempotent");
+
+    expect(second).toEqual(first);
+    expect(activity).toHaveLength(1);
+    expect(await repository.getState("workRequest", "wr_idempotent")).toBeDefined();
+  });
+
+  it("returns an idempotency conflict when a key is replayed with a different payload", async () => {
+    const { options } = createInMemoryWorkRequestRuntime("wr_conflict");
+
+    await executeCommand(
+      {
+        resourceType: "workRequest",
+        commandName: "create",
+        input: { title: "Original" },
+        idempotencyKey: "idem-conflict",
+        requestContext: {},
+      },
+      options,
+    );
+
+    const conflict = await executeCommand(
+      {
+        resourceType: "workRequest",
+        commandName: "create",
+        input: { title: "Different" },
+        idempotencyKey: "idem-conflict",
+        requestContext: {},
+      },
+      options,
+    );
+
+    expect(conflict.ok).toBe(false);
+    expect(!conflict.ok && conflict.error.code).toBe("idempotency.conflict");
+  });
+
+  it("returns a structured conflict when an in-memory commit sees a stale version", async () => {
+    const { repository, unitOfWork, options } = createInMemoryWorkRequestRuntime("wr_stale");
+
+    await executeCommand(
+      {
+        resourceType: "workRequest",
+        commandName: "create",
+        input: { title: "Stale update" },
+        requestContext: {},
+      },
+      options,
+    );
+
+    const stale = await repository.getState<WorkRequestState>("workRequest", "wr_stale");
+
+    await executeCommand(
+      {
+        resourceType: "workRequest",
+        resourceId: "wr_stale",
+        commandName: "assign",
+        input: { assigneeId: "user_456" },
+        requestContext: {},
+      },
+      options,
+    );
+
+    const staleResult = await executeCommand(
+      {
+        resourceType: "workRequest",
+        resourceId: "wr_stale",
+        commandName: "close",
+        input: {},
+        requestContext: {},
+      },
+      {
+        ...options,
+        repository: {
+          getState: async () => stale,
+          getIdempotency: (key) => repository.getIdempotency(key),
+        },
+        unitOfWork,
+      },
+    );
+
+    expect(staleResult.ok).toBe(false);
+    expect(!staleResult.ok && staleResult.error.code).toBe("resource.conflict");
+    expect(!staleResult.ok && staleResult.error.details).toEqual({
+      expectedVersion: 1,
+      actualVersion: 2,
+    });
   });
 });
