@@ -9,10 +9,12 @@
     "pnpm": ">=10.0.0"
   },
   "scripts": {
-    "build": "pnpm --filter './packages/*' run build",
-    "typecheck": "pnpm --filter './packages/*' run typecheck",
-    "test": "pnpm --filter './packages/*' run test",
-    "lint": "pnpm --filter './packages/*' run lint",
+    "build": "pnpm --filter './packages/*' --filter './apps/*' run build",
+    "typecheck": "pnpm --filter './packages/*' --filter './apps/*' run typecheck",
+    "test": "pnpm --filter './packages/*' --filter './apps/*' run test",
+    "lint": "pnpm --filter './packages/*' --filter './apps/*' run lint",
+    "dev:web": "pnpm --filter demo-work-requests run dev:web",
+    "dev:api": "pnpm --filter demo-work-requests run dev:api",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "pkg:check": "pkg-guard check --workspaces"
@@ -30,7 +32,10 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": [
-      "esbuild"
+      "@parcel/watcher",
+      "esbuild",
+      "lmdb",
+      "msgpackr-extract"
     ]
   }
 }

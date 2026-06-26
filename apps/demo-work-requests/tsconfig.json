@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "experimentalDecorators": true,
+    "lib": ["ES2022", "DOM"],
+    "paths": {
+      "@jawstack/angular": ["../../packages/angular/src/index.ts"],
+      "@jawstack/core": ["../../packages/core/src/index.ts"]
+    },
+    "rootDir": "../.."
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts", "vite.config.ts", "vitest.config.ts"]
+}
