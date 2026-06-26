@@ -1,10 +1,12 @@
 import {
   GetItemCommand,
+  PutItemCommand,
   QueryCommand,
   TransactWriteItemsCommand,
   UpdateItemCommand,
   type AttributeValue,
   type GetItemCommandOutput,
+  type PutItemCommandOutput,
   type QueryCommandOutput,
   type TransactWriteItem,
   type TransactWriteItemsCommandOutput,
@@ -229,6 +231,45 @@ export type DynamoDbOutboxSweeperOptions = Readonly<{
   batchLimit?: number;
 }>;
 
+export type WorkerMessage<TEvent = unknown> = Readonly<{
+  event: JawStackEvent<TEvent>;
+  messageId: string;
+  receivedAt: string;
+}>;
+
+export type WorkerHandler<TEvent = unknown> = (
+  message: WorkerMessage<TEvent>,
+) => Promise<void> | void;
+
+export type SqsRecord = Readonly<{
+  messageId: string;
+  body: string;
+}>;
+
+export type SqsEvent = Readonly<{
+  Records?: readonly SqsRecord[];
+}>;
+
+export type SqsWorkerResult = Readonly<{
+  seen: number;
+  processed: number;
+  skipped: number;
+}>;
+
+export type DynamoDbWorkerIdempotencyStoreOptions = Readonly<{
+  client: DynamoDbClientLike;
+  tableName: string;
+  clock?: () => Date;
+  ttlSeconds?: number;
+}>;
+
+export type SqsWorkerAdapterOptions<TEvent = unknown> = Readonly<{
+  workerName: string;
+  handler: WorkerHandler<TEvent>;
+  idempotencyStore: DynamoDbWorkerIdempotencyStore;
+  clock?: () => Date;
+}>;
+
 export type LambdaHttpEvent = Readonly<{
   version?: string;
   rawPath?: string;
@@ -283,6 +324,7 @@ export type LambdaHttpAdapterOptions = Readonly<{
 const INVERTED_TIMESTAMP_MAX = 9_999_999_999_999;
 const INVERTED_TIMESTAMP_WIDTH = 13;
 const DEFAULT_IDEMPOTENCY_TTL_SECONDS = 7 * 24 * 60 * 60;
+const DEFAULT_WORKER_IDEMPOTENCY_TTL_SECONDS = 14 * 24 * 60 * 60;
 const DEFAULT_OUTBOX_SWEEP_BATCH_LIMIT = 10;
 const DEFAULT_OUTBOX_STALE_AFTER_MS = 2 * 60 * 1000;
 
@@ -590,6 +632,120 @@ export class DynamoDbOutboxSweeper {
       ignored: (output.Items?.length ?? 0) - items.length,
       published,
       markedPublished,
+    };
+  }
+}
+
+export class DynamoDbWorkerIdempotencyStore {
+  private readonly client: DynamoDbClientLike;
+  private readonly tableName: string;
+  private readonly clock: () => Date;
+  private readonly ttlSeconds: number;
+
+  constructor(options: DynamoDbWorkerIdempotencyStoreOptions) {
+    this.client = options.client;
+    this.tableName = options.tableName;
+    this.clock = options.clock ?? (() => new Date());
+    this.ttlSeconds = options.ttlSeconds ?? DEFAULT_WORKER_IDEMPOTENCY_TTL_SECONDS;
+  }
+
+  async hasProcessed(workerName: string, eventId: string): Promise<boolean> {
+    const output = await sendDynamoDb<GetItemCommandOutput>(
+      this.client,
+      new GetItemCommand({
+        TableName: this.tableName,
+        Key: marshallItem(workerIdempotencyKey(workerName, eventId)),
+        ConsistentRead: true,
+      }),
+    );
+
+    return output.Item !== undefined;
+  }
+
+  async markProcessed(workerName: string, eventId: string): Promise<boolean> {
+    const processedAt = this.clock().toISOString();
+    const expiresAt = Math.floor(Date.parse(processedAt) / 1000) + this.ttlSeconds;
+
+    try {
+      await sendDynamoDb<PutItemCommandOutput>(
+        this.client,
+        new PutItemCommand({
+          TableName: this.tableName,
+          Item: toWorkerIdempotencyItem({
+            workerName,
+            eventId,
+            processedAt,
+            expiresAt,
+          }),
+          ConditionExpression: "attribute_not_exists(PK)",
+        }),
+      );
+
+      return true;
+    } catch (error) {
+      if (isDynamoDbConditionalFailure(error)) {
+        return false;
+      }
+
+      throw new JawStackRuntimeError(
+        "runtime.unavailable",
+        "DynamoDB worker marker write failed.",
+        {
+          causeName: errorName(error),
+        },
+      );
+    }
+  }
+}
+
+export class SqsWorkerAdapter<TEvent = unknown> {
+  private readonly workerName: string;
+  private readonly handler: WorkerHandler<TEvent>;
+  private readonly idempotencyStore: DynamoDbWorkerIdempotencyStore;
+  private readonly clock: () => Date;
+
+  constructor(options: SqsWorkerAdapterOptions<TEvent>) {
+    this.workerName = options.workerName;
+    this.handler = options.handler;
+    this.idempotencyStore = options.idempotencyStore;
+    this.clock = options.clock ?? (() => new Date());
+  }
+
+  async handle(event: SqsEvent): Promise<SqsWorkerResult> {
+    let processed = 0;
+    let skipped = 0;
+    const records = event.Records ?? [];
+
+    for (const record of records) {
+      const jawStackEvent = parseSqsWorkerEvent<TEvent>(record.body);
+
+      if (await this.idempotencyStore.hasProcessed(this.workerName, jawStackEvent.eventId)) {
+        skipped += 1;
+        continue;
+      }
+
+      await this.handler({
+        event: jawStackEvent,
+        messageId: record.messageId,
+        receivedAt: this.clock().toISOString(),
+      });
+
+      const marked = await this.idempotencyStore.markProcessed(
+        this.workerName,
+        jawStackEvent.eventId,
+      );
+
+      if (marked) {
+        processed += 1;
+      } else {
+        skipped += 1;
+      }
+    }
+
+    return {
+      seen: records.length,
+      processed,
+      skipped,
     };
   }
 }
@@ -1263,6 +1419,56 @@ function requireCommandName(options: DynamoDbCommandTransactionOptions): string 
   }
 
   return options.idempotency.commandName;
+}
+
+function parseSqsWorkerEvent<TEvent = unknown>(body: string): JawStackEvent<TEvent> {
+  const parsed = parseJsonRecord(body);
+  const eventCandidate = eventBridgeDetail(parsed);
+
+  if (!isJawStackEvent(eventCandidate)) {
+    throw new JawStackRuntimeError(
+      "runtime.internal",
+      "SQS worker message did not contain a JawStack event.",
+    );
+  }
+
+  return eventCandidate as JawStackEvent<TEvent>;
+}
+
+function parseJsonRecord(value: string): unknown {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    throw new JawStackRuntimeError(
+      "runtime.internal",
+      "SQS worker message body must be valid JSON.",
+    );
+  }
+}
+
+function eventBridgeDetail(value: unknown): unknown {
+  if (!isRecord(value) || !("detail" in value)) {
+    return value;
+  }
+
+  const detail = value.detail;
+
+  if (typeof detail === "string") {
+    return parseJsonRecord(detail);
+  }
+
+  return detail;
+}
+
+function isJawStackEvent(value: unknown): value is JawStackEvent {
+  return (
+    isRecord(value) &&
+    value.envelopeVersion === 1 &&
+    typeof value.eventId === "string" &&
+    typeof value.eventType === "string" &&
+    typeof value.resourceType === "string" &&
+    typeof value.resourceId === "string"
+  );
 }
 
 class StaticAuthProvider implements AuthProvider {

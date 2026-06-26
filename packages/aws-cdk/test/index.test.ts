@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { App, Stack } from "aws-cdk-lib";
 import { Match, Template } from "aws-cdk-lib/assertions";
 import { describe, expect, it } from "vitest";
-import { workRequestResource } from "@jawstack/core";
+import { defineWorker, workRequestResource, type ResourceDefinition } from "@jawstack/core";
 
 import {
   describePackage,
@@ -26,10 +26,11 @@ describe("@jawstack/aws-cdk", () => {
     template.resourceCountIs("AWS::DynamoDB::Table", 1);
     template.resourceCountIs("AWS::Events::EventBus", 1);
     template.resourceCountIs("AWS::ApiGatewayV2::Api", 1);
-    template.resourceCountIs("AWS::Lambda::Function", 3);
-    template.resourceCountIs("AWS::Logs::LogGroup", 3);
-    template.resourceCountIs("AWS::Lambda::EventSourceMapping", 1);
-    template.resourceCountIs("AWS::Events::Rule", 1);
+    template.resourceCountIs("AWS::Lambda::Function", 4);
+    template.resourceCountIs("AWS::Logs::LogGroup", 4);
+    template.resourceCountIs("AWS::Lambda::EventSourceMapping", 2);
+    template.resourceCountIs("AWS::Events::Rule", 2);
+    template.resourceCountIs("AWS::SQS::Queue", 2);
   });
 
   it("configures the DynamoDB table with stream, TTL, and outbox GSI", () => {
@@ -112,6 +113,18 @@ describe("@jawstack/aws-cdk", () => {
     });
     template.hasResourceProperties("AWS::Logs::LogGroup", {
       LogGroupName: "/aws/lambda/jawstack-test-dev-outbox-sweeper",
+      RetentionInDays: 7,
+    });
+    template.hasResourceProperties("AWS::Lambda::Function", {
+      FunctionName: "jawstack-test-dev-sendnotification-worker",
+      Runtime: "nodejs22.x",
+      Handler: "index.handler",
+      Timeout: 12,
+      MemorySize: 384,
+      ReservedConcurrentExecutions: 2,
+    });
+    template.hasResourceProperties("AWS::Logs::LogGroup", {
+      LogGroupName: "/aws/lambda/jawstack-test-dev-sendnotification-worker",
       RetentionInDays: 7,
     });
   });
@@ -218,6 +231,67 @@ describe("@jawstack/aws-cdk", () => {
       State: "ENABLED",
     });
   });
+
+  it("creates worker queue, DLQ, Lambda, and max-concurrency event source mapping", () => {
+    const template = synthTemplate();
+
+    template.hasResourceProperties("AWS::SQS::Queue", {
+      QueueName: "jawstack-test-dev-sendnotification-dlq",
+      MessageRetentionPeriod: 1209600,
+    });
+    template.hasResourceProperties("AWS::SQS::Queue", {
+      QueueName: "jawstack-test-dev-sendnotification-queue",
+      VisibilityTimeout: 72,
+      MessageRetentionPeriod: 345600,
+      RedrivePolicy: {
+        maxReceiveCount: 4,
+      },
+    });
+    template.hasResourceProperties("AWS::Lambda::EventSourceMapping", {
+      BatchSize: 10,
+      ScalingConfig: {
+        MaximumConcurrency: 2,
+      },
+    });
+  });
+
+  it("routes configured EventBridge event types to the worker queue", () => {
+    const template = synthTemplate();
+
+    template.hasResourceProperties("AWS::Events::Rule", {
+      EventPattern: {
+        "detail-type": ["workRequest.created"],
+      },
+      State: "ENABLED",
+      Targets: Match.arrayWith([
+        Match.objectLike({
+          Arn: {
+            "Fn::GetAtt": [Match.stringLikeRegexp("sendNotificationQueue"), "Arn"],
+          },
+        }),
+      ]),
+    });
+  });
+
+  it("grants worker Lambda table access", () => {
+    const template = synthTemplate();
+
+    template.hasResourceProperties("AWS::IAM::Policy", {
+      PolicyDocument: {
+        Statement: Match.arrayWith([
+          Match.objectLike({
+            Action: Match.arrayWith(["dynamodb:GetItem", "dynamodb:PutItem"]),
+            Effect: "Allow",
+          }),
+        ]),
+      },
+      Roles: Match.arrayWith([
+        {
+          Ref: Match.stringLikeRegexp("sendNotificationFunctionServiceRole"),
+        },
+      ]),
+    });
+  });
 });
 
 function synthTemplate(): Template {
@@ -235,7 +309,7 @@ function workflowProps(): JawStackResourceWorkflowAppProps {
   return {
     appName: "jawstack-test",
     stage: "dev",
-    resources: [workRequestResource],
+    resources: [workerResource()],
     costProfile: {
       lambda: {
         defaultTimeoutSeconds: 12,
@@ -247,6 +321,11 @@ function workflowProps(): JawStackResourceWorkflowAppProps {
         billingMode: "onDemand",
         pointInTimeRecovery: false,
       },
+      queues: {
+        defaultMaxConcurrency: 5,
+        maxReceiveCount: 4,
+        requireDlq: true,
+      },
     },
     auth: {
       mode: "external",
@@ -255,7 +334,23 @@ function workflowProps(): JawStackResourceWorkflowAppProps {
     entrypoints: {
       apiHandler: entrypointDir,
       outboxHandler: entrypointDir,
+      workerHandlers: {
+        sendNotification: entrypointDir,
+      },
     },
+  };
+}
+
+function workerResource(): ResourceDefinition {
+  return {
+    ...workRequestResource,
+    workers: [
+      defineWorker({
+        name: "sendNotification",
+        eventTypes: ["workRequest.created"],
+        maxConcurrency: 2,
+      }),
+    ],
   };
 }
 

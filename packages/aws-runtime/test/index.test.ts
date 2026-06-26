@@ -1,5 +1,6 @@
 import {
   GetItemCommand,
+  PutItemCommand,
   QueryCommand,
   TransactWriteItemsCommand,
   UpdateItemCommand,
@@ -33,6 +34,7 @@ import {
   DynamoDbOutboxDispatcher,
   DynamoDbOutboxSweeper,
   DynamoDbRepository,
+  DynamoDbWorkerIdempotencyStore,
   EventBridgePublisher,
   fromActivityItem,
   fromIdempotencyItem,
@@ -56,6 +58,7 @@ import {
   toProjectionItem,
   toResourceStateItem,
   toWorkerIdempotencyItem,
+  SqsWorkerAdapter,
   workerIdempotencyKey,
   type LambdaHttpAdapterOptions,
   type LambdaHttpEvent,
@@ -1214,6 +1217,133 @@ describe("@jawstack/aws-runtime", () => {
       },
     });
   });
+
+  it("skips already-processed SQS worker events", async () => {
+    const dynamoDbClient = new RecordingDynamoDbClient([
+      {
+        Item: toWorkerIdempotencyItem({
+          workerName: "sendNotification",
+          eventId: "evt_123",
+          processedAt: "2026-06-25T12:00:00.000Z",
+          expiresAt: 1783003200,
+        }),
+      },
+    ]);
+    const handled: unknown[] = [];
+    const adapter = new SqsWorkerAdapter({
+      workerName: "sendNotification",
+      idempotencyStore: new DynamoDbWorkerIdempotencyStore({
+        client: dynamoDbClient,
+        tableName: "JawStackTable",
+      }),
+      handler: (message) => {
+        handled.push(message);
+      },
+    });
+
+    await expect(adapter.handle(sqsEvent(jawStackEvent()))).resolves.toEqual({
+      seen: 1,
+      processed: 0,
+      skipped: 1,
+    });
+    expect(handled).toHaveLength(0);
+    expect(dynamoDbClient.commands[0]).toBeInstanceOf(GetItemCommand);
+    expect(dynamoDbClient.commands).toHaveLength(1);
+  });
+
+  it("processes SQS worker events and writes processed markers", async () => {
+    const dynamoDbClient = new RecordingDynamoDbClient([{}, {}]);
+    const handled: unknown[] = [];
+    const adapter = new SqsWorkerAdapter({
+      workerName: "sendNotification",
+      idempotencyStore: new DynamoDbWorkerIdempotencyStore({
+        client: dynamoDbClient,
+        tableName: "JawStackTable",
+        clock: () => new Date("2026-06-25T12:00:00.000Z"),
+      }),
+      clock: () => new Date("2026-06-25T12:00:01.000Z"),
+      handler: (message) => {
+        handled.push(message);
+      },
+    });
+
+    await expect(adapter.handle(sqsEvent(jawStackEvent()))).resolves.toEqual({
+      seen: 1,
+      processed: 1,
+      skipped: 0,
+    });
+    expect(handled).toMatchObject([
+      {
+        messageId: "msg_123",
+        receivedAt: "2026-06-25T12:00:01.000Z",
+        event: {
+          eventId: "evt_123",
+        },
+      },
+    ]);
+    expect(dynamoDbClient.commands[0]).toBeInstanceOf(GetItemCommand);
+    expect(dynamoDbClient.commands[1]).toBeInstanceOf(PutItemCommand);
+    expect(dynamoDbClient.inputs[1]).toMatchObject({
+      TableName: "JawStackTable",
+      ConditionExpression: "attribute_not_exists(PK)",
+      Item: {
+        PK: {
+          S: "WORKER#sendNotification#PROCESSED",
+        },
+        SK: {
+          S: "evt_123",
+        },
+        expiresAt: {
+          N: "1783598400",
+        },
+      },
+    });
+  });
+
+  it("processes EventBridge-wrapped SQS worker events", async () => {
+    const dynamoDbClient = new RecordingDynamoDbClient([{}, {}]);
+    const handled: unknown[] = [];
+    const adapter = new SqsWorkerAdapter({
+      workerName: "sendNotification",
+      idempotencyStore: new DynamoDbWorkerIdempotencyStore({
+        client: dynamoDbClient,
+        tableName: "JawStackTable",
+      }),
+      handler: (message) => {
+        handled.push(message.event);
+      },
+    });
+
+    await expect(adapter.handle(sqsEventFromEventBridge(jawStackEvent()))).resolves.toMatchObject({
+      seen: 1,
+      processed: 1,
+      skipped: 0,
+    });
+    expect(handled).toMatchObject([
+      {
+        eventId: "evt_123",
+        eventType: "workRequest.assigned",
+      },
+    ]);
+  });
+
+  it("does not rethrow duplicate processed marker writes after handler success", async () => {
+    const dynamoDbClient = new RecordingDynamoDbClient([{}, conditionalFailure()]);
+    const adapter = new SqsWorkerAdapter({
+      workerName: "sendNotification",
+      idempotencyStore: new DynamoDbWorkerIdempotencyStore({
+        client: dynamoDbClient,
+        tableName: "JawStackTable",
+      }),
+      handler: () => undefined,
+    });
+
+    await expect(adapter.handle(sqsEvent(jawStackEvent()))).resolves.toEqual({
+      seen: 1,
+      processed: 0,
+      skipped: 1,
+    });
+  });
 });
 
 function resourceState(
@@ -1415,6 +1545,36 @@ function lambdaEvent(
 
 function jsonBody(response: LambdaHttpResponse): unknown {
   return JSON.parse(response.body) as unknown;
+}
+
+function sqsEvent(
+  event: JawStackEvent,
+): Readonly<{ Records: readonly [{ messageId: string; body: string }] }> {
+  return {
+    Records: [
+      {
+        messageId: "msg_123",
+        body: JSON.stringify(event),
+      },
+    ],
+  };
+}
+
+function sqsEventFromEventBridge(
+  event: JawStackEvent,
+): Readonly<{ Records: readonly [{ messageId: string; body: string }] }> {
+  return {
+    Records: [
+      {
+        messageId: "msg_123",
+        body: JSON.stringify({
+          source: "jawstack.test",
+          "detail-type": event.eventType,
+          detail: event,
+        }),
+      },
+    ],
+  };
 }
 
 class RecordingAwsClient {

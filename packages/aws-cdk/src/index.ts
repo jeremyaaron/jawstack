@@ -4,9 +4,16 @@ import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as events from "aws-cdk-lib/aws-events";
 import * as targets from "aws-cdk-lib/aws-events-targets";
 import * as lambda from "aws-cdk-lib/aws-lambda";
+import * as lambdaEventSources from "aws-cdk-lib/aws-lambda-event-sources";
 import * as logs from "aws-cdk-lib/aws-logs";
+import * as sqs from "aws-cdk-lib/aws-sqs";
 import { Duration, RemovalPolicy } from "aws-cdk-lib";
-import type { CostProfile, ManifestAuth, ResourceDefinition } from "@jawstack/core";
+import type {
+  CostProfile,
+  ManifestAuth,
+  ResourceDefinition,
+  WorkerDefinition,
+} from "@jawstack/core";
 import { Construct } from "constructs";
 
 export const packageName = "@jawstack/aws-cdk";
@@ -42,6 +49,8 @@ export class JawStackResourceWorkflowApp extends Construct {
   readonly apiFunction: lambda.Function;
   readonly outboxDispatcherFunction: lambda.Function;
   readonly outboxSweeperFunction: lambda.Function;
+  readonly workerFunctions: readonly lambda.Function[];
+  readonly workerQueues: readonly sqs.Queue[];
 
   constructor(scope: Construct, id: string, props: JawStackResourceWorkflowAppProps) {
     super(scope, id);
@@ -49,6 +58,7 @@ export class JawStackResourceWorkflowApp extends Construct {
     const names = resourceNames(props.appName, props.stage);
     const removalPolicy = removalPolicyFor(props.stage, props.removalPolicy);
     const lambdaDefaults = lambdaDefaultsFromCostProfile(props.costProfile);
+    const queueDefaults = queueDefaultsFromCostProfile(props.costProfile);
 
     const tableConstruct = new JawStackTableConstruct(this, "Table", {
       tableName: names.tableName,
@@ -81,6 +91,17 @@ export class JawStackResourceWorkflowApp extends Construct {
       lambdaDefaults,
       removalPolicy,
     });
+    const workerConstruct = new JawStackWorkerConstruct(this, "Workers", {
+      appName: props.appName,
+      stage: props.stage,
+      workers: workersFromResources(props.resources),
+      workerHandlers: props.entrypoints.workerHandlers ?? {},
+      table: tableConstruct.table,
+      eventBus: eventBusConstruct.eventBus,
+      lambdaDefaults,
+      queueDefaults,
+      removalPolicy,
+    });
 
     this.table = tableConstruct.table;
     this.eventBus = eventBusConstruct.eventBus;
@@ -88,6 +109,8 @@ export class JawStackResourceWorkflowApp extends Construct {
     this.apiFunction = apiConstruct.apiFunction;
     this.outboxDispatcherFunction = outboxConstruct.dispatcherFunction;
     this.outboxSweeperFunction = outboxConstruct.sweeperFunction;
+    this.workerFunctions = workerConstruct.workerFunctions;
+    this.workerQueues = workerConstruct.workerQueues;
   }
 }
 
@@ -98,6 +121,11 @@ type LambdaDefaults = Readonly<{
   reservedConcurrency: number;
   sweeperReservedConcurrency: number;
   logRetention: logs.RetentionDays;
+}>;
+
+type QueueDefaults = Readonly<{
+  maxReceiveCount: number;
+  defaultMaxConcurrency: number;
 }>;
 
 type JawStackTableConstructProps = Readonly<{
@@ -302,6 +330,107 @@ class JawStackOutboxConstruct extends Construct {
   }
 }
 
+type JawStackWorkerConstructProps = Readonly<{
+  appName: string;
+  stage: string;
+  workers: readonly WorkerDefinition[];
+  workerHandlers: Readonly<Record<string, string>>;
+  table: dynamodb.Table;
+  eventBus: events.EventBus;
+  lambdaDefaults: LambdaDefaults;
+  queueDefaults: QueueDefaults;
+  removalPolicy: RemovalPolicy;
+}>;
+
+class JawStackWorkerConstruct extends Construct {
+  readonly workerFunctions: readonly lambda.Function[];
+  readonly workerQueues: readonly sqs.Queue[];
+
+  constructor(scope: Construct, id: string, props: JawStackWorkerConstructProps) {
+    super(scope, id);
+
+    const workerFunctions: lambda.Function[] = [];
+    const workerQueues: sqs.Queue[] = [];
+
+    props.workers.forEach((worker) => {
+      const codePath = props.workerHandlers[worker.name];
+
+      if (codePath === undefined) {
+        throw new Error(`Missing worker handler entrypoint for "${worker.name}".`);
+      }
+
+      const maxConcurrency = worker.maxConcurrency ?? props.queueDefaults.defaultMaxConcurrency;
+      const workerName = `${safeName(props.appName)}-${safeName(props.stage)}-${safeName(worker.name)}`;
+      const functionName = `${workerName}-worker`;
+      const timeout = props.lambdaDefaults.timeout;
+      const visibilityTimeout = Duration.seconds(timeout.toSeconds() * 6);
+
+      createLogGroup(
+        this,
+        `${worker.name}LogGroup`,
+        functionName,
+        props.lambdaDefaults,
+        props.removalPolicy,
+      );
+
+      const dlq = new sqs.Queue(this, `${worker.name}Dlq`, {
+        queueName: `${workerName}-dlq`,
+        retentionPeriod: Duration.days(14),
+        removalPolicy: props.removalPolicy,
+      });
+      const queue = new sqs.Queue(this, `${worker.name}Queue`, {
+        queueName: `${workerName}-queue`,
+        visibilityTimeout,
+        retentionPeriod: Duration.days(4),
+        deadLetterQueue: {
+          queue: dlq,
+          maxReceiveCount: props.queueDefaults.maxReceiveCount,
+        },
+        removalPolicy: props.removalPolicy,
+      });
+      const workerFunction = new lambda.Function(this, `${worker.name}Function`, {
+        functionName,
+        runtime: lambda.Runtime.NODEJS_22_X,
+        architecture: lambda.Architecture.ARM_64,
+        handler: "index.handler",
+        code: lambda.Code.fromAsset(codePath),
+        timeout,
+        memorySize: props.lambdaDefaults.memorySize,
+        reservedConcurrentExecutions: maxConcurrency,
+        environment: {
+          JAWSTACK_APP_NAME: props.appName,
+          JAWSTACK_STAGE: props.stage,
+          JAWSTACK_TABLE_NAME: props.table.tableName,
+          JAWSTACK_EVENT_BUS_NAME: props.eventBus.eventBusName,
+          JAWSTACK_WORKER_NAME: worker.name,
+        },
+      });
+
+      props.table.grantReadWriteData(workerFunction);
+      workerFunction.addEventSource(
+        new lambdaEventSources.SqsEventSource(queue, {
+          batchSize: 10,
+          maxConcurrency,
+        }),
+      );
+
+      new events.Rule(this, `${worker.name}EventRule`, {
+        eventBus: props.eventBus,
+        eventPattern: {
+          detailType: [...worker.eventTypes],
+        },
+        targets: [new targets.SqsQueue(queue)],
+      });
+
+      workerFunctions.push(workerFunction);
+      workerQueues.push(queue);
+    });
+
+    this.workerFunctions = workerFunctions;
+    this.workerQueues = workerQueues;
+  }
+}
+
 function createLogGroup(
   scope: Construct,
   id: string,
@@ -395,6 +524,19 @@ function lambdaDefaultsFromCostProfile(costProfile: CostProfile): LambdaDefaults
     sweeperReservedConcurrency: 1,
     logRetention: logs.RetentionDays.ONE_WEEK,
   };
+}
+
+function queueDefaultsFromCostProfile(costProfile: CostProfile): QueueDefaults {
+  const queueProfile = recordProperty(costProfile, "queues");
+
+  return {
+    defaultMaxConcurrency: numberProperty(queueProfile, "defaultMaxConcurrency") ?? 2,
+    maxReceiveCount: numberProperty(queueProfile, "maxReceiveCount") ?? 3,
+  };
+}
+
+function workersFromResources(resources: readonly ResourceDefinition[]): WorkerDefinition[] {
+  return resources.flatMap((resource) => resource.workers);
 }
 
 function pointInTimeRecoveryFromCostProfile(costProfile: CostProfile): boolean {
