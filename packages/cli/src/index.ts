@@ -34,6 +34,17 @@ export type JawStackConfig = Readonly<{
     region?: string;
     profile?: string;
   }>;
+  smoke?: Readonly<{
+    apiUrl?: string;
+    timeoutMs?: number;
+    intervalMs?: number;
+    auth?: Readonly<{
+      subject?: string;
+      displayName?: string;
+      roles?: readonly string[];
+      tenantId?: string;
+    }>;
+  }>;
 }>;
 
 export type CliResult = Readonly<{
@@ -57,16 +68,37 @@ export type CommandRunner = (
   }>,
 ) => Promise<CommandRunResult>;
 
+export type HttpRequest = Readonly<{
+  body?: string;
+  headers?: Readonly<Record<string, string>>;
+  method?: string;
+}>;
+
+export type HttpResponse = Readonly<{
+  ok: boolean;
+  status: number;
+  json(): Promise<unknown>;
+  text(): Promise<string>;
+}>;
+
+export type HttpClient = (url: string, init?: HttpRequest) => Promise<HttpResponse>;
+
+export type Sleep = (milliseconds: number) => Promise<void>;
+
 export type RunCliOptions = Readonly<{
   commandRunner?: CommandRunner;
   cwd?: string;
   env?: Readonly<Record<string, string | undefined>>;
+  httpClient?: HttpClient;
+  sleep?: Sleep;
 }>;
 
 type ParsedArgs = Readonly<{
+  apiUrl?: string;
   command: string | undefined;
   allowDevAuth: boolean;
   help: boolean;
+  intervalMs?: number;
   configPath?: string;
   profile?: string;
   region?: string;
@@ -74,6 +106,7 @@ type ParsedArgs = Readonly<{
   stable: boolean;
   json: boolean;
   strict: boolean;
+  timeoutMs?: number;
   deploy: boolean;
 }>;
 
@@ -105,6 +138,16 @@ class CliError extends Error {
   }
 }
 
+class SmokeStepError extends Error {
+  readonly step: string;
+
+  constructor(step: string, message: string) {
+    super(message);
+    this.name = "SmokeStepError";
+    this.step = step;
+  }
+}
+
 export function defineJawStackApp<const TConfig extends JawStackConfig>(config: TConfig): TConfig {
   return config;
 }
@@ -123,7 +166,7 @@ Commands:
   doctor      Validate the local JawStack configuration
   manifest    Print the safe application manifest as JSON
   deploy      Deploy a stage through CDK
-  smoke       Placeholder for smoke tests
+  smoke       Verify a deployed Work Request API
   destroy     Destroy a stage through CDK
 
 Options:
@@ -131,6 +174,9 @@ Options:
   --stage <stage>       Override the config stage
   --region <region>     Override config.aws.region for deploy/destroy
   --profile <profile>   Override config.aws.profile for deploy/destroy
+  --api-url <url>       Override deployed API URL for smoke
+  --timeout-ms <ms>     Smoke polling timeout in milliseconds
+  --interval-ms <ms>    Smoke polling interval in milliseconds
   --allow-dev-auth      Allow dev auth during deploy checks
   --json                Print machine-readable output where supported
   --stable              Omit generated timestamps where supported
@@ -145,6 +191,8 @@ export async function runCli(
   const cwd = options.cwd ?? process.cwd();
   const env = options.env ?? process.env;
   const commandRunner = options.commandRunner ?? runCommand;
+  const httpClient = options.httpClient ?? fetchHttp;
+  const sleep = options.sleep ?? sleepFor;
   let parsed: ParsedArgs | undefined;
 
   try {
@@ -164,7 +212,7 @@ export async function runCli(
       case "destroy":
         return await runLifecycleCommand("destroy", parsed, cwd, env, commandRunner);
       case "smoke":
-        return ok(`${parsed.command} is not implemented in this MVP phase yet.\n`);
+        return await runSmokeCommand(parsed, cwd, httpClient, sleep);
       default:
         throw new CliError(
           2,
@@ -244,9 +292,11 @@ export function renderFindingsJson(findings: readonly Finding[]): string {
 }
 
 function parseArgs(argv: readonly string[]): ParsedArgs {
+  let apiUrl: string | undefined;
   let command: string | undefined;
   let allowDevAuth = false;
   let help = false;
+  let intervalMs: number | undefined;
   let configPath: string | undefined;
   let profile: string | undefined;
   let region: string | undefined;
@@ -254,6 +304,7 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
   let stable = false;
   let json = false;
   let strict = false;
+  let timeoutMs: number | undefined;
   let deploy = false;
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -293,7 +344,15 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
       continue;
     }
 
-    if (arg === "--config" || arg === "--stage" || arg === "--region" || arg === "--profile") {
+    if (
+      arg === "--config" ||
+      arg === "--stage" ||
+      arg === "--region" ||
+      arg === "--profile" ||
+      arg === "--api-url" ||
+      arg === "--timeout-ms" ||
+      arg === "--interval-ms"
+    ) {
       const value = argv[index + 1];
 
       if (value === undefined || value.startsWith("-")) {
@@ -313,8 +372,14 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
         stage = value;
       } else if (arg === "--region") {
         region = value;
-      } else {
+      } else if (arg === "--profile") {
         profile = value;
+      } else if (arg === "--api-url") {
+        apiUrl = value;
+      } else if (arg === "--timeout-ms") {
+        timeoutMs = parsePositiveIntegerOption(arg, value);
+      } else {
+        intervalMs = parsePositiveIntegerOption(arg, value);
       }
 
       index += 1;
@@ -354,9 +419,11 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
   }
 
   return {
+    ...(apiUrl === undefined ? {} : { apiUrl }),
     command,
     allowDevAuth,
     help,
+    ...(intervalMs === undefined ? {} : { intervalMs }),
     ...(configPath === undefined ? {} : { configPath }),
     ...(profile === undefined ? {} : { profile }),
     ...(region === undefined ? {} : { region }),
@@ -364,8 +431,26 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
     stable,
     json,
     strict,
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
     deploy,
   };
+}
+
+function parsePositiveIntegerOption(optionName: string, value: string): number {
+  const parsed = Number(value);
+
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new CliError(
+      2,
+      cliFinding({
+        id: "cli.option.invalid-value",
+        title: "Invalid option value",
+        message: `Option "${optionName}" must be a positive integer.`,
+      }),
+    );
+  }
+
+  return parsed;
 }
 
 function isLifecycleCommand(command: string): command is "deploy" | "destroy" | "smoke" {
@@ -539,6 +624,110 @@ async function runLifecycleCommand(
     stdout: `${result.stdout}${result.stdout.length > 0 && !result.stdout.endsWith("\n") ? "\n" : ""}${summary}`,
     stderr: result.stderr,
   };
+}
+
+async function runSmokeCommand(
+  parsed: ParsedArgs,
+  cwd: string,
+  httpClient: HttpClient,
+  sleep: Sleep,
+): Promise<CliResult> {
+  const loaded = await loadJawStackConfig({
+    cwd,
+    ...(parsed.configPath === undefined ? {} : { configPath: parsed.configPath }),
+  });
+  const stage = parsed.stage ?? loaded.config.stage ?? "dev";
+  const apiUrl = await resolveSmokeApiUrl({
+    config: loaded.config,
+    cwd,
+    parsed,
+    stage,
+  });
+  const timeoutMs = parsed.timeoutMs ?? loaded.config.smoke?.timeoutMs ?? 30_000;
+  const intervalMs = parsed.intervalMs ?? loaded.config.smoke?.intervalMs ?? 1_000;
+  const headers = smokeAuthHeaders(loaded.config);
+  const title = `JawStack smoke ${stage} ${new Date().toISOString()}`;
+
+  try {
+    const apiBaseUrl = normalizeSmokeApiBaseUrl(apiUrl);
+    const created = await smokePostJson<{ resourceId: string; status: string }>({
+      body: {
+        input: {
+          title,
+          description: "Created by jawstack smoke.",
+        },
+      },
+      headers,
+      httpClient,
+      step: "create work request",
+      url: `${apiBaseUrl}/resources/workRequest/commands/create`,
+    });
+
+    if (!isNonEmptyString(created.resourceId)) {
+      throw new SmokeStepError(
+        "create work request",
+        "Create response did not include resourceId.",
+      );
+    }
+
+    const detail = await smokeGetJson<{
+      resourceId: string;
+      state?: { status?: string; title?: string };
+    }>({
+      headers,
+      httpClient,
+      step: "read work request",
+      url: `${apiBaseUrl}/resources/workRequest/${encodeURIComponent(created.resourceId)}`,
+    });
+
+    if (detail.resourceId !== created.resourceId) {
+      throw new SmokeStepError(
+        "read work request",
+        `Detail response returned resourceId "${detail.resourceId}".`,
+      );
+    }
+
+    const activity = await pollSmokeActivity({
+      apiBaseUrl,
+      headers,
+      httpClient,
+      intervalMs,
+      resourceId: created.resourceId,
+      sleep,
+      timeoutMs,
+    });
+    const status = detail.state?.status ?? created.status;
+
+    return ok(
+      [
+        `Smoke passed for ${loaded.config.appName} ${stage}.`,
+        `API: ${apiBaseUrl}`,
+        "Resource:",
+        `  resourceId: ${created.resourceId}`,
+        `  status: ${status}`,
+        "Checks:",
+        "  create command: ok",
+        "  detail read: ok",
+        `  activity poll: ok (${activity.items.length} item${activity.items.length === 1 ? "" : "s"})`,
+        "",
+      ].join("\n"),
+    );
+  } catch (error) {
+    const step = error instanceof SmokeStepError ? error.step : "smoke";
+    const message = error instanceof Error ? error.message : "Unknown smoke failure.";
+
+    return {
+      exitCode: 1,
+      stdout: "",
+      stderr: [
+        `Smoke failed for ${loaded.config.appName} ${stage}.`,
+        `API: ${apiUrl}`,
+        `Step: ${step}`,
+        message,
+        "",
+      ].join("\n"),
+    };
+  }
 }
 
 export function validateDoctor(context: DoctorContext): readonly Finding[] {
@@ -955,6 +1144,195 @@ async function readCdkOutputs(outputFile: string): Promise<Record<string, Record
     );
   } catch {
     return {};
+  }
+}
+
+async function resolveSmokeApiUrl(input: {
+  readonly config: JawStackConfig;
+  readonly cwd: string;
+  readonly parsed: ParsedArgs;
+  readonly stage: string;
+}): Promise<string> {
+  if (input.parsed.apiUrl !== undefined) {
+    return input.parsed.apiUrl;
+  }
+
+  if (input.config.smoke?.apiUrl !== undefined) {
+    return input.config.smoke.apiUrl;
+  }
+
+  const outputs = await readCdkOutputs(
+    path.join(input.cwd, ".jawstack", "outputs", `${input.stage}.json`),
+  );
+  const outputUrl = findApiUrlInOutputs(outputs);
+
+  if (outputUrl !== undefined) {
+    return outputUrl;
+  }
+
+  throw new CliError(
+    2,
+    cliFinding({
+      id: "smoke.api-url.missing",
+      title: "Smoke API URL not found",
+      message: `No API URL was found for stage "${input.stage}".`,
+      fix: "Run jawstack deploy first, pass --api-url, or set smoke.apiUrl in jawstack.config.ts.",
+    }),
+  );
+}
+
+function findApiUrlInOutputs(outputs: Record<string, Record<string, string>>): string | undefined {
+  const entries = Object.values(outputs).flatMap((stackOutputs) => Object.entries(stackOutputs));
+  const preferred = entries.find(([key, value]) => /api.*url/i.test(key) && isHttpUrl(value));
+
+  if (preferred !== undefined) {
+    return preferred[1];
+  }
+
+  return entries.find(([, value]) => isHttpUrl(value))?.[1];
+}
+
+function normalizeSmokeApiBaseUrl(apiUrl: string): string {
+  const trimmed = apiUrl.trim().replace(/\/+$/, "");
+
+  if (!isHttpUrl(trimmed)) {
+    throw new SmokeStepError("resolve API URL", `Invalid API URL "${apiUrl}".`);
+  }
+
+  return trimmed.endsWith("/api") ? trimmed : `${trimmed}/api`;
+}
+
+function smokeAuthHeaders(config: JawStackConfig): Record<string, string> {
+  const auth = config.smoke?.auth;
+  const roles = auth?.roles ?? ["user", "manager"];
+
+  return {
+    "content-type": "application/json",
+    "x-jawstack-subject": auth?.subject ?? "smoke_user",
+    "x-jawstack-display-name": auth?.displayName ?? "JawStack Smoke",
+    "x-jawstack-roles": roles.join(","),
+    ...(auth?.tenantId === undefined ? {} : { "x-jawstack-tenant-id": auth.tenantId }),
+  };
+}
+
+async function smokePostJson<T>(input: {
+  readonly body: unknown;
+  readonly headers: Readonly<Record<string, string>>;
+  readonly httpClient: HttpClient;
+  readonly step: string;
+  readonly url: string;
+}): Promise<T> {
+  return smokeRequestJson<T>({
+    headers: input.headers,
+    httpClient: input.httpClient,
+    init: {
+      body: JSON.stringify(input.body),
+      headers: input.headers,
+      method: "POST",
+    },
+    step: input.step,
+    url: input.url,
+  });
+}
+
+async function smokeGetJson<T>(input: {
+  readonly headers: Readonly<Record<string, string>>;
+  readonly httpClient: HttpClient;
+  readonly step: string;
+  readonly url: string;
+}): Promise<T> {
+  return smokeRequestJson<T>({
+    headers: input.headers,
+    httpClient: input.httpClient,
+    init: {
+      headers: input.headers,
+      method: "GET",
+    },
+    step: input.step,
+    url: input.url,
+  });
+}
+
+async function smokeRequestJson<T>(input: {
+  readonly headers: Readonly<Record<string, string>>;
+  readonly httpClient: HttpClient;
+  readonly init: HttpRequest;
+  readonly step: string;
+  readonly url: string;
+}): Promise<T> {
+  const response = await input.httpClient(input.url, input.init);
+
+  if (!response.ok) {
+    throw new SmokeStepError(
+      input.step,
+      `HTTP ${response.status} from ${input.url}: ${await response.text()}`,
+    );
+  }
+
+  const body = await response.json();
+
+  if (!isRecord(body) || body.ok !== true || !("data" in body)) {
+    throw new SmokeStepError(input.step, `Unexpected response body from ${input.url}.`);
+  }
+
+  return body.data as T;
+}
+
+async function pollSmokeActivity(input: {
+  readonly apiBaseUrl: string;
+  readonly headers: Readonly<Record<string, string>>;
+  readonly httpClient: HttpClient;
+  readonly intervalMs: number;
+  readonly resourceId: string;
+  readonly sleep: Sleep;
+  readonly timeoutMs: number;
+}): Promise<{ items: readonly { activityType?: string }[] }> {
+  let elapsedMs = 0;
+
+  while (true) {
+    const activity = await smokeGetJson<{ items: readonly { activityType?: string }[] }>({
+      headers: input.headers,
+      httpClient: input.httpClient,
+      step: "read activity",
+      url: `${input.apiBaseUrl}/resources/workRequest/${encodeURIComponent(input.resourceId)}/activity`,
+    });
+
+    if (activity.items.some((item) => item.activityType === "created")) {
+      return activity;
+    }
+
+    if (elapsedMs >= input.timeoutMs) {
+      throw new SmokeStepError(
+        "poll activity",
+        `Timed out after ${input.timeoutMs}ms waiting for created activity.`,
+      );
+    }
+
+    await input.sleep(input.intervalMs);
+    elapsedMs += input.intervalMs;
+  }
+}
+
+async function fetchHttp(url: string, init?: HttpRequest): Promise<HttpResponse> {
+  return fetch(url, {
+    ...(init?.body === undefined ? {} : { body: init.body }),
+    ...(init?.headers === undefined ? {} : { headers: init.headers }),
+    ...(init?.method === undefined ? {} : { method: init.method }),
+  });
+}
+
+async function sleepFor(milliseconds: number): Promise<void> {
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
+}
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
   }
 }
 

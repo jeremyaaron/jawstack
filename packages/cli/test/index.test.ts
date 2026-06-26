@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -6,6 +6,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   type CommandRunner,
+  type HttpClient,
+  type HttpResponse,
   defineJawStackApp,
   describePackage,
   getHelpText,
@@ -90,6 +92,26 @@ function validConfigSource(
       aws: ${options.awsSource ?? "{ region: 'us-east-1', profile: 'test-profile' }"}
     };
   `;
+}
+
+async function writeStackOutputs(
+  cwd: string,
+  stage: string,
+  outputs: Record<string, Record<string, string>>,
+): Promise<void> {
+  const directory = path.join(cwd, ".jawstack", "outputs");
+
+  await mkdir(directory, { recursive: true });
+  await writeFile(path.join(directory, `${stage}.json`), JSON.stringify(outputs));
+}
+
+function jsonResponse(status: number, body: unknown): HttpResponse {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => body,
+    text: async () => JSON.stringify(body),
+  };
 }
 
 describe("@jawstack/cli", () => {
@@ -443,10 +465,157 @@ describe("@jawstack/cli", () => {
     expect(JSON.parse(renderFindingsJson(findings))).toEqual({ findings });
   });
 
-  it("keeps smoke as the remaining placeholder lifecycle command", async () => {
-    const result = await runCli(["smoke"]);
+  it("runs a deployed Work Request smoke flow", async () => {
+    const cwd = await createFixture(validConfigSource({ stage: "prod" }));
+    const calls: Array<{
+      url: string;
+      method?: string;
+      headers?: Readonly<Record<string, string>>;
+    }> = [];
+    await writeStackOutputs(cwd, "prod", {
+      WorkRequestsStack: {
+        ApiUrl: "https://api.example.test",
+      },
+    });
+    const httpClient: HttpClient = async (url, init) => {
+      calls.push({
+        url,
+        ...(init?.method === undefined ? {} : { method: init.method }),
+        ...(init?.headers === undefined ? {} : { headers: init.headers }),
+      });
+
+      if (url === "https://api.example.test/api/resources/workRequest/commands/create") {
+        return jsonResponse(200, {
+          ok: true,
+          data: {
+            resourceId: "wr_smoke",
+            status: "open",
+          },
+        });
+      }
+
+      if (url === "https://api.example.test/api/resources/workRequest/wr_smoke") {
+        return jsonResponse(200, {
+          ok: true,
+          data: {
+            resourceId: "wr_smoke",
+            state: {
+              status: "open",
+            },
+          },
+        });
+      }
+
+      if (url === "https://api.example.test/api/resources/workRequest/wr_smoke/activity") {
+        return jsonResponse(200, {
+          ok: true,
+          data: {
+            items: [{ activityType: "created" }],
+          },
+        });
+      }
+
+      return jsonResponse(404, { ok: false, error: { message: "not found" } });
+    };
+
+    const result = await runCli(["smoke", "prod"], {
+      cwd,
+      httpClient,
+    });
 
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain("not implemented");
+    expect(result.stderr).toBe("");
+    expect(result.stdout).toContain("Smoke passed for work-requests prod.");
+    expect(result.stdout).toContain("resourceId: wr_smoke");
+    expect(result.stdout).toContain("activity poll: ok");
+    expect(calls.map((call) => call.method)).toEqual(["POST", "GET", "GET"]);
+    expect(calls[0]?.headers).toMatchObject({
+      "x-jawstack-subject": "smoke_user",
+      "x-jawstack-roles": "user,manager",
+    });
+  });
+
+  it("returns a clear smoke failure when the API returns an error", async () => {
+    const cwd = await createFixture(validConfigSource());
+    const httpClient: HttpClient = async () =>
+      jsonResponse(500, { ok: false, error: { message: "boom" } });
+
+    const result = await runCli(["smoke", "dev", "--api-url", "https://api.example.test"], {
+      cwd,
+      httpClient,
+    });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain("Smoke failed for work-requests dev.");
+    expect(result.stderr).toContain("Step: create work request");
+    expect(result.stderr).toContain("HTTP 500");
+  });
+
+  it("times out while polling for smoke activity", async () => {
+    const cwd = await createFixture(validConfigSource());
+    let activityCalls = 0;
+    let sleeps = 0;
+    const httpClient: HttpClient = async (url) => {
+      if (url.endsWith("/commands/create")) {
+        return jsonResponse(200, {
+          ok: true,
+          data: {
+            resourceId: "wr_timeout",
+            status: "open",
+          },
+        });
+      }
+
+      if (url.endsWith("/wr_timeout")) {
+        return jsonResponse(200, {
+          ok: true,
+          data: {
+            resourceId: "wr_timeout",
+            state: {
+              status: "open",
+            },
+          },
+        });
+      }
+
+      if (url.endsWith("/wr_timeout/activity")) {
+        activityCalls += 1;
+        return jsonResponse(200, {
+          ok: true,
+          data: {
+            items: [],
+          },
+        });
+      }
+
+      return jsonResponse(404, { ok: false });
+    };
+
+    const result = await runCli(
+      [
+        "smoke",
+        "dev",
+        "--api-url",
+        "https://api.example.test",
+        "--timeout-ms",
+        "2",
+        "--interval-ms",
+        "1",
+      ],
+      {
+        cwd,
+        httpClient,
+        sleep: async () => {
+          sleeps += 1;
+        },
+      },
+    );
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("Step: poll activity");
+    expect(result.stderr).toContain("Timed out after 2ms");
+    expect(activityCalls).toBe(3);
+    expect(sleeps).toBe(2);
   });
 });
