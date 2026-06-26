@@ -1,4 +1,10 @@
-import { GetItemCommand, QueryCommand, TransactWriteItemsCommand } from "@aws-sdk/client-dynamodb";
+import {
+  GetItemCommand,
+  QueryCommand,
+  TransactWriteItemsCommand,
+  UpdateItemCommand,
+} from "@aws-sdk/client-dynamodb";
+import { PutEventsCommand } from "@aws-sdk/client-eventbridge";
 import { unmarshall } from "@aws-sdk/util-dynamodb";
 import type {
   ActivityRecord,
@@ -17,7 +23,10 @@ import {
   buildResourceStateTransactWriteItem,
   describePackage,
   DynamoDbCommandUnitOfWork,
+  DynamoDbOutboxDispatcher,
+  DynamoDbOutboxSweeper,
   DynamoDbRepository,
+  EventBridgePublisher,
   fromActivityItem,
   fromIdempotencyItem,
   fromOutboxEventItem,
@@ -30,6 +39,7 @@ import {
   outboxEventKey,
   outboxStatusKey,
   packageName,
+  pendingOutboxItemFromStreamRecord,
   projectionPartitionKey,
   projectionKey,
   resourceStateKey,
@@ -673,6 +683,339 @@ describe("@jawstack/aws-runtime", () => {
       },
     });
   });
+
+  it("publishes events to EventBridge with the full event envelope", async () => {
+    const client = new RecordingAwsClient([
+      { FailedEntryCount: 0, Entries: [{ EventId: "eb_123" }] },
+    ]);
+    const publisher = new EventBridgePublisher({
+      client,
+      eventBusName: "jawstack-dev-events",
+      source: "jawstack.dev",
+    });
+
+    await expect(publisher.publish(jawStackEvent())).resolves.toBeUndefined();
+
+    expect(client.commands[0]).toBeInstanceOf(PutEventsCommand);
+    expect(client.inputs[0]).toEqual({
+      Entries: [
+        {
+          Source: "jawstack.dev",
+          DetailType: "workRequest.assigned",
+          Detail: JSON.stringify(jawStackEvent()),
+          EventBusName: "jawstack-dev-events",
+        },
+      ],
+    });
+  });
+
+  it("surfaces EventBridge publish failures", async () => {
+    const client = new RecordingAwsClient([
+      {
+        FailedEntryCount: 1,
+        Entries: [
+          {
+            ErrorCode: "InternalFailure",
+            ErrorMessage: "temporary failure",
+          },
+        ],
+      },
+    ]);
+    const publisher = new EventBridgePublisher({
+      client,
+      eventBusName: "jawstack-dev-events",
+    });
+
+    await expect(publisher.publish(jawStackEvent())).rejects.toMatchObject({
+      code: "runtime.unavailable",
+      details: {
+        errorCode: "InternalFailure",
+      },
+    });
+  });
+
+  it("filters stream records to pending outbox inserts and status changes", () => {
+    const pending = toOutboxEventItem(jawStackEvent());
+    const published = toOutboxEventItem(jawStackEvent(), {
+      status: "PUBLISHED",
+      publishedAt: "2026-06-25T12:01:00.000Z",
+    });
+
+    expect(
+      pendingOutboxItemFromStreamRecord({
+        eventName: "INSERT",
+        dynamodb: {
+          NewImage: pending,
+        },
+      }),
+    ).toMatchObject({
+      eventId: "evt_123",
+      status: "PENDING",
+    });
+    expect(
+      pendingOutboxItemFromStreamRecord({
+        eventName: "MODIFY",
+        dynamodb: {
+          OldImage: published,
+          NewImage: pending,
+        },
+      }),
+    ).toMatchObject({
+      eventId: "evt_123",
+      status: "PENDING",
+    });
+    expect(
+      pendingOutboxItemFromStreamRecord({
+        eventName: "MODIFY",
+        dynamodb: {
+          OldImage: pending,
+          NewImage: pending,
+        },
+      }),
+    ).toBeUndefined();
+    expect(
+      pendingOutboxItemFromStreamRecord({
+        eventName: "INSERT",
+        dynamodb: {
+          NewImage: toResourceStateItem(resourceState()),
+        },
+      }),
+    ).toBeUndefined();
+  });
+
+  it("dispatches pending stream outbox records and marks them published", async () => {
+    const dynamoDbClient = new RecordingAwsClient([{}]);
+    const eventBridgeClient = new RecordingAwsClient([
+      {
+        FailedEntryCount: 0,
+        Entries: [{ EventId: "eb_123" }],
+      },
+    ]);
+    const dispatcher = new DynamoDbOutboxDispatcher({
+      dynamoDbClient,
+      tableName: "JawStackTable",
+      publisher: new EventBridgePublisher({
+        client: eventBridgeClient,
+        eventBusName: "jawstack-dev-events",
+        source: "jawstack.dev",
+      }),
+      clock: () => new Date("2026-06-25T12:02:00.000Z"),
+    });
+
+    await expect(
+      dispatcher.dispatchStream({
+        Records: [
+          {
+            eventName: "INSERT",
+            dynamodb: {
+              NewImage: toOutboxEventItem(jawStackEvent()),
+            },
+          },
+        ],
+      }),
+    ).resolves.toEqual({
+      seen: 1,
+      ignored: 0,
+      published: 1,
+      markedPublished: 1,
+    });
+
+    expect(eventBridgeClient.commands[0]).toBeInstanceOf(PutEventsCommand);
+    expect(dynamoDbClient.commands[0]).toBeInstanceOf(UpdateItemCommand);
+    expect(dynamoDbClient.inputs[0]).toMatchObject({
+      TableName: "JawStackTable",
+      Key: {
+        PK: {
+          S: "OUTBOX#evt_123",
+        },
+        SK: {
+          S: "EVENT",
+        },
+      },
+      ConditionExpression: "#status = :pending",
+      ExpressionAttributeValues: {
+        ":published": {
+          S: "PUBLISHED",
+        },
+        ":publishedAt": {
+          S: "2026-06-25T12:02:00.000Z",
+        },
+        ":gsi1pk": {
+          S: "OUTBOX#PUBLISHED",
+        },
+        ":gsi1sk": {
+          S: "2026-06-25T12:02:00.000Z#evt_123",
+        },
+      },
+    });
+  });
+
+  it("ignores non-outbox stream records", async () => {
+    const dynamoDbClient = new RecordingAwsClient([]);
+    const eventBridgeClient = new RecordingAwsClient([]);
+    const dispatcher = new DynamoDbOutboxDispatcher({
+      dynamoDbClient,
+      tableName: "JawStackTable",
+      publisher: new EventBridgePublisher({
+        client: eventBridgeClient,
+        eventBusName: "jawstack-dev-events",
+      }),
+    });
+
+    await expect(
+      dispatcher.dispatchStream({
+        Records: [
+          {
+            eventName: "INSERT",
+            dynamodb: {
+              NewImage: toResourceStateItem(resourceState()),
+            },
+          },
+          {
+            eventName: "MODIFY",
+            dynamodb: {
+              NewImage: toOutboxEventItem(jawStackEvent(), {
+                status: "PUBLISHED",
+                publishedAt: "2026-06-25T12:03:00.000Z",
+              }),
+            },
+          },
+        ],
+      }),
+    ).resolves.toEqual({
+      seen: 2,
+      ignored: 2,
+      published: 0,
+      markedPublished: 0,
+    });
+    expect(eventBridgeClient.commands).toHaveLength(0);
+    expect(dynamoDbClient.commands).toHaveLength(0);
+  });
+
+  it("treats already-published outbox update conflicts as dispatched", async () => {
+    const dynamoDbClient = new RecordingAwsClient([conditionalFailure()]);
+    const eventBridgeClient = new RecordingAwsClient([
+      {
+        FailedEntryCount: 0,
+        Entries: [{ EventId: "eb_123" }],
+      },
+    ]);
+    const dispatcher = new DynamoDbOutboxDispatcher({
+      dynamoDbClient,
+      tableName: "JawStackTable",
+      publisher: new EventBridgePublisher({
+        client: eventBridgeClient,
+        eventBusName: "jawstack-dev-events",
+      }),
+      clock: () => new Date("2026-06-25T12:02:00.000Z"),
+    });
+
+    await expect(
+      dispatcher.dispatchStream({
+        Records: [
+          {
+            eventName: "INSERT",
+            dynamodb: {
+              NewImage: toOutboxEventItem(jawStackEvent()),
+            },
+          },
+        ],
+      }),
+    ).resolves.toEqual({
+      seen: 1,
+      ignored: 0,
+      published: 1,
+      markedPublished: 0,
+    });
+  });
+
+  it("surfaces dispatcher publish failures before marking published", async () => {
+    const dynamoDbClient = new RecordingAwsClient([]);
+    const eventBridgeClient = new RecordingAwsClient([
+      {
+        FailedEntryCount: 1,
+        Entries: [{ ErrorCode: "InternalFailure" }],
+      },
+    ]);
+    const dispatcher = new DynamoDbOutboxDispatcher({
+      dynamoDbClient,
+      tableName: "JawStackTable",
+      publisher: new EventBridgePublisher({
+        client: eventBridgeClient,
+        eventBusName: "jawstack-dev-events",
+      }),
+    });
+
+    await expect(
+      dispatcher.dispatchStream({
+        Records: [
+          {
+            eventName: "INSERT",
+            dynamodb: {
+              NewImage: toOutboxEventItem(jawStackEvent()),
+            },
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({
+      code: "runtime.unavailable",
+    });
+    expect(dynamoDbClient.commands).toHaveLength(0);
+  });
+
+  it("sweeps stale pending outbox records with the configured batch limit", async () => {
+    const staleEvent = jawStackEvent({
+      eventId: "evt_stale",
+      occurredAt: "2026-06-25T12:00:00.000Z",
+    });
+    const dynamoDbClient = new RecordingAwsClient([
+      {
+        Items: [toOutboxEventItem(staleEvent)],
+      },
+      {},
+    ]);
+    const eventBridgeClient = new RecordingAwsClient([
+      {
+        FailedEntryCount: 0,
+        Entries: [{ EventId: "eb_stale" }],
+      },
+    ]);
+    const sweeper = new DynamoDbOutboxSweeper({
+      dynamoDbClient,
+      tableName: "JawStackTable",
+      publisher: new EventBridgePublisher({
+        client: eventBridgeClient,
+        eventBusName: "jawstack-dev-events",
+      }),
+      clock: () => new Date("2026-06-25T12:05:00.000Z"),
+      batchLimit: 1,
+    });
+
+    await expect(sweeper.sweep()).resolves.toEqual({
+      seen: 1,
+      ignored: 0,
+      published: 1,
+      markedPublished: 1,
+    });
+
+    expect(dynamoDbClient.commands[0]).toBeInstanceOf(QueryCommand);
+    expect(dynamoDbClient.inputs[0]).toMatchObject({
+      TableName: "JawStackTable",
+      IndexName: "GSI1",
+      KeyConditionExpression: "GSI1PK = :status AND GSI1SK < :staleBefore",
+      Limit: 1,
+      ExpressionAttributeValues: {
+        ":status": {
+          S: "OUTBOX#PENDING",
+        },
+        ":staleBefore": {
+          S: "2026-06-25T12:03:00.000Z#~",
+        },
+      },
+    });
+    expect(dynamoDbClient.commands[1]).toBeInstanceOf(UpdateItemCommand);
+    expect(eventBridgeClient.commands[0]).toBeInstanceOf(PutEventsCommand);
+  });
 });
 
 function resourceState(
@@ -717,7 +1060,9 @@ function activityRecord(): ActivityRecord {
   };
 }
 
-function jawStackEvent(): JawStackEvent<Record<string, unknown>> {
+function jawStackEvent(
+  overrides: Partial<JawStackEvent<Record<string, unknown>>> = {},
+): JawStackEvent<Record<string, unknown>> {
   return {
     envelopeVersion: 1,
     eventId: "evt_123",
@@ -737,6 +1082,7 @@ function jawStackEvent(): JawStackEvent<Record<string, unknown>> {
     payload: {
       assigneeId: "user_456",
     },
+    ...overrides,
   };
 }
 
@@ -790,7 +1136,7 @@ function commandCommitInput(options: {
   };
 }
 
-class RecordingDynamoDbClient {
+class RecordingAwsClient {
   readonly commands: unknown[] = [];
   readonly inputs: unknown[] = [];
   private readonly results: unknown[];
@@ -811,6 +1157,14 @@ class RecordingDynamoDbClient {
 
     return result;
   }
+}
+
+class RecordingDynamoDbClient extends RecordingAwsClient {}
+
+function conditionalFailure(): Error {
+  const error = new Error("Conditional check failed");
+  error.name = "ConditionalCheckFailedException";
+  return error;
 }
 
 function transactionCanceled(

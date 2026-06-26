@@ -2,12 +2,15 @@ import {
   GetItemCommand,
   QueryCommand,
   TransactWriteItemsCommand,
+  UpdateItemCommand,
   type AttributeValue,
   type GetItemCommandOutput,
   type QueryCommandOutput,
   type TransactWriteItem,
   type TransactWriteItemsCommandOutput,
+  type UpdateItemCommandOutput,
 } from "@aws-sdk/client-dynamodb";
+import { PutEventsCommand, type PutEventsCommandOutput } from "@aws-sdk/client-eventbridge";
 import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
 import type {
   ActivityRecord,
@@ -149,6 +152,14 @@ export type DynamoDbCommand = Readonly<{
   input: unknown;
 }>;
 
+export type AwsSdkCommand = DynamoDbCommand;
+
+export type AwsSdkClientLike = Readonly<{
+  send(command: AwsSdkCommand): Promise<unknown>;
+}>;
+
+export type EventBridgeClientLike = AwsSdkClientLike;
+
 export type DynamoDbRepositoryOptions = Readonly<{
   client: DynamoDbClientLike;
   tableName: string;
@@ -168,9 +179,52 @@ export type DynamoDbCommandUnitOfWorkOptions = Readonly<{
   idempotency?: DynamoDbCommandTransactionOptions["idempotency"];
 }>;
 
+export type EventBridgePublisherOptions = Readonly<{
+  client: EventBridgeClientLike;
+  eventBusName: string;
+  source?: string;
+}>;
+
+export type OutboxDispatchResult = Readonly<{
+  seen: number;
+  ignored: number;
+  published: number;
+  markedPublished: number;
+}>;
+
+export type DynamoDbStreamRecord = Readonly<{
+  eventName?: string;
+  dynamodb?: Readonly<{
+    NewImage?: DynamoDbItem;
+    OldImage?: DynamoDbItem;
+  }>;
+}>;
+
+export type DynamoDbStreamEvent = Readonly<{
+  Records?: readonly DynamoDbStreamRecord[];
+}>;
+
+export type DynamoDbOutboxDispatcherOptions = Readonly<{
+  dynamoDbClient: DynamoDbClientLike;
+  tableName: string;
+  publisher: EventBridgePublisher;
+  clock?: () => Date;
+}>;
+
+export type DynamoDbOutboxSweeperOptions = Readonly<{
+  dynamoDbClient: DynamoDbClientLike;
+  tableName: string;
+  publisher: EventBridgePublisher;
+  clock?: () => Date;
+  staleAfterMs?: number;
+  batchLimit?: number;
+}>;
+
 const INVERTED_TIMESTAMP_MAX = 9_999_999_999_999;
 const INVERTED_TIMESTAMP_WIDTH = 13;
 const DEFAULT_IDEMPOTENCY_TTL_SECONDS = 7 * 24 * 60 * 60;
+const DEFAULT_OUTBOX_SWEEP_BATCH_LIMIT = 10;
+const DEFAULT_OUTBOX_STALE_AFTER_MS = 2 * 60 * 1000;
 
 export class DynamoDbRepository implements LocalHttpReadableRepository {
   private readonly client: DynamoDbClientLike;
@@ -314,6 +368,169 @@ export class DynamoDbCommandUnitOfWork implements CommandUnitOfWork {
     } catch (error) {
       throw mapDynamoDbCommitError(error, input);
     }
+  }
+}
+
+export class EventBridgePublisher {
+  private readonly client: EventBridgeClientLike;
+  private readonly eventBusName: string;
+  private readonly source: string | undefined;
+
+  constructor(options: EventBridgePublisherOptions) {
+    this.client = options.client;
+    this.eventBusName = options.eventBusName;
+    this.source = options.source;
+  }
+
+  async publish<TPayload = unknown>(event: JawStackEvent<TPayload>): Promise<void> {
+    try {
+      const output = await sendDynamoDb<PutEventsCommandOutput>(
+        this.client,
+        new PutEventsCommand({
+          Entries: [
+            {
+              Source: this.source ?? event.source,
+              DetailType: event.eventType,
+              Detail: JSON.stringify(event),
+              EventBusName: this.eventBusName,
+            },
+          ],
+        }),
+      );
+
+      const failedEntry = output.Entries?.find((entry) => entry.ErrorCode !== undefined);
+
+      if ((output.FailedEntryCount ?? 0) > 0 || failedEntry !== undefined) {
+        throw new JawStackRuntimeError("runtime.unavailable", "EventBridge publish failed.", {
+          errorCode: failedEntry?.ErrorCode,
+          errorMessage: failedEntry?.ErrorMessage,
+          failedEntryCount: output.FailedEntryCount ?? 0,
+        });
+      }
+    } catch (error) {
+      if (error instanceof JawStackRuntimeError) {
+        throw error;
+      }
+
+      throw new JawStackRuntimeError("runtime.unavailable", "EventBridge publish failed.", {
+        causeName: errorName(error),
+      });
+    }
+  }
+}
+
+export class DynamoDbOutboxDispatcher {
+  private readonly dynamoDbClient: DynamoDbClientLike;
+  private readonly tableName: string;
+  private readonly publisher: EventBridgePublisher;
+  private readonly clock: () => Date;
+
+  constructor(options: DynamoDbOutboxDispatcherOptions) {
+    this.dynamoDbClient = options.dynamoDbClient;
+    this.tableName = options.tableName;
+    this.publisher = options.publisher;
+    this.clock = options.clock ?? (() => new Date());
+  }
+
+  async dispatchStream(event: DynamoDbStreamEvent): Promise<OutboxDispatchResult> {
+    return this.dispatchRecords(event.Records ?? []);
+  }
+
+  async dispatchRecords(records: readonly DynamoDbStreamRecord[]): Promise<OutboxDispatchResult> {
+    let ignored = 0;
+    let published = 0;
+    let markedPublished = 0;
+
+    for (const record of records) {
+      const item = pendingOutboxItemFromStreamRecord(record);
+
+      if (item === undefined) {
+        ignored += 1;
+        continue;
+      }
+
+      const result = await publishAndMarkOutboxItem({
+        item,
+        publisher: this.publisher,
+        dynamoDbClient: this.dynamoDbClient,
+        tableName: this.tableName,
+        publishedAt: this.clock().toISOString(),
+      });
+
+      published += result.published;
+      markedPublished += result.markedPublished;
+    }
+
+    return {
+      seen: records.length,
+      ignored,
+      published,
+      markedPublished,
+    };
+  }
+}
+
+export class DynamoDbOutboxSweeper {
+  private readonly dynamoDbClient: DynamoDbClientLike;
+  private readonly tableName: string;
+  private readonly publisher: EventBridgePublisher;
+  private readonly clock: () => Date;
+  private readonly staleAfterMs: number;
+  private readonly batchLimit: number;
+
+  constructor(options: DynamoDbOutboxSweeperOptions) {
+    this.dynamoDbClient = options.dynamoDbClient;
+    this.tableName = options.tableName;
+    this.publisher = options.publisher;
+    this.clock = options.clock ?? (() => new Date());
+    this.staleAfterMs = options.staleAfterMs ?? DEFAULT_OUTBOX_STALE_AFTER_MS;
+    this.batchLimit = options.batchLimit ?? DEFAULT_OUTBOX_SWEEP_BATCH_LIMIT;
+  }
+
+  async sweep(): Promise<OutboxDispatchResult> {
+    const now = this.clock();
+    const staleBefore = new Date(now.getTime() - this.staleAfterMs).toISOString();
+    const output = await sendDynamoDb<QueryCommandOutput>(
+      this.dynamoDbClient,
+      new QueryCommand({
+        TableName: this.tableName,
+        IndexName: "GSI1",
+        KeyConditionExpression: "GSI1PK = :status AND GSI1SK < :staleBefore",
+        ExpressionAttributeValues: marshallItem({
+          ":status": "OUTBOX#PENDING",
+          ":staleBefore": `${staleBefore}#~`,
+        }),
+        ScanIndexForward: true,
+        Limit: this.batchLimit,
+      }),
+    );
+
+    const items = (output.Items ?? [])
+      .map((item) => safeOutboxItem(item))
+      .filter((item): item is DynamoDbOutboxEventItem => item?.status === "PENDING");
+
+    let published = 0;
+    let markedPublished = 0;
+
+    for (const item of items) {
+      const result = await publishAndMarkOutboxItem({
+        item,
+        publisher: this.publisher,
+        dynamoDbClient: this.dynamoDbClient,
+        tableName: this.tableName,
+        publishedAt: now.toISOString(),
+      });
+
+      published += result.published;
+      markedPublished += result.markedPublished;
+    }
+
+    return {
+      seen: output.Items?.length ?? 0,
+      ignored: (output.Items?.length ?? 0) - items.length,
+      published,
+      markedPublished,
+    };
   }
 }
 
@@ -488,6 +705,31 @@ export function fromOutboxEventItem<TPayload = unknown>(
   item: DynamoDbItem,
 ): DynamoDbOutboxEventItem<TPayload> {
   return unmarshallItem<DynamoDbOutboxEventItem<TPayload>>(item);
+}
+
+export function pendingOutboxItemFromStreamRecord(
+  record: DynamoDbStreamRecord,
+): DynamoDbOutboxEventItem | undefined {
+  const item =
+    record.dynamodb?.NewImage === undefined ? undefined : safeOutboxItem(record.dynamodb.NewImage);
+
+  if (item === undefined || item.status !== "PENDING") {
+    return undefined;
+  }
+
+  if (record.eventName === "INSERT") {
+    return item;
+  }
+
+  if (record.eventName === "MODIFY") {
+    const previous =
+      record.dynamodb?.OldImage === undefined
+        ? undefined
+        : safeOutboxItem(record.dynamodb.OldImage);
+    return previous?.status === "PENDING" ? undefined : item;
+  }
+
+  return undefined;
 }
 
 export function toIdempotencyItem<TResponse = unknown>(
@@ -796,6 +1038,82 @@ function conditionalFailureIndexes(error: unknown): number[] {
   });
 
   return indexes;
+}
+
+async function publishAndMarkOutboxItem<TPayload = unknown>(
+  input: Readonly<{
+    item: DynamoDbOutboxEventItem<TPayload>;
+    publisher: EventBridgePublisher;
+    dynamoDbClient: DynamoDbClientLike;
+    tableName: string;
+    publishedAt: string;
+  }>,
+): Promise<Readonly<{ published: number; markedPublished: number }>> {
+  await input.publisher.publish(input.item.event);
+  const markedPublished = await markOutboxEventPublished({
+    item: input.item,
+    dynamoDbClient: input.dynamoDbClient,
+    tableName: input.tableName,
+    publishedAt: input.publishedAt,
+  });
+
+  return {
+    published: 1,
+    markedPublished: markedPublished ? 1 : 0,
+  };
+}
+
+async function markOutboxEventPublished<TPayload = unknown>(
+  input: Readonly<{
+    item: DynamoDbOutboxEventItem<TPayload>;
+    dynamoDbClient: DynamoDbClientLike;
+    tableName: string;
+    publishedAt: string;
+  }>,
+): Promise<boolean> {
+  try {
+    await sendDynamoDb<UpdateItemCommandOutput>(
+      input.dynamoDbClient,
+      new UpdateItemCommand({
+        TableName: input.tableName,
+        Key: marshallItem(outboxEventKey(input.item.eventId)),
+        UpdateExpression:
+          "SET #status = :published, publishedAt = :publishedAt, updatedAt = :publishedAt, attempts = if_not_exists(attempts, :zero) + :one, GSI1PK = :gsi1pk, GSI1SK = :gsi1sk REMOVE lastError",
+        ConditionExpression: "#status = :pending",
+        ExpressionAttributeNames: {
+          "#status": "status",
+        },
+        ExpressionAttributeValues: marshallItem({
+          ":published": "PUBLISHED",
+          ":pending": "PENDING",
+          ":publishedAt": input.publishedAt,
+          ":zero": 0,
+          ":one": 1,
+          ":gsi1pk": "OUTBOX#PUBLISHED",
+          ":gsi1sk": `${input.publishedAt}#${input.item.eventId}`,
+        }),
+      }),
+    );
+
+    return true;
+  } catch (error) {
+    if (isDynamoDbConditionalFailure(error)) {
+      return false;
+    }
+
+    throw new JawStackRuntimeError("runtime.unavailable", "DynamoDB outbox update failed.", {
+      causeName: errorName(error),
+    });
+  }
+}
+
+function safeOutboxItem(item: DynamoDbItem): DynamoDbOutboxEventItem | undefined {
+  try {
+    const outboxItem = fromOutboxEventItem(item);
+    return outboxItem.itemKind === "OUTBOX_EVENT" ? outboxItem : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function cancellationReasons(error: unknown): ReadonlyArray<Readonly<{ Code?: string }>> {
