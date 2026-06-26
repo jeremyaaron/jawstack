@@ -1,4 +1,8 @@
 #!/usr/bin/env node
-import { getHelpText } from "./index";
+import { runCreateJawStackCli } from "./index";
 
-console.log(getHelpText());
+const exitCode = await runCreateJawStackCli(process.argv.slice(2));
+
+if (exitCode !== 0) {
+  process.exitCode = exitCode;
+}
