@@ -5,6 +5,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  type CommandRunner,
   defineJawStackApp,
   describePackage,
   getHelpText,
@@ -62,6 +63,7 @@ function validConfigSource(
   options: {
     duplicate?: boolean;
     authSource?: string;
+    awsSource?: string;
     costProfileSource?: string;
     stage?: string;
   } = {},
@@ -84,7 +86,8 @@ function validConfigSource(
       stage: ${JSON.stringify(options.stage ?? "test")},
       resources: ${resources},
       auth: ${authSource},
-      costProfile: ${options.costProfileSource ?? validCostProfileSource()}
+      costProfile: ${options.costProfileSource ?? validCostProfileSource()},
+      aws: ${options.awsSource ?? "{ region: 'us-east-1', profile: 'test-profile' }"}
     };
   `;
 }
@@ -244,6 +247,166 @@ describe("@jawstack/cli", () => {
     expect(output.findings.map((finding) => finding.id)).toEqual(["auth.dev.deploy-blocked"]);
   });
 
+  it("reports deploy AWS readiness findings", async () => {
+    const cwd = await createFixture(validConfigSource({ awsSource: "{}" }));
+    const result = await runCli(["doctor", "--deploy", "--json"], {
+      cwd,
+      env: {},
+    });
+    const output = JSON.parse(result.stdout) as { findings: Array<{ id: string }> };
+
+    expect(result.exitCode).toBe(1);
+    expect(output.findings.map((finding) => finding.id)).toEqual([
+      "aws.region.missing",
+      "aws.credentials.unavailable",
+    ]);
+  });
+
+  it("invokes CDK deploy with stage, region, profile, and outputs", async () => {
+    const cwd = await createFixture(validConfigSource());
+    const calls: Array<{
+      command: string;
+      args: readonly string[];
+      env: Readonly<Record<string, string | undefined>>;
+    }> = [];
+    const commandRunner: CommandRunner = async (command, args, options) => {
+      calls.push({ command, args, env: options.env });
+      const outputFile = args[args.indexOf("--outputs-file") + 1];
+
+      if (outputFile !== undefined) {
+        await writeFile(
+          outputFile,
+          JSON.stringify({
+            WorkRequestsStack: {
+              ApiUrl: "https://api.example.test",
+              FrontendUrl: "https://app.example.test",
+            },
+          }),
+        );
+      }
+
+      return {
+        exitCode: 0,
+        stdout: "cdk deploy output\n",
+        stderr: "",
+      };
+    };
+
+    const result = await runCli(["deploy", "prod", "--region", "us-west-2"], {
+      commandRunner,
+      cwd,
+      env: {},
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(result.stdout).toContain("cdk deploy output");
+    expect(result.stdout).toContain("Deployed work-requests prod.");
+    expect(result.stdout).toContain("WorkRequestsStack.ApiUrl: https://api.example.test");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      command: "pnpm",
+      env: {
+        AWS_DEFAULT_REGION: "us-west-2",
+        AWS_PROFILE: "test-profile",
+        AWS_REGION: "us-west-2",
+      },
+    });
+    expect(calls[0]?.args).toEqual([
+      "exec",
+      "cdk",
+      "deploy",
+      "--context",
+      "jawstackStage=prod",
+      "--context",
+      `jawstackConfig=${path.join(cwd, "jawstack.config.ts")}`,
+      "--profile",
+      "test-profile",
+      "--require-approval",
+      "never",
+      "--outputs-file",
+      path.join(cwd, ".jawstack", "outputs", "prod.json"),
+    ]);
+  });
+
+  it("blocks deploy with dev auth unless explicitly overridden", async () => {
+    const cwd = await createFixture(
+      validConfigSource({
+        authSource: "{ mode: 'dev', provider: 'dev' }",
+      }),
+    );
+    let calls = 0;
+    const commandRunner: CommandRunner = async () => {
+      calls += 1;
+      return {
+        exitCode: 0,
+        stdout: "",
+        stderr: "",
+      };
+    };
+
+    const blocked = await runCli(["deploy", "prod"], {
+      commandRunner,
+      cwd,
+      env: {},
+    });
+    const allowed = await runCli(["deploy", "prod", "--allow-dev-auth"], {
+      commandRunner,
+      cwd,
+      env: {},
+    });
+
+    expect(blocked.exitCode).toBe(1);
+    expect(blocked.stderr).toContain("auth.dev.deploy-blocked");
+    expect(allowed.exitCode).toBe(0);
+    expect(calls).toBe(1);
+  });
+
+  it("invokes CDK destroy with stage, region, and force", async () => {
+    const cwd = await createFixture(validConfigSource({ stage: "dev" }));
+    const calls: Array<{
+      command: string;
+      args: readonly string[];
+      env: Readonly<Record<string, string | undefined>>;
+    }> = [];
+    const commandRunner: CommandRunner = async (command, args, options) => {
+      calls.push({ command, args, env: options.env });
+      return {
+        exitCode: 0,
+        stdout: "cdk destroy output\n",
+        stderr: "",
+      };
+    };
+
+    const result = await runCli(["destroy", "--profile", "override-profile"], {
+      commandRunner,
+      cwd,
+      env: {},
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("cdk destroy output");
+    expect(result.stdout).toContain("Destroyed work-requests dev.");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.env).toMatchObject({
+      AWS_DEFAULT_REGION: "us-east-1",
+      AWS_PROFILE: "override-profile",
+      AWS_REGION: "us-east-1",
+    });
+    expect(calls[0]?.args).toEqual([
+      "exec",
+      "cdk",
+      "destroy",
+      "--context",
+      "jawstackStage=dev",
+      "--context",
+      `jawstackConfig=${path.join(cwd, "jawstack.config.ts")}`,
+      "--profile",
+      "override-profile",
+      "--force",
+    ]);
+  });
+
   it("returns exit code 2 when config is missing", async () => {
     const cwd = await createFixture();
     const result = await runCli(["manifest"], { cwd });
@@ -280,12 +443,10 @@ describe("@jawstack/cli", () => {
     expect(JSON.parse(renderFindingsJson(findings))).toEqual({ findings });
   });
 
-  it("runs placeholder lifecycle commands", async () => {
-    for (const command of ["deploy", "smoke", "destroy"]) {
-      const result = await runCli([command]);
+  it("keeps smoke as the remaining placeholder lifecycle command", async () => {
+    const result = await runCli(["smoke"]);
 
-      expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain("not implemented");
-    }
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("not implemented");
   });
 });

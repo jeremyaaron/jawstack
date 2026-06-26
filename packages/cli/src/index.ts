@@ -1,4 +1,5 @@
-import { stat } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { mkdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -41,14 +42,34 @@ export type CliResult = Readonly<{
   stderr: string;
 }>;
 
+export type CommandRunResult = Readonly<{
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+}>;
+
+export type CommandRunner = (
+  command: string,
+  args: readonly string[],
+  options: Readonly<{
+    cwd: string;
+    env: Readonly<Record<string, string | undefined>>;
+  }>,
+) => Promise<CommandRunResult>;
+
 export type RunCliOptions = Readonly<{
+  commandRunner?: CommandRunner;
   cwd?: string;
+  env?: Readonly<Record<string, string | undefined>>;
 }>;
 
 type ParsedArgs = Readonly<{
   command: string | undefined;
+  allowDevAuth: boolean;
   help: boolean;
   configPath?: string;
+  profile?: string;
+  region?: string;
   stage?: string;
   stable: boolean;
   json: boolean;
@@ -66,6 +87,10 @@ type DoctorContext = Readonly<{
   configPath: string;
   stage: string;
   deploy: boolean;
+  allowDevAuth: boolean;
+  env: Readonly<Record<string, string | undefined>>;
+  profile?: string;
+  region?: string;
 }>;
 
 class CliError extends Error {
@@ -97,17 +122,20 @@ Usage:
 Commands:
   doctor      Validate the local JawStack configuration
   manifest    Print the safe application manifest as JSON
-  deploy      Placeholder for AWS deployment
+  deploy      Deploy a stage through CDK
   smoke       Placeholder for smoke tests
-  destroy     Placeholder for AWS teardown
+  destroy     Destroy a stage through CDK
 
 Options:
-  --config <path>  Load a specific config file
-  --stage <stage>  Override the config stage
-  --json           Print machine-readable output where supported
-  --stable         Omit generated timestamps where supported
-  --strict         Treat warnings as blocking findings
-  --help           Show help`;
+  --config <path>       Load a specific config file
+  --stage <stage>       Override the config stage
+  --region <region>     Override config.aws.region for deploy/destroy
+  --profile <profile>   Override config.aws.profile for deploy/destroy
+  --allow-dev-auth      Allow dev auth during deploy checks
+  --json                Print machine-readable output where supported
+  --stable              Omit generated timestamps where supported
+  --strict              Treat warnings as blocking findings
+  --help                Show help`;
 }
 
 export async function runCli(
@@ -115,6 +143,8 @@ export async function runCli(
   options: RunCliOptions = {},
 ): Promise<CliResult> {
   const cwd = options.cwd ?? process.cwd();
+  const env = options.env ?? process.env;
+  const commandRunner = options.commandRunner ?? runCommand;
   let parsed: ParsedArgs | undefined;
 
   try {
@@ -126,12 +156,14 @@ export async function runCli(
 
     switch (parsed.command) {
       case "doctor":
-        return await runDoctor(parsed, cwd);
+        return await runDoctor(parsed, cwd, env);
       case "manifest":
-        return await runManifest(parsed, cwd);
+        return await runManifest(parsed, cwd, env);
       case "deploy":
-      case "smoke":
+        return await runLifecycleCommand("deploy", parsed, cwd, env, commandRunner);
       case "destroy":
+        return await runLifecycleCommand("destroy", parsed, cwd, env, commandRunner);
+      case "smoke":
         return ok(`${parsed.command} is not implemented in this MVP phase yet.\n`);
       default:
         throw new CliError(
@@ -213,8 +245,11 @@ export function renderFindingsJson(findings: readonly Finding[]): string {
 
 function parseArgs(argv: readonly string[]): ParsedArgs {
   let command: string | undefined;
+  let allowDevAuth = false;
   let help = false;
   let configPath: string | undefined;
+  let profile: string | undefined;
+  let region: string | undefined;
   let stage: string | undefined;
   let stable = false;
   let json = false;
@@ -253,7 +288,12 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
       continue;
     }
 
-    if (arg === "--config" || arg === "--stage") {
+    if (arg === "--allow-dev-auth") {
+      allowDevAuth = true;
+      continue;
+    }
+
+    if (arg === "--config" || arg === "--stage" || arg === "--region" || arg === "--profile") {
       const value = argv[index + 1];
 
       if (value === undefined || value.startsWith("-")) {
@@ -269,8 +309,12 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
 
       if (arg === "--config") {
         configPath = value;
-      } else {
+      } else if (arg === "--stage") {
         stage = value;
+      } else if (arg === "--region") {
+        region = value;
+      } else {
+        profile = value;
       }
 
       index += 1;
@@ -294,6 +338,11 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
       continue;
     }
 
+    if (isLifecycleCommand(command) && stage === undefined) {
+      stage = arg;
+      continue;
+    }
+
     throw new CliError(
       2,
       cliFinding({
@@ -306,8 +355,11 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
 
   return {
     command,
+    allowDevAuth,
     help,
     ...(configPath === undefined ? {} : { configPath }),
+    ...(profile === undefined ? {} : { profile }),
+    ...(region === undefined ? {} : { region }),
     ...(stage === undefined ? {} : { stage }),
     stable,
     json,
@@ -316,7 +368,15 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
   };
 }
 
-async function runDoctor(parsed: ParsedArgs, cwd: string): Promise<CliResult> {
+function isLifecycleCommand(command: string): command is "deploy" | "destroy" | "smoke" {
+  return command === "deploy" || command === "destroy" || command === "smoke";
+}
+
+async function runDoctor(
+  parsed: ParsedArgs,
+  cwd: string,
+  env: Readonly<Record<string, string | undefined>>,
+): Promise<CliResult> {
   const loaded = await loadJawStackConfig({
     cwd,
     ...(parsed.configPath === undefined ? {} : { configPath: parsed.configPath }),
@@ -327,6 +387,10 @@ async function runDoctor(parsed: ParsedArgs, cwd: string): Promise<CliResult> {
     configPath: loaded.path,
     stage,
     deploy: parsed.deploy,
+    allowDevAuth: parsed.allowDevAuth,
+    env,
+    ...(parsed.profile === undefined ? {} : { profile: parsed.profile }),
+    ...(parsed.region === undefined ? {} : { region: parsed.region }),
   });
   const blocking = hasBlockingFindings(findings, parsed.strict);
   const output = parsed.json ? renderFindingsJson(findings) : renderFindingsHuman(findings);
@@ -338,7 +402,11 @@ async function runDoctor(parsed: ParsedArgs, cwd: string): Promise<CliResult> {
   };
 }
 
-async function runManifest(parsed: ParsedArgs, cwd: string): Promise<CliResult> {
+async function runManifest(
+  parsed: ParsedArgs,
+  cwd: string,
+  env: Readonly<Record<string, string | undefined>>,
+): Promise<CliResult> {
   const loaded = await loadJawStackConfig({
     cwd,
     ...(parsed.configPath === undefined ? {} : { configPath: parsed.configPath }),
@@ -350,6 +418,8 @@ async function runManifest(parsed: ParsedArgs, cwd: string): Promise<CliResult> 
     configPath: loaded.path,
     stage,
     deploy: false,
+    allowDevAuth: false,
+    env,
   });
   const configFindings = doctorFindings.filter(
     (finding) =>
@@ -381,6 +451,96 @@ async function runManifest(parsed: ParsedArgs, cwd: string): Promise<CliResult> 
   return ok(serializeManifest(manifest));
 }
 
+async function runLifecycleCommand(
+  command: "deploy" | "destroy",
+  parsed: ParsedArgs,
+  cwd: string,
+  env: Readonly<Record<string, string | undefined>>,
+  commandRunner: CommandRunner,
+): Promise<CliResult> {
+  const loaded = await loadJawStackConfig({
+    cwd,
+    ...(parsed.configPath === undefined ? {} : { configPath: parsed.configPath }),
+  });
+  const stage = parsed.stage ?? loaded.config.stage ?? "dev";
+  const profile = parsed.profile ?? loaded.config.aws?.profile ?? env.AWS_PROFILE;
+  const region =
+    parsed.region ?? loaded.config.aws?.region ?? env.AWS_REGION ?? env.AWS_DEFAULT_REGION;
+  const findings = validateDoctor({
+    config: loaded.config,
+    configPath: loaded.path,
+    stage,
+    deploy: true,
+    allowDevAuth: parsed.allowDevAuth,
+    env,
+    ...(profile === undefined ? {} : { profile }),
+    ...(region === undefined ? {} : { region }),
+  });
+
+  if (hasBlockingFindings(findings, parsed.strict)) {
+    const output = parsed.json ? renderFindingsJson(findings) : renderFindingsHuman(findings);
+
+    return {
+      exitCode: 1,
+      stdout: "",
+      stderr: `${output}\n`,
+    };
+  }
+
+  const outputFile = path.join(cwd, ".jawstack", "outputs", `${stage}.json`);
+
+  if (command === "deploy") {
+    await mkdir(path.dirname(outputFile), { recursive: true });
+  }
+
+  const cdkArgs = cdkCommandArgs(command, {
+    configPath: loaded.path,
+    outputFile,
+    profile,
+    stage,
+  });
+  const childEnv = {
+    ...env,
+    ...(region === undefined
+      ? {}
+      : {
+          AWS_DEFAULT_REGION: region,
+          AWS_REGION: region,
+        }),
+    ...(profile === undefined ? {} : { AWS_PROFILE: profile }),
+  };
+  const result = await commandRunner("pnpm", cdkArgs, {
+    cwd,
+    env: childEnv,
+  });
+
+  if (result.exitCode !== 0) {
+    return {
+      exitCode: result.exitCode,
+      stdout: result.stdout,
+      stderr:
+        result.stderr.length === 0
+          ? `CDK ${command} failed with exit code ${result.exitCode}.\n`
+          : result.stderr,
+    };
+  }
+
+  const summary =
+    command === "deploy"
+      ? await renderDeploySummary({
+          appName: loaded.config.appName,
+          outputFile,
+          stage,
+        })
+      : `Destroyed ${loaded.config.appName} ${stage}.\n`;
+
+  return {
+    exitCode: 0,
+    stdout: `${result.stdout}${result.stdout.length > 0 && !result.stdout.endsWith("\n") ? "\n" : ""}${summary}`,
+    stderr: result.stderr,
+  };
+}
+
 export function validateDoctor(context: DoctorContext): readonly Finding[] {
   const findings: Finding[] = [];
   const registryFindings = validateResourceRegistry(context.config.resources).findings;
@@ -389,6 +549,7 @@ export function validateDoctor(context: DoctorContext): readonly Finding[] {
   findings.push(...registryFindings);
   findings.push(...authFindings);
   findings.push(...validateCostProfile(context.config.costProfile, context.configPath));
+  findings.push(...validateAwsConfig(context));
 
   if (!hasBlockingFindings([...registryFindings, ...authFindings], false)) {
     try {
@@ -446,7 +607,7 @@ function validateAuthConfig(context: DoctorContext): Finding[] {
   const usesDevAuth =
     authMode === "dev" || authProvider === "dev" || authProvider === "DevAuthProvider";
 
-  if (context.deploy && usesDevAuth && !isLocalStage(context.stage)) {
+  if (context.deploy && usesDevAuth && !context.allowDevAuth && !isLocalStage(context.stage)) {
     findings.push(
       doctorFinding({
         id: "auth.dev.deploy-blocked",
@@ -455,7 +616,56 @@ function validateAuthConfig(context: DoctorContext): Finding[] {
         message: `Dev auth is configured for deploy stage "${context.stage}".`,
         location: { file: context.configPath, path: "auth" },
         impact: "A deployed non-local stage would accept demo authentication assumptions.",
-        fix: "Use a non-dev auth provider or run doctor without --deploy for local checks.",
+        fix: "Use a non-dev auth provider, deploy a local/dev stage, or pass --allow-dev-auth only for a reviewed temporary environment.",
+      }),
+    );
+  }
+
+  return findings;
+}
+
+function validateAwsConfig(context: DoctorContext): Finding[] {
+  if (!context.deploy) {
+    return [];
+  }
+
+  const findings: Finding[] = [];
+  const region =
+    context.region ??
+    context.config.aws?.region ??
+    context.env.AWS_REGION ??
+    context.env.AWS_DEFAULT_REGION;
+  const profile = context.profile ?? context.config.aws?.profile ?? context.env.AWS_PROFILE;
+  const hasCredentialEnvironment =
+    isNonEmptyString(context.env.AWS_ACCESS_KEY_ID) ||
+    isNonEmptyString(context.env.AWS_WEB_IDENTITY_TOKEN_FILE) ||
+    isNonEmptyString(context.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI) ||
+    isNonEmptyString(context.env.AWS_CONTAINER_CREDENTIALS_FULL_URI);
+
+  if (!isNonEmptyString(region)) {
+    findings.push(
+      doctorFinding({
+        id: "aws.region.missing",
+        severity: "error",
+        title: "Missing AWS region",
+        message: "Deploy checks require an AWS region.",
+        location: { file: context.configPath, path: "aws.region" },
+        impact: "CDK cannot deploy or destroy a deterministic stage without a target region.",
+        fix: "Set aws.region in jawstack.config.ts, pass --region, or set AWS_REGION.",
+      }),
+    );
+  }
+
+  if (!isNonEmptyString(profile) && !hasCredentialEnvironment) {
+    findings.push(
+      doctorFinding({
+        id: "aws.credentials.unavailable",
+        severity: "error",
+        title: "AWS credentials are unavailable",
+        message: "Deploy checks could not find an AWS profile or credential environment.",
+        location: { file: context.configPath, path: "aws.profile" },
+        impact: "CDK deploy and destroy commands would fail before reaching AWS.",
+        fix: "Set aws.profile, pass --profile, set AWS_PROFILE, or provide AWS credential environment variables.",
       }),
     );
   }
@@ -671,6 +881,121 @@ function validateCostProfile(costProfile: CostProfile, configPath: string): Find
   }
 
   return findings;
+}
+
+function cdkCommandArgs(
+  command: "deploy" | "destroy",
+  input: Readonly<{
+    configPath: string;
+    outputFile: string;
+    profile: string | undefined;
+    stage: string;
+  }>,
+): readonly string[] {
+  const commonArgs = [
+    "exec",
+    "cdk",
+    command,
+    "--context",
+    `jawstackStage=${input.stage}`,
+    "--context",
+    `jawstackConfig=${input.configPath}`,
+    ...(input.profile === undefined ? [] : ["--profile", input.profile]),
+  ];
+
+  if (command === "deploy") {
+    return [...commonArgs, "--require-approval", "never", "--outputs-file", input.outputFile];
+  }
+
+  return [...commonArgs, "--force"];
+}
+
+async function renderDeploySummary(input: {
+  readonly appName: string;
+  readonly outputFile: string;
+  readonly stage: string;
+}): Promise<string> {
+  const outputs = await readCdkOutputs(input.outputFile);
+  const outputLines = Object.entries(outputs).flatMap(([stackName, stackOutputs]) =>
+    Object.entries(stackOutputs).map(([key, value]) => `  ${stackName}.${key}: ${value}`),
+  );
+
+  return [
+    `Deployed ${input.appName} ${input.stage}.`,
+    ...(outputLines.length === 0 ? [] : ["Stack outputs:", ...outputLines]),
+    "",
+  ].join("\n");
+}
+
+async function readCdkOutputs(outputFile: string): Promise<Record<string, Record<string, string>>> {
+  try {
+    const parsed = JSON.parse(await readFile(outputFile, "utf8")) as unknown;
+
+    if (!isRecord(parsed)) {
+      return {};
+    }
+
+    return Object.fromEntries(
+      Object.entries(parsed).flatMap(([stackName, stackOutputs]) => {
+        if (!isRecord(stackOutputs)) {
+          return [];
+        }
+
+        return [
+          [
+            stackName,
+            Object.fromEntries(
+              Object.entries(stackOutputs)
+                .filter((entry): entry is [string, string] => typeof entry[1] === "string")
+                .sort(([left], [right]) => left.localeCompare(right)),
+            ),
+          ],
+        ];
+      }),
+    );
+  } catch {
+    return {};
+  }
+}
+
+async function runCommand(
+  command: string,
+  args: readonly string[],
+  options: Readonly<{
+    cwd: string;
+    env: Readonly<Record<string, string | undefined>>;
+  }>,
+): Promise<CommandRunResult> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd: options.cwd,
+      env: {
+        ...process.env,
+        ...options.env,
+      },
+      shell: false,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      resolve({
+        exitCode: code ?? 1,
+        stdout,
+        stderr,
+      });
+    });
+  });
 }
 
 async function resolveConfigPath(cwd: string, configPath: string | undefined): Promise<string> {
