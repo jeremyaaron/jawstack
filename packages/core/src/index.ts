@@ -1,3 +1,5 @@
+import type { z } from "zod";
+
 export const packageName = "@jawstack/core";
 
 const NAME_PATTERN = /^[a-z][A-Za-z0-9]*$/;
@@ -70,7 +72,7 @@ export type EventDeclaration = Readonly<{
 export type CommandDefinition<TInput = unknown, TResponse = unknown> = Readonly<{
   kind: "jawstack.command";
   title: string;
-  input: TInput;
+  input: z.ZodType<TInput>;
   roles: readonly string[];
   emits: readonly EventDeclaration[];
   create: boolean;
@@ -80,11 +82,11 @@ export type CommandDefinition<TInput = unknown, TResponse = unknown> = Readonly<
 
 export type DefineCommandInput<TInput = unknown, TResponse = unknown> = Readonly<{
   title: string;
-  input: TInput;
+  input: z.ZodType<TInput>;
   roles: readonly string[];
   emits: readonly EventDeclaration[];
   create?: boolean;
-  decide: unknown;
+  decide: CommandDecide<unknown, TInput, TResponse>;
   response?: TResponse;
 }>;
 
@@ -143,6 +145,219 @@ export type DefineResourceInput<
   views?: ResourceViews;
   workers?: readonly WorkerDefinition[];
   schedules?: readonly ScheduleDefinition[];
+}>;
+
+export type AuthMode = "dev" | "test" | "external";
+
+export type AuthContext = Readonly<{
+  subject: string;
+  displayName?: string;
+  tenantId?: string;
+  roles: readonly string[];
+  claims: Record<string, unknown>;
+  mode: AuthMode;
+}>;
+
+export type Actor = Readonly<{
+  subject: string;
+  displayName?: string;
+}>;
+
+export type JawStackEvent<TPayload = unknown> = Readonly<{
+  envelopeVersion: 1;
+  eventId: string;
+  eventType: string;
+  schemaVersion: number;
+  source: string;
+  resourceType: string;
+  resourceId: string;
+  tenantId?: string;
+  actor?: Actor;
+  correlationId: string;
+  causationId?: string;
+  occurredAt: string;
+  payload: TPayload;
+}>;
+
+export type CommandRequest<TInput = unknown> = Readonly<{
+  requestId?: string;
+  correlationId?: string;
+  resourceType: string;
+  resourceId?: string;
+  commandName: string;
+  input: TInput;
+  idempotencyKey?: string;
+  requestContext: unknown;
+}>;
+
+export type IdGenerator = Readonly<{
+  eventId(): string;
+  activityId(): string;
+  requestId(): string;
+  correlationId(): string;
+  resourceId(resourceType: string): string;
+}>;
+
+export type ResourceState<TState = unknown> = Readonly<{
+  resourceType: string;
+  resourceId: string;
+  version: number;
+  state: TState;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+  updatedBy: string;
+  tenantId?: string;
+}>;
+
+export type CommandContext<TState = unknown, TInput = unknown> = Readonly<{
+  auth: AuthContext;
+  input: TInput;
+  previous: ResourceState<TState> | undefined;
+  resourceId: string;
+  requestId: string;
+  correlationId: string;
+  now: Date;
+  ids: IdGenerator;
+}>;
+
+export type ActivityDraft = Readonly<{
+  activityType: string;
+  title: string;
+  summary?: string;
+  data?: Record<string, unknown>;
+}>;
+
+export type ActivityRecord = Readonly<{
+  activityId: string;
+  resourceType: string;
+  resourceId: string;
+  activityType: string;
+  title: string;
+  summary?: string;
+  data?: Record<string, unknown>;
+  actor?: Actor;
+  tenantId?: string;
+  correlationId: string;
+  causationId?: string;
+  occurredAt: string;
+}>;
+
+export type EventDraft<TPayload = unknown> = Readonly<{
+  eventType: string;
+  schemaVersion: number;
+  payload: TPayload;
+}>;
+
+export type ProjectionWrite = Readonly<{
+  projectionName: string;
+  itemId: string;
+  sort: string;
+  data: Record<string, unknown>;
+  delete?: boolean;
+}>;
+
+export type CommandDecision<TState = unknown, TResponse = unknown> = Readonly<{
+  nextState: TState;
+  activity: readonly ActivityDraft[];
+  events: readonly EventDraft[];
+  projections?: readonly ProjectionWrite[];
+  response: TResponse;
+}>;
+
+export type CommandDecide<TState = unknown, TInput = unknown, TResponse = unknown> = (
+  context: CommandContext<TState, TInput>,
+) => CommandDecision<TState, TResponse> | Promise<CommandDecision<TState, TResponse>>;
+
+export type CommandCommitInput<TState = unknown, TResponse = unknown> = Readonly<{
+  resource: Readonly<{
+    resourceType: string;
+    resourceId: string;
+    expectedVersion?: number;
+    next: ResourceState<TState>;
+    create: boolean;
+  }>;
+  activity: readonly ActivityRecord[];
+  outbox: readonly JawStackEvent[];
+  projections: readonly ProjectionWrite[];
+  response: TResponse;
+}>;
+
+export type ResourceRepository = Readonly<{
+  getState(resourceType: string, resourceId: string): Promise<ResourceState | undefined>;
+}>;
+
+export type CommandUnitOfWork = Readonly<{
+  commit<TState = unknown, TResponse = unknown>(
+    input: CommandCommitInput<TState, TResponse>,
+  ): Promise<void>;
+}>;
+
+export type AuthProvider = Readonly<{
+  resolve(requestContext: unknown): Promise<AuthContext> | AuthContext;
+}>;
+
+export type ApiSuccess<T> = Readonly<{
+  ok: true;
+  data: T;
+  meta: Readonly<{
+    requestId: string;
+    correlationId: string;
+  }>;
+}>;
+
+export type RuntimeErrorCode =
+  | "command.validation"
+  | "command.rejected"
+  | "auth.missing"
+  | "auth.forbidden"
+  | "resource.not_found"
+  | "resource.conflict"
+  | "resource.invalid_state"
+  | "idempotency.conflict"
+  | "runtime.internal"
+  | "runtime.unavailable";
+
+export type ApiError = Readonly<{
+  ok: false;
+  error: Readonly<{
+    code: RuntimeErrorCode;
+    message: string;
+    details?: unknown;
+  }>;
+  meta: Readonly<{
+    requestId: string;
+    correlationId: string;
+  }>;
+}>;
+
+export type CommandExecutionResult<TResponse = unknown> = ApiSuccess<TResponse> | ApiError;
+
+export class JawStackRuntimeError extends Error {
+  readonly code: RuntimeErrorCode;
+  readonly details: unknown;
+
+  constructor(code: RuntimeErrorCode, message: string, details?: unknown) {
+    super(message);
+    this.name = "JawStackRuntimeError";
+    this.code = code;
+    this.details = details;
+  }
+}
+
+export type ResourceRegistry = Readonly<{
+  resources: readonly ResourceDefinition[];
+  getResource(resourceType: string): ResourceDefinition | undefined;
+}>;
+
+export type CommandExecutorOptions = Readonly<{
+  registry: ResourceRegistry | readonly ResourceDefinition[];
+  repository: ResourceRepository;
+  unitOfWork: CommandUnitOfWork;
+  authProvider: AuthProvider;
+  ids?: Partial<IdGenerator>;
+  clock?: () => Date;
+  source?: string;
 }>;
 
 function definitionError(code: string, message: string, path?: string): never {
@@ -217,8 +432,21 @@ function assertNoDuplicateStrings(values: readonly string[], code: string, path:
   });
 }
 
+function isPlainFreezableObject(value: object): boolean {
+  if (Array.isArray(value)) {
+    return true;
+  }
+
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
 function deepFreeze<T>(value: T): T {
   if (typeof value !== "object" || value === null || Object.isFrozen(value)) {
+    return value;
+  }
+
+  if (!isPlainFreezableObject(value)) {
     return value;
   }
 
@@ -528,4 +756,401 @@ export function defineResource<
   } satisfies ResourceDefinition<TState, TCommands>;
 
   return deepFreeze(resourceDefinition);
+}
+
+export function createResourceRegistry(resources: readonly ResourceDefinition[]): ResourceRegistry {
+  if (!Array.isArray(resources) || resources.length === 0) {
+    definitionError("registry.resources.empty", "Expected at least one resource.", "resources");
+  }
+
+  const byName = new Map<string, ResourceDefinition>();
+
+  for (const resource of resources) {
+    if (byName.has(resource.name)) {
+      definitionError(
+        "resource.name.duplicate",
+        `Duplicate resource name "${resource.name}".`,
+        "resources",
+      );
+    }
+
+    byName.set(resource.name, resource);
+  }
+
+  return deepFreeze({
+    resources: [...resources],
+    getResource(resourceType: string): ResourceDefinition | undefined {
+      return byName.get(resourceType);
+    },
+  });
+}
+
+function isResourceArray(
+  registry: ResourceRegistry | readonly ResourceDefinition[],
+): registry is readonly ResourceDefinition[] {
+  return Array.isArray(registry);
+}
+
+function normalizeRegistry(
+  registry: ResourceRegistry | readonly ResourceDefinition[],
+): ResourceRegistry {
+  return isResourceArray(registry) ? createResourceRegistry(registry) : registry;
+}
+
+function randomId(prefix: string): string {
+  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function createIdGenerator(overrides: Partial<IdGenerator> = {}): IdGenerator {
+  return {
+    eventId: overrides.eventId ?? (() => randomId("evt")),
+    activityId: overrides.activityId ?? (() => randomId("act")),
+    requestId: overrides.requestId ?? (() => randomId("req")),
+    correlationId: overrides.correlationId ?? (() => randomId("corr")),
+    resourceId: overrides.resourceId ?? ((resourceType) => `${resourceType}_${randomId("res")}`),
+  };
+}
+
+function actorFromAuth(auth: AuthContext): Actor {
+  return {
+    subject: auth.subject,
+    ...(auth.displayName === undefined ? {} : { displayName: auth.displayName }),
+  };
+}
+
+function apiSuccess<T>(data: T, requestId: string, correlationId: string): ApiSuccess<T> {
+  return {
+    ok: true,
+    data,
+    meta: {
+      requestId,
+      correlationId,
+    },
+  };
+}
+
+function apiError(
+  code: RuntimeErrorCode,
+  message: string,
+  requestId: string,
+  correlationId: string,
+  details?: unknown,
+): ApiError {
+  return {
+    ok: false,
+    error: {
+      code,
+      message,
+      ...(details === undefined ? {} : { details }),
+    },
+    meta: {
+      requestId,
+      correlationId,
+    },
+  };
+}
+
+function runtimeErrorToApiError(
+  error: unknown,
+  requestId: string,
+  correlationId: string,
+): ApiError {
+  if (error instanceof JawStackRuntimeError) {
+    return apiError(error.code, error.message, requestId, correlationId, error.details);
+  }
+
+  return apiError(
+    "runtime.internal",
+    "An internal runtime error occurred.",
+    requestId,
+    correlationId,
+  );
+}
+
+function assertAuthContext(auth: AuthContext): void {
+  if (typeof auth.subject !== "string" || auth.subject.trim().length === 0) {
+    throw new JawStackRuntimeError("auth.missing", "Auth context is missing a subject.");
+  }
+
+  if (!Array.isArray(auth.roles)) {
+    throw new JawStackRuntimeError("auth.missing", "Auth context roles are invalid.");
+  }
+}
+
+function findCommand(
+  resource: ResourceDefinition,
+  commandName: string,
+): CommandDefinition | undefined {
+  return resource.commands[commandName];
+}
+
+function getCommandDecide(command: CommandDefinition): CommandDecide {
+  if (typeof command.decide !== "function") {
+    throw new JawStackRuntimeError("runtime.internal", "Command decide handler is not executable.");
+  }
+
+  return command.decide as CommandDecide;
+}
+
+function assertDecision(decision: CommandDecision, command: CommandDefinition): void {
+  if (typeof decision !== "object" || decision === null) {
+    throw new JawStackRuntimeError("command.rejected", "Command returned an invalid decision.");
+  }
+
+  if (!Array.isArray(decision.activity)) {
+    throw new JawStackRuntimeError(
+      "command.rejected",
+      "Command decision activity must be an array.",
+    );
+  }
+
+  if (!Array.isArray(decision.events) || decision.events.length === 0) {
+    throw new JawStackRuntimeError(
+      "command.rejected",
+      "State-changing commands must emit at least one event.",
+    );
+  }
+
+  const declaredEvents = new Set(
+    command.emits.map((event) => `${event.eventType}@${event.schemaVersion}`),
+  );
+
+  for (const event of decision.events) {
+    const eventKey = `${event.eventType}@${event.schemaVersion}`;
+
+    if (!declaredEvents.has(eventKey)) {
+      throw new JawStackRuntimeError(
+        "command.rejected",
+        `Command emitted undeclared event "${event.eventType}" schema version ${event.schemaVersion}.`,
+      );
+    }
+  }
+}
+
+function buildActivityRecords(input: {
+  drafts: readonly ActivityDraft[];
+  resourceType: string;
+  resourceId: string;
+  auth: AuthContext;
+  nowIso: string;
+  correlationId: string;
+  causationId: string;
+  ids: IdGenerator;
+}): ActivityRecord[] {
+  return input.drafts.map((draft) => ({
+    activityId: input.ids.activityId(),
+    resourceType: input.resourceType,
+    resourceId: input.resourceId,
+    activityType: draft.activityType,
+    title: draft.title,
+    ...(draft.summary === undefined ? {} : { summary: draft.summary }),
+    ...(draft.data === undefined ? {} : { data: draft.data }),
+    actor: actorFromAuth(input.auth),
+    ...(input.auth.tenantId === undefined ? {} : { tenantId: input.auth.tenantId }),
+    correlationId: input.correlationId,
+    causationId: input.causationId,
+    occurredAt: input.nowIso,
+  }));
+}
+
+function buildEvents(input: {
+  drafts: readonly EventDraft[];
+  source: string;
+  resourceType: string;
+  resourceId: string;
+  auth: AuthContext;
+  nowIso: string;
+  correlationId: string;
+  causationId: string;
+  ids: IdGenerator;
+}): JawStackEvent[] {
+  return input.drafts.map((draft) => ({
+    envelopeVersion: 1,
+    eventId: input.ids.eventId(),
+    eventType: draft.eventType,
+    schemaVersion: draft.schemaVersion,
+    source: input.source,
+    resourceType: input.resourceType,
+    resourceId: input.resourceId,
+    ...(input.auth.tenantId === undefined ? {} : { tenantId: input.auth.tenantId }),
+    actor: actorFromAuth(input.auth),
+    correlationId: input.correlationId,
+    causationId: input.causationId,
+    occurredAt: input.nowIso,
+    payload: draft.payload,
+  }));
+}
+
+function buildNextResourceState<TState>(input: {
+  resourceType: string;
+  resourceId: string;
+  previous: ResourceState<TState> | undefined;
+  nextState: TState;
+  auth: AuthContext;
+  nowIso: string;
+}): ResourceState<TState> {
+  return {
+    resourceType: input.resourceType,
+    resourceId: input.resourceId,
+    version: input.previous === undefined ? 1 : input.previous.version + 1,
+    state: input.nextState,
+    createdAt: input.previous?.createdAt ?? input.nowIso,
+    updatedAt: input.nowIso,
+    createdBy: input.previous?.createdBy ?? input.auth.subject,
+    updatedBy: input.auth.subject,
+    ...(input.auth.tenantId === undefined ? {} : { tenantId: input.auth.tenantId }),
+  };
+}
+
+export async function executeCommand<TResponse = unknown>(
+  request: CommandRequest,
+  options: CommandExecutorOptions,
+): Promise<CommandExecutionResult<TResponse>> {
+  const ids = createIdGenerator(options.ids);
+  const requestId = request.requestId ?? ids.requestId();
+  const correlationId = request.correlationId ?? ids.correlationId();
+  const registry = normalizeRegistry(options.registry);
+  const now = options.clock?.() ?? new Date();
+  const nowIso = now.toISOString();
+  const source = options.source ?? "jawstack";
+
+  try {
+    const auth = await options.authProvider.resolve(request.requestContext);
+    assertAuthContext(auth);
+
+    const resource = registry.getResource(request.resourceType);
+
+    if (resource === undefined) {
+      return apiError(
+        "command.rejected",
+        `Unknown resource "${request.resourceType}".`,
+        requestId,
+        correlationId,
+      );
+    }
+
+    const command = findCommand(resource, request.commandName);
+
+    if (command === undefined) {
+      return apiError(
+        "command.rejected",
+        `Unknown command "${request.commandName}" for resource "${request.resourceType}".`,
+        requestId,
+        correlationId,
+      );
+    }
+
+    const isAllowed = command.roles.some((role) => auth.roles.includes(role));
+
+    if (!isAllowed) {
+      return apiError(
+        "auth.forbidden",
+        "Auth context does not include a required role.",
+        requestId,
+        correlationId,
+      );
+    }
+
+    const parsedInput = command.input.safeParse(request.input);
+
+    if (!parsedInput.success) {
+      return apiError(
+        "command.validation",
+        "Command input failed validation.",
+        requestId,
+        correlationId,
+        parsedInput.error.issues,
+      );
+    }
+
+    const resourceId = command.create
+      ? (request.resourceId ?? ids.resourceId(request.resourceType))
+      : request.resourceId;
+
+    if (resourceId === undefined || resourceId.trim().length === 0) {
+      return apiError(
+        "command.rejected",
+        "Command requires a resource ID.",
+        requestId,
+        correlationId,
+      );
+    }
+
+    const previous = command.create
+      ? undefined
+      : await options.repository.getState(request.resourceType, resourceId);
+
+    if (!command.create && previous === undefined) {
+      return apiError(
+        "resource.not_found",
+        `Resource "${request.resourceType}" with ID "${resourceId}" was not found.`,
+        requestId,
+        correlationId,
+      );
+    }
+
+    const decide = getCommandDecide(command);
+    const decision = await decide({
+      auth,
+      input: parsedInput.data,
+      previous,
+      resourceId,
+      requestId,
+      correlationId,
+      now,
+      ids,
+    });
+
+    assertDecision(decision, command);
+
+    const next = buildNextResourceState({
+      resourceType: request.resourceType,
+      resourceId,
+      previous,
+      nextState: decision.nextState,
+      auth,
+      nowIso,
+    });
+
+    const activity = buildActivityRecords({
+      drafts: decision.activity,
+      resourceType: request.resourceType,
+      resourceId,
+      auth,
+      nowIso,
+      correlationId,
+      causationId: requestId,
+      ids,
+    });
+
+    const outbox = buildEvents({
+      drafts: decision.events,
+      source,
+      resourceType: request.resourceType,
+      resourceId,
+      auth,
+      nowIso,
+      correlationId,
+      causationId: requestId,
+      ids,
+    });
+
+    await options.unitOfWork.commit({
+      resource: {
+        resourceType: request.resourceType,
+        resourceId,
+        ...(previous === undefined ? {} : { expectedVersion: previous.version }),
+        next,
+        create: command.create,
+      },
+      activity,
+      outbox,
+      projections: decision.projections ?? [],
+      response: decision.response,
+    });
+
+    return apiSuccess(decision.response as TResponse, requestId, correlationId);
+  } catch (error) {
+    return runtimeErrorToApiError(error, requestId, correlationId);
+  }
 }

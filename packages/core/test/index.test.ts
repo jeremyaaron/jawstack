@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 
 import {
   JawStackDefinitionError,
+  type AuthContext,
+  type CommandCommitInput,
+  type ResourceState,
   defineCommand,
   defineDetailView,
   defineListView,
@@ -9,9 +13,117 @@ import {
   defineSchedule,
   defineState,
   defineWorker,
+  executeCommand,
   field,
   packageName,
 } from "../src/index";
+
+type WorkRequestState = {
+  title: string;
+  status: "open" | "closed";
+};
+
+const auth: AuthContext = {
+  subject: "user_123",
+  displayName: "Jeremy",
+  roles: ["user", "manager"],
+  claims: {},
+  mode: "test",
+};
+
+const fixedIds = {
+  requestId: () => "req_123",
+  correlationId: () => "corr_123",
+  resourceId: () => "wr_123",
+  eventId: () => "evt_123",
+  activityId: () => "act_123",
+};
+
+function createTestWorkRequestResource() {
+  return defineResource({
+    name: "workRequest",
+    title: "Work Request",
+    state: defineState({
+      title: field.string({ required: true }),
+      status: field.enum({ values: ["open", "closed"], defaultValue: "open" }),
+    }),
+    commands: {
+      create: defineCommand({
+        title: "Create Work Request",
+        input: z.object({
+          title: z.string().min(1),
+        }),
+        roles: ["user"],
+        emits: [{ eventType: "workRequest.created", schemaVersion: 1 }],
+        create: true,
+        decide: ({ input }) => ({
+          nextState: {
+            title: input.title,
+            status: "open",
+          } satisfies WorkRequestState,
+          activity: [{ activityType: "created", title: "Created work request" }],
+          events: [
+            {
+              eventType: "workRequest.created",
+              schemaVersion: 1,
+              payload: { title: input.title },
+            },
+          ],
+          response: { resourceId: "wr_123" },
+        }),
+      }),
+      close: defineCommand({
+        title: "Close Work Request",
+        input: z.object({}),
+        roles: ["manager"],
+        emits: [{ eventType: "workRequest.closed", schemaVersion: 1 }],
+        decide: ({ previous }) => ({
+          nextState: {
+            ...(previous?.state as WorkRequestState),
+            status: "closed",
+          } satisfies WorkRequestState,
+          activity: [{ activityType: "closed", title: "Closed work request" }],
+          events: [
+            {
+              eventType: "workRequest.closed",
+              schemaVersion: 1,
+              payload: {},
+            },
+          ],
+          response: { closed: true },
+        }),
+      }),
+    },
+  });
+}
+
+function createRepository(state?: ResourceState<WorkRequestState>) {
+  return {
+    getState: async () => state,
+  };
+}
+
+function createUnitOfWork() {
+  const commits: CommandCommitInput[] = [];
+
+  return {
+    commits,
+    unitOfWork: {
+      commit: async (input: CommandCommitInput) => {
+        commits.push(input);
+      },
+    },
+  };
+}
+
+function noOpDecision(eventType: string) {
+  return {
+    nextState: {},
+    activity: [{ activityType: "changed", title: "Changed" }],
+    events: [{ eventType, schemaVersion: 1, payload: {} }],
+    response: {},
+  };
+}
 
 describe("@jawstack/core metadata API", () => {
   it("exports the package name", () => {
@@ -33,19 +145,19 @@ describe("@jawstack/core metadata API", () => {
 
     const createWorkRequest = defineCommand({
       title: "Create Work Request",
-      input: { type: "schema-placeholder" },
+      input: z.object({ title: z.string().min(1) }),
       roles: ["user"],
       emits: [{ eventType: "workRequest.created", schemaVersion: 1 }],
       create: true,
-      decide: () => undefined,
+      decide: () => noOpDecision("workRequest.created"),
     });
 
     const assignWorkRequest = defineCommand({
       title: "Assign",
-      input: { type: "schema-placeholder" },
+      input: z.object({ assigneeId: z.string().min(1) }),
       roles: ["manager"],
       emits: [{ eventType: "workRequest.assigned", schemaVersion: 1 }],
-      decide: () => undefined,
+      decide: () => noOpDecision("workRequest.assigned"),
     });
 
     const resource = defineResource({
@@ -104,11 +216,11 @@ describe("@jawstack/core metadata API", () => {
         commands: {
           create: defineCommand({
             title: "Create",
-            input: {},
+            input: z.object({}),
             roles: ["user"],
             emits: [{ eventType: "workRequest.created", schemaVersion: 1 }],
             create: true,
-            decide: () => undefined,
+            decide: () => noOpDecision("workRequest.created"),
           }),
         },
       }),
@@ -130,10 +242,10 @@ describe("@jawstack/core metadata API", () => {
     expect(() =>
       defineCommand({
         title: "Create",
-        input: {},
+        input: z.object({}),
         roles: [],
         emits: [{ eventType: "workRequest.created", schemaVersion: 1 }],
-        decide: () => undefined,
+        decide: () => noOpDecision("workRequest.created"),
       }),
     ).toThrow(JawStackDefinitionError);
   });
@@ -142,10 +254,10 @@ describe("@jawstack/core metadata API", () => {
     expect(() =>
       defineCommand({
         title: "Create",
-        input: {},
+        input: z.object({}),
         roles: ["user"],
         emits: [{ eventType: "workRequest.created", schemaVersion: 0 }],
-        decide: () => undefined,
+        decide: () => noOpDecision("workRequest.created"),
       }),
     ).toThrow(JawStackDefinitionError);
   });
@@ -159,11 +271,11 @@ describe("@jawstack/core metadata API", () => {
         commands: {
           create: defineCommand({
             title: "Create",
-            input: {},
+            input: z.object({}),
             roles: ["user"],
             emits: [{ eventType: "workRequest.created", schemaVersion: 1 }],
             create: true,
-            decide: () => undefined,
+            decide: () => noOpDecision("workRequest.created"),
           }),
         },
         views: {
@@ -171,5 +283,163 @@ describe("@jawstack/core metadata API", () => {
         },
       }),
     ).toThrow(JawStackDefinitionError);
+  });
+});
+
+describe("@jawstack/core command executor", () => {
+  it("executes a create command and commits state, activity, and outbox events", async () => {
+    const { commits, unitOfWork } = createUnitOfWork();
+
+    const result = await executeCommand(
+      {
+        resourceType: "workRequest",
+        commandName: "create",
+        input: { title: "Write tests" },
+        requestContext: {},
+      },
+      {
+        registry: [createTestWorkRequestResource()],
+        repository: createRepository(),
+        unitOfWork,
+        authProvider: { resolve: () => auth },
+        ids: fixedIds,
+        clock: () => new Date("2026-06-25T12:00:00.000Z"),
+        source: "jawstack.test",
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.data).toEqual({ resourceId: "wr_123" });
+    expect(commits).toHaveLength(1);
+    expect(commits[0]?.resource.create).toBe(true);
+    expect(commits[0]?.resource.next.version).toBe(1);
+    expect(commits[0]?.activity[0]?.activityId).toBe("act_123");
+    expect(commits[0]?.outbox[0]).toMatchObject({
+      eventId: "evt_123",
+      eventType: "workRequest.created",
+      source: "jawstack.test",
+      resourceId: "wr_123",
+      correlationId: "corr_123",
+      causationId: "req_123",
+      payload: { title: "Write tests" },
+    });
+  });
+
+  it("executes an update command against existing state", async () => {
+    const { commits, unitOfWork } = createUnitOfWork();
+
+    const previous: ResourceState<WorkRequestState> = {
+      resourceType: "workRequest",
+      resourceId: "wr_123",
+      version: 3,
+      state: { title: "Write tests", status: "open" },
+      createdAt: "2026-06-24T12:00:00.000Z",
+      updatedAt: "2026-06-24T12:00:00.000Z",
+      createdBy: "user_123",
+      updatedBy: "user_123",
+    };
+
+    const result = await executeCommand(
+      {
+        resourceType: "workRequest",
+        resourceId: "wr_123",
+        commandName: "close",
+        input: {},
+        requestContext: {},
+      },
+      {
+        registry: [createTestWorkRequestResource()],
+        repository: createRepository(previous),
+        unitOfWork,
+        authProvider: { resolve: () => auth },
+        ids: fixedIds,
+        clock: () => new Date("2026-06-25T12:00:00.000Z"),
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    expect(commits[0]?.resource.create).toBe(false);
+    expect(commits[0]?.resource.expectedVersion).toBe(3);
+    expect(commits[0]?.resource.next.version).toBe(4);
+    expect(commits[0]?.resource.next.state).toEqual({ title: "Write tests", status: "closed" });
+  });
+
+  it("returns validation errors without committing", async () => {
+    const { commits, unitOfWork } = createUnitOfWork();
+
+    const result = await executeCommand(
+      {
+        resourceType: "workRequest",
+        commandName: "create",
+        input: { title: "" },
+        requestContext: {},
+      },
+      {
+        registry: [createTestWorkRequestResource()],
+        repository: createRepository(),
+        unitOfWork,
+        authProvider: { resolve: () => auth },
+        ids: fixedIds,
+      },
+    );
+
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.error.code).toBe("command.validation");
+    expect(commits).toHaveLength(0);
+  });
+
+  it("returns forbidden errors without committing", async () => {
+    const { commits, unitOfWork } = createUnitOfWork();
+
+    const result = await executeCommand(
+      {
+        resourceType: "workRequest",
+        resourceId: "wr_123",
+        commandName: "close",
+        input: {},
+        requestContext: {},
+      },
+      {
+        registry: [createTestWorkRequestResource()],
+        repository: createRepository(),
+        unitOfWork,
+        authProvider: {
+          resolve: () => ({
+            ...auth,
+            roles: ["user"],
+          }),
+        },
+        ids: fixedIds,
+      },
+    );
+
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.error.code).toBe("auth.forbidden");
+    expect(commits).toHaveLength(0);
+  });
+
+  it("returns missing resource errors without committing", async () => {
+    const { commits, unitOfWork } = createUnitOfWork();
+
+    const result = await executeCommand(
+      {
+        resourceType: "workRequest",
+        resourceId: "wr_missing",
+        commandName: "close",
+        input: {},
+        requestContext: {},
+      },
+      {
+        registry: [createTestWorkRequestResource()],
+        repository: createRepository(),
+        unitOfWork,
+        authProvider: { resolve: () => auth },
+        ids: fixedIds,
+      },
+    );
+
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.error.code).toBe("resource.not_found");
+    expect(commits).toHaveLength(0);
   });
 });
