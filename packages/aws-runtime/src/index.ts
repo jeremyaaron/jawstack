@@ -1,14 +1,27 @@
-import type { AttributeValue, TransactWriteItem } from "@aws-sdk/client-dynamodb";
+import {
+  GetItemCommand,
+  QueryCommand,
+  TransactWriteItemsCommand,
+  type AttributeValue,
+  type GetItemCommandOutput,
+  type QueryCommandOutput,
+  type TransactWriteItem,
+  type TransactWriteItemsCommandOutput,
+} from "@aws-sdk/client-dynamodb";
 import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
 import type {
   ActivityRecord,
   ApiSuccess,
   CommandCommitInput,
+  CommandUnitOfWork,
   IdempotencyCommit,
+  IdempotencyRecord,
   JawStackEvent,
+  LocalHttpReadableRepository,
   ProjectionWrite,
   ResourceState,
 } from "@jawstack/core";
+import { JawStackRuntimeError } from "@jawstack/core";
 
 export const packageName = "@jawstack/aws-runtime";
 
@@ -128,9 +141,181 @@ export type DynamoDbCommandTransactionOptions = Readonly<{
   }>;
 }>;
 
+export type DynamoDbClientLike = Readonly<{
+  send(command: DynamoDbCommand): Promise<unknown>;
+}>;
+
+export type DynamoDbCommand = Readonly<{
+  input: unknown;
+}>;
+
+export type DynamoDbRepositoryOptions = Readonly<{
+  client: DynamoDbClientLike;
+  tableName: string;
+  consistentRead?: boolean;
+  idempotencyScope?: DynamoDbIdempotencyScope;
+}>;
+
+export type DynamoDbIdempotencyScope = Readonly<{
+  resourceType: string;
+  commandName: string;
+  subject: string;
+}>;
+
+export type DynamoDbCommandUnitOfWorkOptions = Readonly<{
+  client: DynamoDbClientLike;
+  tableName: string;
+  idempotency?: DynamoDbCommandTransactionOptions["idempotency"];
+}>;
+
 const INVERTED_TIMESTAMP_MAX = 9_999_999_999_999;
 const INVERTED_TIMESTAMP_WIDTH = 13;
 const DEFAULT_IDEMPOTENCY_TTL_SECONDS = 7 * 24 * 60 * 60;
+
+export class DynamoDbRepository implements LocalHttpReadableRepository {
+  private readonly client: DynamoDbClientLike;
+  private readonly tableName: string;
+  private readonly consistentRead: boolean;
+  private readonly idempotencyScope: DynamoDbIdempotencyScope | undefined;
+
+  constructor(options: DynamoDbRepositoryOptions) {
+    this.client = options.client;
+    this.tableName = options.tableName;
+    this.consistentRead = options.consistentRead ?? true;
+    this.idempotencyScope = options.idempotencyScope;
+  }
+
+  async getState<TState = unknown>(
+    resourceType: string,
+    resourceId: string,
+  ): Promise<ResourceState<TState> | undefined> {
+    const output = await sendDynamoDb<GetItemCommandOutput>(
+      this.client,
+      new GetItemCommand({
+        TableName: this.tableName,
+        Key: marshallItem(resourceStateKey(resourceType, resourceId)),
+        ConsistentRead: this.consistentRead,
+      }),
+    );
+
+    return output.Item === undefined ? undefined : fromResourceStateItem<TState>(output.Item);
+  }
+
+  async listProjection(projectionName: string): Promise<ProjectionWrite[]> {
+    const resourceType = resourceTypeFromProjectionName(projectionName);
+    const output = await sendDynamoDb<QueryCommandOutput>(
+      this.client,
+      new QueryCommand({
+        TableName: this.tableName,
+        KeyConditionExpression: "PK = :pk",
+        ExpressionAttributeValues: marshallItem({
+          ":pk": projectionPartitionKey(resourceType, projectionName),
+        }),
+        ConsistentRead: this.consistentRead,
+      }),
+    );
+
+    return (output.Items ?? []).map((item) => {
+      const projection = fromProjectionItem(item);
+
+      return {
+        projectionName: projection.projectionName,
+        itemId: projection.itemId,
+        sort: projection.sort,
+        data: projection.data,
+      };
+    });
+  }
+
+  async getActivity(resourceType: string, resourceId: string): Promise<ActivityRecord[]> {
+    const output = await sendDynamoDb<QueryCommandOutput>(
+      this.client,
+      new QueryCommand({
+        TableName: this.tableName,
+        KeyConditionExpression: "PK = :pk AND begins_with(SK, :skPrefix)",
+        ExpressionAttributeValues: marshallItem({
+          ":pk": resourceStateKey(resourceType, resourceId).PK,
+          ":skPrefix": "ACT#",
+        }),
+        ConsistentRead: this.consistentRead,
+        ScanIndexForward: true,
+      }),
+    );
+
+    return (output.Items ?? []).map((item) => fromActivityItem(item));
+  }
+
+  async getIdempotency<TResponse = unknown>(
+    key: string,
+  ): Promise<IdempotencyRecord<TResponse> | undefined> {
+    if (this.idempotencyScope === undefined) {
+      throw new JawStackRuntimeError(
+        "runtime.internal",
+        "DynamoDB idempotency lookup requires a resource, command, and subject scope.",
+      );
+    }
+
+    return this.getCommandIdempotency<TResponse>({
+      ...this.idempotencyScope,
+      idempotencyKey: key,
+    });
+  }
+
+  async getCommandIdempotency<TResponse = unknown>(
+    context: DynamoDbIdempotencyScope & Readonly<{ idempotencyKey: string }>,
+  ): Promise<IdempotencyRecord<TResponse> | undefined> {
+    const output = await sendDynamoDb<GetItemCommandOutput>(
+      this.client,
+      new GetItemCommand({
+        TableName: this.tableName,
+        Key: marshallItem(idempotencyKey(context)),
+        ConsistentRead: this.consistentRead,
+      }),
+    );
+
+    if (output.Item === undefined) {
+      return undefined;
+    }
+
+    const record = fromIdempotencyItem<TResponse>(output.Item);
+
+    return {
+      key: record.idempotencyKey,
+      fingerprint: record.payloadHash,
+      response: record.response,
+    };
+  }
+}
+
+export class DynamoDbCommandUnitOfWork implements CommandUnitOfWork {
+  private readonly client: DynamoDbClientLike;
+  private readonly tableName: string;
+  private readonly idempotency: DynamoDbCommandTransactionOptions["idempotency"];
+
+  constructor(options: DynamoDbCommandUnitOfWorkOptions) {
+    this.client = options.client;
+    this.tableName = options.tableName;
+    this.idempotency = options.idempotency;
+  }
+
+  async commit<TState = unknown, TResponse = unknown>(
+    input: CommandCommitInput<TState, TResponse>,
+  ): Promise<void> {
+    try {
+      await sendDynamoDb<TransactWriteItemsCommandOutput>(
+        this.client,
+        new TransactWriteItemsCommand({
+          TransactItems: buildCommandTransactWriteItems(input, {
+            tableName: this.tableName,
+            ...(this.idempotency === undefined ? {} : { idempotency: this.idempotency }),
+          }),
+        }),
+      );
+    } catch (error) {
+      throw mapDynamoDbCommitError(error, input);
+    }
+  }
+}
 
 export function resourceStateKey(resourceType: string, resourceId: string): DynamoDbKey {
   return {
@@ -184,12 +369,15 @@ export function idempotencyKey(
 export function projectionKey(
   input: Pick<DynamoDbProjectionInput, "resourceType" | "projectionName" | "sort" | "itemId">,
 ): DynamoDbKey {
-  const projectionName = projectionNameKeySegment(input.resourceType, input.projectionName);
-
   return {
-    PK: `PROJ#${input.resourceType}#${projectionName}`,
+    PK: projectionPartitionKey(input.resourceType, input.projectionName),
     SK: projectionSortKey(input.sort, input.itemId),
   };
+}
+
+export function projectionPartitionKey(resourceType: string, projectionName: string): string {
+  const projectionNameSegment = projectionNameKeySegment(resourceType, projectionName);
+  return `PROJ#${resourceType}#${projectionNameSegment}`;
 }
 
 export function workerIdempotencyKey(workerName: string, eventId: string): DynamoDbKey {
@@ -538,6 +726,112 @@ function requireCommandName(options: DynamoDbCommandTransactionOptions): string 
   }
 
   return options.idempotency.commandName;
+}
+
+async function sendDynamoDb<TOutput>(
+  client: DynamoDbClientLike,
+  command: DynamoDbCommand,
+): Promise<TOutput> {
+  return (await client.send(command)) as TOutput;
+}
+
+function resourceTypeFromProjectionName(projectionName: string): string {
+  const separatorIndex = projectionName.indexOf(".");
+
+  if (separatorIndex <= 0) {
+    throw new JawStackRuntimeError(
+      "runtime.internal",
+      `Projection name "${projectionName}" must include a resource type prefix.`,
+    );
+  }
+
+  return projectionName.slice(0, separatorIndex);
+}
+
+function mapDynamoDbCommitError<TState, TResponse>(
+  error: unknown,
+  input: CommandCommitInput<TState, TResponse>,
+): JawStackRuntimeError {
+  if (isDynamoDbConditionalFailure(error)) {
+    const conditionalIndexes = conditionalFailureIndexes(error);
+    const idempotencyIndex = input.idempotency === undefined ? -1 : transactionItemCount(input) - 1;
+
+    if (idempotencyIndex >= 0 && conditionalIndexes.includes(idempotencyIndex)) {
+      return new JawStackRuntimeError(
+        "idempotency.conflict",
+        "Idempotency key was already used for a different command payload.",
+      );
+    }
+
+    return new JawStackRuntimeError(
+      "resource.conflict",
+      `Resource "${input.resource.resourceType}" with ID "${input.resource.resourceId}" changed before commit.`,
+      {
+        expectedVersion: input.resource.expectedVersion,
+      },
+    );
+  }
+
+  return new JawStackRuntimeError("runtime.unavailable", "DynamoDB command commit failed.", {
+    causeName: errorName(error),
+  });
+}
+
+function isDynamoDbConditionalFailure(error: unknown): boolean {
+  if (errorName(error) === "ConditionalCheckFailedException") {
+    return true;
+  }
+
+  return conditionalFailureIndexes(error).length > 0;
+}
+
+function conditionalFailureIndexes(error: unknown): number[] {
+  const reasons = cancellationReasons(error);
+  const indexes: number[] = [];
+
+  reasons.forEach((reason, index) => {
+    if (reason.Code === "ConditionalCheckFailed") {
+      indexes.push(index);
+    }
+  });
+
+  return indexes;
+}
+
+function cancellationReasons(error: unknown): ReadonlyArray<Readonly<{ Code?: string }>> {
+  if (typeof error !== "object" || error === null || !("CancellationReasons" in error)) {
+    return [];
+  }
+
+  const reasons = error.CancellationReasons;
+
+  if (!Array.isArray(reasons)) {
+    return [];
+  }
+
+  return reasons.filter((reason): reason is Readonly<{ Code?: string }> => {
+    return typeof reason === "object" && reason !== null;
+  });
+}
+
+function transactionItemCount<TState, TResponse>(
+  input: CommandCommitInput<TState, TResponse>,
+): number {
+  return (
+    1 +
+    input.activity.length +
+    input.outbox.length +
+    input.projections.length +
+    (input.idempotency === undefined ? 0 : 1)
+  );
+}
+
+function errorName(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null || !("name" in error)) {
+    return undefined;
+  }
+
+  return typeof error.name === "string" ? error.name : undefined;
 }
 
 function marshallItem(value: Record<string, unknown>): DynamoDbItem {

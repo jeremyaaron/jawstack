@@ -1,3 +1,4 @@
+import { GetItemCommand, QueryCommand, TransactWriteItemsCommand } from "@aws-sdk/client-dynamodb";
 import { unmarshall } from "@aws-sdk/util-dynamodb";
 import type {
   ActivityRecord,
@@ -15,6 +16,8 @@ import {
   buildProjectionTransactWriteItem,
   buildResourceStateTransactWriteItem,
   describePackage,
+  DynamoDbCommandUnitOfWork,
+  DynamoDbRepository,
   fromActivityItem,
   fromIdempotencyItem,
   fromOutboxEventItem,
@@ -27,6 +30,7 @@ import {
   outboxEventKey,
   outboxStatusKey,
   packageName,
+  projectionPartitionKey,
   projectionKey,
   resourceStateKey,
   toActivityItem,
@@ -95,6 +99,7 @@ describe("@jawstack/aws-runtime", () => {
       PK: "PROJ#workRequest#list",
       SK: "8258804799999#wr_123",
     });
+    expect(projectionPartitionKey("workRequest", "workRequest.list")).toBe("PROJ#workRequest#list");
 
     expect(workerIdempotencyKey("staleWorkRequestReminder", "evt_123")).toEqual({
       PK: "WORKER#staleWorkRequestReminder#PROCESSED",
@@ -334,6 +339,340 @@ describe("@jawstack/aws-runtime", () => {
       },
     });
   });
+
+  it("gets resource state through DynamoDB", async () => {
+    const client = new RecordingDynamoDbClient([{ Item: toResourceStateItem(resourceState()) }]);
+    const repository = new DynamoDbRepository({
+      client,
+      tableName: "JawStackTable",
+    });
+
+    await expect(repository.getState("workRequest", "wr_123")).resolves.toEqual(resourceState());
+
+    expect(client.commands[0]).toBeInstanceOf(GetItemCommand);
+    expect(client.inputs[0]).toMatchObject({
+      TableName: "JawStackTable",
+      Key: {
+        PK: {
+          S: "RES#workRequest#wr_123",
+        },
+        SK: {
+          S: "STATE",
+        },
+      },
+      ConsistentRead: true,
+    });
+  });
+
+  it("returns undefined for missing resource state", async () => {
+    const client = new RecordingDynamoDbClient([{}]);
+    const repository = new DynamoDbRepository({
+      client,
+      tableName: "JawStackTable",
+    });
+
+    await expect(repository.getState("workRequest", "wr_missing")).resolves.toBeUndefined();
+  });
+
+  it("lists projection records through DynamoDB", async () => {
+    const client = new RecordingDynamoDbClient([
+      {
+        Items: [
+          toProjectionItem({
+            ...projectionWrite(),
+            resourceType: "workRequest",
+            resourceId: "wr_123",
+            updatedAt: "2026-06-25T12:00:00.000Z",
+          }),
+        ],
+      },
+    ]);
+    const repository = new DynamoDbRepository({
+      client,
+      tableName: "JawStackTable",
+    });
+
+    await expect(repository.listProjection("workRequest.list")).resolves.toEqual([
+      projectionWrite(),
+    ]);
+
+    expect(client.commands[0]).toBeInstanceOf(QueryCommand);
+    expect(client.inputs[0]).toMatchObject({
+      TableName: "JawStackTable",
+      KeyConditionExpression: "PK = :pk",
+      ExpressionAttributeValues: {
+        ":pk": {
+          S: "PROJ#workRequest#list",
+        },
+      },
+      ConsistentRead: true,
+    });
+  });
+
+  it("lists activity records through DynamoDB", async () => {
+    const client = new RecordingDynamoDbClient([
+      {
+        Items: [toActivityItem(activityRecord())],
+      },
+    ]);
+    const repository = new DynamoDbRepository({
+      client,
+      tableName: "JawStackTable",
+    });
+
+    await expect(repository.getActivity("workRequest", "wr_123")).resolves.toEqual([
+      activityRecord(),
+    ]);
+
+    expect(client.commands[0]).toBeInstanceOf(QueryCommand);
+    expect(client.inputs[0]).toMatchObject({
+      TableName: "JawStackTable",
+      KeyConditionExpression: "PK = :pk AND begins_with(SK, :skPrefix)",
+      ExpressionAttributeValues: {
+        ":pk": {
+          S: "RES#workRequest#wr_123",
+        },
+        ":skPrefix": {
+          S: "ACT#",
+        },
+      },
+      ScanIndexForward: true,
+    });
+  });
+
+  it("gets idempotency records through explicit DynamoDB scope", async () => {
+    const success = apiSuccess();
+    const client = new RecordingDynamoDbClient([
+      {
+        Item: toIdempotencyItem(
+          idempotencyContextFromCoreRecord(
+            {
+              key: "idem_123",
+              fingerprint: "payload_hash_123",
+              response: success,
+            },
+            {
+              resourceType: "workRequest",
+              commandName: "assign",
+              subject: "user_123",
+              resourceId: "wr_123",
+              createdAt: "2026-06-25T12:00:00.000Z",
+            },
+          ),
+          success,
+        ),
+      },
+    ]);
+    const repository = new DynamoDbRepository({
+      client,
+      tableName: "JawStackTable",
+    });
+
+    await expect(
+      repository.getCommandIdempotency({
+        resourceType: "workRequest",
+        commandName: "assign",
+        subject: "user_123",
+        idempotencyKey: "idem_123",
+      }),
+    ).resolves.toEqual({
+      key: "idem_123",
+      fingerprint: "payload_hash_123",
+      response: success,
+    });
+
+    expect(client.commands[0]).toBeInstanceOf(GetItemCommand);
+    expect(client.inputs[0]).toMatchObject({
+      Key: {
+        PK: {
+          S: "IDEMP#workRequest#assign#user_123",
+        },
+        SK: {
+          S: "idem_123",
+        },
+      },
+    });
+  });
+
+  it("gets idempotency records through the scoped core repository method", async () => {
+    const success = apiSuccess();
+    const client = new RecordingDynamoDbClient([
+      {
+        Item: toIdempotencyItem(
+          idempotencyContextFromCoreRecord(
+            {
+              key: "idem_123",
+              fingerprint: "payload_hash_123",
+              response: success,
+            },
+            {
+              resourceType: "workRequest",
+              commandName: "assign",
+              subject: "user_123",
+              createdAt: "2026-06-25T12:00:00.000Z",
+            },
+          ),
+          success,
+        ),
+      },
+    ]);
+    const repository = new DynamoDbRepository({
+      client,
+      tableName: "JawStackTable",
+      idempotencyScope: {
+        resourceType: "workRequest",
+        commandName: "assign",
+        subject: "user_123",
+      },
+    });
+
+    await expect(repository.getIdempotency("idem_123")).resolves.toMatchObject({
+      key: "idem_123",
+      fingerprint: "payload_hash_123",
+    });
+  });
+
+  it("commits a command through one DynamoDB transaction", async () => {
+    const client = new RecordingDynamoDbClient([{}]);
+    const unitOfWork = new DynamoDbCommandUnitOfWork({
+      client,
+      tableName: "JawStackTable",
+      idempotency: {
+        commandName: "assign",
+        subject: "user_123",
+      },
+    });
+
+    await expect(unitOfWork.commit(commandCommitInput({ create: true }))).resolves.toBeUndefined();
+
+    expect(client.commands[0]).toBeInstanceOf(TransactWriteItemsCommand);
+    expect(client.inputs[0]).toMatchObject({
+      TransactItems: [
+        {
+          Put: {
+            TableName: "JawStackTable",
+            ConditionExpression: "attribute_not_exists(PK)",
+          },
+        },
+        {
+          Put: {
+            TableName: "JawStackTable",
+            Item: {
+              SK: {
+                S: "ACT#2026-06-25T12:00:00.000Z#act_123",
+              },
+            },
+          },
+        },
+        {
+          Put: {
+            TableName: "JawStackTable",
+            Item: {
+              PK: {
+                S: "OUTBOX#evt_123",
+              },
+            },
+          },
+        },
+        {
+          Put: {
+            TableName: "JawStackTable",
+            Item: {
+              PK: {
+                S: "PROJ#workRequest#list",
+              },
+            },
+          },
+        },
+        {
+          Put: {
+            TableName: "JawStackTable",
+            ConditionExpression: "attribute_not_exists(PK)",
+          },
+        },
+      ],
+    });
+  });
+
+  it("commits updates with expected version conditions", async () => {
+    const client = new RecordingDynamoDbClient([{}]);
+    const unitOfWork = new DynamoDbCommandUnitOfWork({
+      client,
+      tableName: "JawStackTable",
+      idempotency: {
+        commandName: "assign",
+        subject: "user_123",
+      },
+    });
+
+    await expect(unitOfWork.commit(commandCommitInput({ create: false }))).resolves.toBeUndefined();
+
+    expect(transactItems(client)[0]).toMatchObject({
+      Put: {
+        ConditionExpression: "#version = :expectedVersion",
+        ExpressionAttributeValues: {
+          ":expectedVersion": {
+            N: "1",
+          },
+        },
+      },
+    });
+  });
+
+  it("maps duplicate idempotency transaction failures", async () => {
+    const client = new RecordingDynamoDbClient([
+      transactionCanceled([
+        {},
+        {},
+        {},
+        {},
+        {
+          Code: "ConditionalCheckFailed",
+        },
+      ]),
+    ]);
+    const unitOfWork = new DynamoDbCommandUnitOfWork({
+      client,
+      tableName: "JawStackTable",
+      idempotency: {
+        commandName: "assign",
+        subject: "user_123",
+      },
+    });
+
+    await expect(unitOfWork.commit(commandCommitInput({ create: true }))).rejects.toMatchObject({
+      code: "idempotency.conflict",
+    });
+  });
+
+  it("maps resource version transaction failures", async () => {
+    const client = new RecordingDynamoDbClient([
+      transactionCanceled([
+        {
+          Code: "ConditionalCheckFailed",
+        },
+        {},
+        {},
+        {},
+        {},
+      ]),
+    ]);
+    const unitOfWork = new DynamoDbCommandUnitOfWork({
+      client,
+      tableName: "JawStackTable",
+      idempotency: {
+        commandName: "assign",
+        subject: "user_123",
+      },
+    });
+
+    await expect(unitOfWork.commit(commandCommitInput({ create: false }))).rejects.toMatchObject({
+      code: "resource.conflict",
+      details: {
+        expectedVersion: 1,
+      },
+    });
+  });
 });
 
 function resourceState(
@@ -433,6 +772,7 @@ function commandCommitInput(options: {
     resource: {
       resourceType: "workRequest",
       resourceId: "wr_123",
+      ...(options.create ? {} : { expectedVersion: 1 }),
       next: resourceState(),
       create: options.create,
     },
@@ -448,4 +788,48 @@ function commandCommitInput(options: {
       response: apiSuccess(),
     },
   };
+}
+
+class RecordingDynamoDbClient {
+  readonly commands: unknown[] = [];
+  readonly inputs: unknown[] = [];
+  private readonly results: unknown[];
+
+  constructor(results: unknown[]) {
+    this.results = [...results];
+  }
+
+  async send(command: Readonly<{ input: unknown }>): Promise<unknown> {
+    this.commands.push(command);
+    this.inputs.push(command.input);
+
+    const result = this.results.shift() ?? {};
+
+    if (result instanceof Error) {
+      throw result;
+    }
+
+    return result;
+  }
+}
+
+function transactionCanceled(
+  cancellationReasons: ReadonlyArray<Readonly<{ Code?: string }>>,
+): Error {
+  const error = new Error("Transaction cancelled");
+  error.name = "TransactionCanceledException";
+  Object.assign(error, {
+    CancellationReasons: cancellationReasons,
+  });
+  return error;
+}
+
+function transactItems(client: RecordingDynamoDbClient): unknown[] {
+  const input = client.inputs[0];
+
+  if (typeof input !== "object" || input === null || !("TransactItems" in input)) {
+    return [];
+  }
+
+  return Array.isArray(input.TransactItems) ? input.TransactItems : [];
 }
