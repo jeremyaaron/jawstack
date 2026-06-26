@@ -2,7 +2,9 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "declaration": true,
-    "rootDir": "."
+    "experimentalDecorators": true,
+    "lib": ["ES2022", "DOM"],
+    "rootDir": "../.."
   },
   "include": ["src/**/*.ts", "test/**/*.ts"]
 }

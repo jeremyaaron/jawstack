@@ -30,14 +30,35 @@
   },
   "pkgGuard": {
     "ignore": [
+      "dependencies.workspace-range",
       "typescript.extends-unresolved",
       "typescript.types-source-file"
     ]
   },
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts --clean",
+    "build": "ngc -p tsconfig.lib.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "lint": "eslint ."
+  },
+  "dependencies": {
+    "@jawstack/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "@angular/common": "^21.2.0",
+    "@angular/core": "^21.2.0",
+    "@angular/forms": "^21.2.0"
+  },
+  "devDependencies": {
+    "@angular/common": "21.2.17",
+    "@angular/compiler": "21.2.17",
+    "@angular/compiler-cli": "21.2.17",
+    "@angular/core": "21.2.17",
+    "@angular/forms": "21.2.17",
+    "@angular/platform-browser": "21.2.17",
+    "@angular/platform-browser-dynamic": "21.2.17",
+    "jsdom": "^26.1.0",
+    "rxjs": "^7.8.2",
+    "zone.js": "~0.16.2"
   }
 }
