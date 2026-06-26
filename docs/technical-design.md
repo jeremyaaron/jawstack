@@ -854,7 +854,7 @@ export type ScheduleDefinition = {
     input: unknown;
   };
   targetHandler?: string;
-  retry: {
+  retry?: {
     maxAttempts: number;
     maxEventAgeSeconds: number;
   };
@@ -1158,6 +1158,11 @@ export type CostProfile = {
   eventBridge: {
     preventSelfTriggeringLoops: boolean;
     requireEventSchemaVersion: boolean;
+  };
+  scheduler: {
+    maxRetryAttempts: number;
+    maxEventAgeSeconds: number;
+    requireDlq: boolean;
   };
   budgets?: {
     monthlyWarningUsd: number;

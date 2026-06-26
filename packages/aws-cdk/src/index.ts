@@ -3,15 +3,18 @@ import * as integrations from "aws-cdk-lib/aws-apigatewayv2-integrations";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as events from "aws-cdk-lib/aws-events";
 import * as targets from "aws-cdk-lib/aws-events-targets";
+import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as lambdaEventSources from "aws-cdk-lib/aws-lambda-event-sources";
 import * as logs from "aws-cdk-lib/aws-logs";
+import * as scheduler from "aws-cdk-lib/aws-scheduler";
 import * as sqs from "aws-cdk-lib/aws-sqs";
 import { Duration, RemovalPolicy } from "aws-cdk-lib";
 import type {
   CostProfile,
   ManifestAuth,
   ResourceDefinition,
+  ScheduleDefinition,
   WorkerDefinition,
 } from "@jawstack/core";
 import { Construct } from "constructs";
@@ -51,6 +54,8 @@ export class JawStackResourceWorkflowApp extends Construct {
   readonly outboxSweeperFunction: lambda.Function;
   readonly workerFunctions: readonly lambda.Function[];
   readonly workerQueues: readonly sqs.Queue[];
+  readonly schedulerFunctions: readonly lambda.Function[];
+  readonly schedulerDlqs: readonly sqs.Queue[];
 
   constructor(scope: Construct, id: string, props: JawStackResourceWorkflowAppProps) {
     super(scope, id);
@@ -59,6 +64,7 @@ export class JawStackResourceWorkflowApp extends Construct {
     const removalPolicy = removalPolicyFor(props.stage, props.removalPolicy);
     const lambdaDefaults = lambdaDefaultsFromCostProfile(props.costProfile);
     const queueDefaults = queueDefaultsFromCostProfile(props.costProfile);
+    const schedulerDefaults = schedulerDefaultsFromCostProfile(props.costProfile);
 
     const tableConstruct = new JawStackTableConstruct(this, "Table", {
       tableName: names.tableName,
@@ -102,6 +108,16 @@ export class JawStackResourceWorkflowApp extends Construct {
       queueDefaults,
       removalPolicy,
     });
+    const schedulerConstruct = new JawStackSchedulerConstruct(this, "Schedulers", {
+      appName: props.appName,
+      stage: props.stage,
+      schedules: schedulesFromResources(props.resources),
+      schedulerHandlers: props.entrypoints.schedulerHandlers ?? {},
+      table: tableConstruct.table,
+      lambdaDefaults,
+      schedulerDefaults,
+      removalPolicy,
+    });
 
     this.table = tableConstruct.table;
     this.eventBus = eventBusConstruct.eventBus;
@@ -111,6 +127,8 @@ export class JawStackResourceWorkflowApp extends Construct {
     this.outboxSweeperFunction = outboxConstruct.sweeperFunction;
     this.workerFunctions = workerConstruct.workerFunctions;
     this.workerQueues = workerConstruct.workerQueues;
+    this.schedulerFunctions = schedulerConstruct.schedulerFunctions;
+    this.schedulerDlqs = schedulerConstruct.schedulerDlqs;
   }
 }
 
@@ -126,6 +144,11 @@ type LambdaDefaults = Readonly<{
 type QueueDefaults = Readonly<{
   maxReceiveCount: number;
   defaultMaxConcurrency: number;
+}>;
+
+type SchedulerDefaults = Readonly<{
+  maxRetryAttempts: number;
+  maxEventAgeSeconds: number;
 }>;
 
 type JawStackTableConstructProps = Readonly<{
@@ -431,6 +454,125 @@ class JawStackWorkerConstruct extends Construct {
   }
 }
 
+type JawStackSchedulerConstructProps = Readonly<{
+  appName: string;
+  stage: string;
+  schedules: readonly ScheduleDefinition[];
+  schedulerHandlers: Readonly<Record<string, string>>;
+  table: dynamodb.Table;
+  lambdaDefaults: LambdaDefaults;
+  schedulerDefaults: SchedulerDefaults;
+  removalPolicy: RemovalPolicy;
+}>;
+
+class JawStackSchedulerConstruct extends Construct {
+  readonly schedulerFunctions: readonly lambda.Function[];
+  readonly schedulerDlqs: readonly sqs.Queue[];
+
+  constructor(scope: Construct, id: string, props: JawStackSchedulerConstructProps) {
+    super(scope, id);
+
+    const schedulerFunctions: lambda.Function[] = [];
+    const schedulerDlqs: sqs.Queue[] = [];
+
+    props.schedules.forEach((scheduleDefinition) => {
+      const handlerName = scheduleDefinition.targetHandler ?? scheduleDefinition.name;
+      const codePath = props.schedulerHandlers[handlerName];
+
+      if (codePath === undefined) {
+        throw new Error(`Missing scheduler handler entrypoint for "${handlerName}".`);
+      }
+
+      const scheduleBaseName = `${safeName(props.appName)}-${safeName(props.stage)}-${safeName(
+        scheduleDefinition.name,
+      )}`;
+      const functionName = `${scheduleBaseName}-scheduler`;
+
+      createLogGroup(
+        this,
+        `${scheduleDefinition.name}LogGroup`,
+        functionName,
+        props.lambdaDefaults,
+        props.removalPolicy,
+      );
+
+      const schedulerFunction = new lambda.Function(this, `${scheduleDefinition.name}Function`, {
+        functionName,
+        runtime: lambda.Runtime.NODEJS_22_X,
+        architecture: lambda.Architecture.ARM_64,
+        handler: "index.handler",
+        code: lambda.Code.fromAsset(codePath),
+        timeout: props.lambdaDefaults.timeout,
+        memorySize: props.lambdaDefaults.memorySize,
+        reservedConcurrentExecutions: props.lambdaDefaults.reservedConcurrency,
+        environment: {
+          JAWSTACK_APP_NAME: props.appName,
+          JAWSTACK_STAGE: props.stage,
+          JAWSTACK_TABLE_NAME: props.table.tableName,
+          JAWSTACK_SCHEDULE_NAME: scheduleDefinition.name,
+          JAWSTACK_SCHEDULE_TARGET_HANDLER: handlerName,
+        },
+      });
+      const dlq = new sqs.Queue(this, `${scheduleDefinition.name}Dlq`, {
+        queueName: `${scheduleBaseName}-scheduler-dlq`,
+        retentionPeriod: Duration.days(14),
+        removalPolicy: props.removalPolicy,
+      });
+      const invocationRole = new iam.Role(this, `${scheduleDefinition.name}InvocationRole`, {
+        assumedBy: new iam.ServicePrincipal("scheduler.amazonaws.com"),
+      });
+      const retry = scheduleDefinition.retry ?? {
+        maxAttempts: props.schedulerDefaults.maxRetryAttempts,
+        maxEventAgeSeconds: props.schedulerDefaults.maxEventAgeSeconds,
+      };
+
+      props.table.grantReadData(schedulerFunction);
+      invocationRole.addToPolicy(
+        new iam.PolicyStatement({
+          actions: ["lambda:InvokeFunction"],
+          resources: [schedulerFunction.functionArn],
+        }),
+      );
+      invocationRole.addToPolicy(
+        new iam.PolicyStatement({
+          actions: ["sqs:SendMessage"],
+          resources: [dlq.queueArn],
+        }),
+      );
+
+      new scheduler.CfnSchedule(this, `${scheduleDefinition.name}Schedule`, {
+        name: `${scheduleBaseName}-schedule`,
+        scheduleExpression: scheduleDefinition.expression,
+        flexibleTimeWindow: {
+          mode: "OFF",
+        },
+        state: "ENABLED",
+        target: {
+          arn: schedulerFunction.functionArn,
+          roleArn: invocationRole.roleArn,
+          retryPolicy: {
+            maximumRetryAttempts: retry.maxAttempts,
+            maximumEventAgeInSeconds: retry.maxEventAgeSeconds,
+          },
+          deadLetterConfig: {
+            arn: dlq.queueArn,
+          },
+          input: JSON.stringify({
+            scheduleName: scheduleDefinition.name,
+            targetHandler: handlerName,
+          }),
+        },
+      });
+
+      schedulerFunctions.push(schedulerFunction);
+      schedulerDlqs.push(dlq);
+    });
+
+    this.schedulerFunctions = schedulerFunctions;
+    this.schedulerDlqs = schedulerDlqs;
+  }
+}
+
 function createLogGroup(
   scope: Construct,
   id: string,
@@ -535,8 +677,21 @@ function queueDefaultsFromCostProfile(costProfile: CostProfile): QueueDefaults {
   };
 }
 
+function schedulerDefaultsFromCostProfile(costProfile: CostProfile): SchedulerDefaults {
+  const schedulerProfile = recordProperty(costProfile, "scheduler");
+
+  return {
+    maxRetryAttempts: numberProperty(schedulerProfile, "maxRetryAttempts") ?? 2,
+    maxEventAgeSeconds: numberProperty(schedulerProfile, "maxEventAgeSeconds") ?? 3600,
+  };
+}
+
 function workersFromResources(resources: readonly ResourceDefinition[]): WorkerDefinition[] {
   return resources.flatMap((resource) => resource.workers);
+}
+
+function schedulesFromResources(resources: readonly ResourceDefinition[]): ScheduleDefinition[] {
+  return resources.flatMap((resource) => resource.schedules);
 }
 
 function pointInTimeRecoveryFromCostProfile(costProfile: CostProfile): boolean {

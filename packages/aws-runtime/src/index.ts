@@ -28,6 +28,7 @@ import type {
   LocalHttpRequestContext,
   LocalHttpReadableRepository,
   ManifestAuth,
+  ProjectionRecord,
   ProjectionWrite,
   ResourceDefinition,
   ResourceRegistry,
@@ -270,6 +271,51 @@ export type SqsWorkerAdapterOptions<TEvent = unknown> = Readonly<{
   clock?: () => Date;
 }>;
 
+export type SchedulerEvent = Readonly<{
+  id?: string;
+  time?: string;
+  source?: string;
+  detail?: unknown;
+  targetHandler?: string;
+  scheduleName?: string;
+  [key: string]: unknown;
+}>;
+
+export type SchedulerHandler<TResult = unknown> = (
+  event: SchedulerEvent,
+) => Promise<TResult> | TResult;
+
+export type SchedulerTargetAdapterOptions = Readonly<{
+  handlers: Readonly<Record<string, SchedulerHandler>>;
+  defaultHandler?: string;
+}>;
+
+export type SchedulerTargetAdapterResult = Readonly<{
+  targetHandler: string;
+  result: unknown;
+}>;
+
+export type StaleWorkRequestReminder = Readonly<{
+  resourceId: string;
+  title: string;
+  updatedAt: string;
+  assigneeId?: string;
+  status: "open";
+}>;
+
+export type StaleWorkRequestReminderResult = Readonly<{
+  scanned: number;
+  stale: number;
+  reminders: readonly StaleWorkRequestReminder[];
+}>;
+
+export type StaleWorkRequestReminderOptions = Readonly<{
+  repository: Pick<LocalHttpReadableRepository, "listProjection">;
+  staleAfterMs?: number;
+  clock?: () => Date;
+  onReminder?: (reminder: StaleWorkRequestReminder, event: SchedulerEvent) => Promise<void> | void;
+}>;
+
 export type LambdaHttpEvent = Readonly<{
   version?: string;
   rawPath?: string;
@@ -327,6 +373,7 @@ const DEFAULT_IDEMPOTENCY_TTL_SECONDS = 7 * 24 * 60 * 60;
 const DEFAULT_WORKER_IDEMPOTENCY_TTL_SECONDS = 14 * 24 * 60 * 60;
 const DEFAULT_OUTBOX_SWEEP_BATCH_LIMIT = 10;
 const DEFAULT_OUTBOX_STALE_AFTER_MS = 2 * 60 * 1000;
+const DEFAULT_WORK_REQUEST_STALE_AFTER_MS = 24 * 60 * 60 * 1000;
 
 export class DynamoDbRepository implements LocalHttpReadableRepository {
   private readonly client: DynamoDbClientLike;
@@ -748,6 +795,68 @@ export class SqsWorkerAdapter<TEvent = unknown> {
       skipped,
     };
   }
+}
+
+export function createSchedulerTargetAdapter(
+  options: SchedulerTargetAdapterOptions,
+): SchedulerHandler<SchedulerTargetAdapterResult> {
+  return async (event) => {
+    const targetHandler = schedulerTargetHandlerName(event) ?? options.defaultHandler;
+
+    if (targetHandler === undefined) {
+      throw new JawStackRuntimeError(
+        "runtime.internal",
+        "Scheduler event did not include a target handler.",
+      );
+    }
+
+    const handler = options.handlers[targetHandler];
+
+    if (handler === undefined) {
+      throw new JawStackRuntimeError(
+        "runtime.internal",
+        `No scheduler handler is registered for "${targetHandler}".`,
+      );
+    }
+
+    return {
+      targetHandler,
+      result: await handler(event),
+    };
+  };
+}
+
+export function createStaleWorkRequestReminderHandler(
+  options: StaleWorkRequestReminderOptions,
+): SchedulerHandler<StaleWorkRequestReminderResult> {
+  return async (event) => {
+    const listProjection = options.repository.listProjection;
+
+    if (listProjection === undefined) {
+      throw new JawStackRuntimeError(
+        "runtime.internal",
+        "Stale Work Request reminders require repository.listProjection.",
+      );
+    }
+
+    const now = options.clock?.() ?? new Date();
+    const staleBefore =
+      now.getTime() - (options.staleAfterMs ?? DEFAULT_WORK_REQUEST_STALE_AFTER_MS);
+    const items = await listProjection.call(options.repository, "workRequest.list");
+    const reminders = items
+      .map((item) => staleOpenWorkRequestReminder(item, staleBefore))
+      .filter((item): item is StaleWorkRequestReminder => item !== undefined);
+
+    for (const reminder of reminders) {
+      await options.onReminder?.(reminder, event);
+    }
+
+    return {
+      scanned: items.length,
+      stale: reminders.length,
+      reminders,
+    };
+  };
 }
 
 export function createApiGatewayLambdaHandler(
@@ -1469,6 +1578,44 @@ function isJawStackEvent(value: unknown): value is JawStackEvent {
     typeof value.resourceType === "string" &&
     typeof value.resourceId === "string"
   );
+}
+
+function schedulerTargetHandlerName(event: SchedulerEvent): string | undefined {
+  if (typeof event.targetHandler === "string" && event.targetHandler.trim().length > 0) {
+    return event.targetHandler;
+  }
+
+  if (!isRecord(event.detail)) {
+    return undefined;
+  }
+
+  return typeof event.detail.targetHandler === "string" &&
+    event.detail.targetHandler.trim().length > 0
+    ? event.detail.targetHandler
+    : undefined;
+}
+
+function staleOpenWorkRequestReminder(
+  item: ProjectionRecord,
+  staleBefore: number,
+): StaleWorkRequestReminder | undefined {
+  if (item.data.status !== "open" || typeof item.data.updatedAt !== "string") {
+    return undefined;
+  }
+
+  const updatedAtMillis = Date.parse(item.data.updatedAt);
+
+  if (!Number.isFinite(updatedAtMillis) || updatedAtMillis >= staleBefore) {
+    return undefined;
+  }
+
+  return {
+    resourceId: item.itemId,
+    title: typeof item.data.title === "string" ? item.data.title : item.itemId,
+    updatedAt: item.data.updatedAt,
+    ...(typeof item.data.assigneeId === "string" ? { assigneeId: item.data.assigneeId } : {}),
+    status: "open",
+  };
 }
 
 class StaticAuthProvider implements AuthProvider {

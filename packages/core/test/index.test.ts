@@ -311,6 +311,10 @@ describe("@jawstack/core metadata API", () => {
           name: "staleReminder",
           expression: "rate(1 day)",
           targetHandler: "findStaleOpenRequests",
+          retry: {
+            maxAttempts: 2,
+            maxEventAgeSeconds: 3600,
+          },
         }),
       ],
     });
@@ -323,6 +327,10 @@ describe("@jawstack/core metadata API", () => {
     expect(resource.views.list?.columns).toEqual(["title", "status", "assigneeId", "updatedAt"]);
     expect(resource.workers[0]?.maxConcurrency).toBe(2);
     expect(resource.schedules[0]?.expression).toBe("rate(1 day)");
+    expect(resource.schedules[0]?.retry).toEqual({
+      maxAttempts: 2,
+      maxEventAgeSeconds: 3600,
+    });
     expect(Object.isFrozen(resource)).toBe(true);
     expect(Object.isFrozen(resource.state.fields.status)).toBe(true);
   });

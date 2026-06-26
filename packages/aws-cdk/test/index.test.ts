@@ -5,7 +5,12 @@ import { join } from "node:path";
 import { App, Stack } from "aws-cdk-lib";
 import { Match, Template } from "aws-cdk-lib/assertions";
 import { describe, expect, it } from "vitest";
-import { defineWorker, workRequestResource, type ResourceDefinition } from "@jawstack/core";
+import {
+  defineSchedule,
+  defineWorker,
+  workRequestResource,
+  type ResourceDefinition,
+} from "@jawstack/core";
 
 import {
   describePackage,
@@ -26,11 +31,12 @@ describe("@jawstack/aws-cdk", () => {
     template.resourceCountIs("AWS::DynamoDB::Table", 1);
     template.resourceCountIs("AWS::Events::EventBus", 1);
     template.resourceCountIs("AWS::ApiGatewayV2::Api", 1);
-    template.resourceCountIs("AWS::Lambda::Function", 4);
-    template.resourceCountIs("AWS::Logs::LogGroup", 4);
+    template.resourceCountIs("AWS::Lambda::Function", 5);
+    template.resourceCountIs("AWS::Logs::LogGroup", 5);
     template.resourceCountIs("AWS::Lambda::EventSourceMapping", 2);
     template.resourceCountIs("AWS::Events::Rule", 2);
-    template.resourceCountIs("AWS::SQS::Queue", 2);
+    template.resourceCountIs("AWS::SQS::Queue", 3);
+    template.resourceCountIs("AWS::Scheduler::Schedule", 1);
   });
 
   it("configures the DynamoDB table with stream, TTL, and outbox GSI", () => {
@@ -123,8 +129,26 @@ describe("@jawstack/aws-cdk", () => {
       MemorySize: 384,
       ReservedConcurrentExecutions: 2,
     });
+    template.hasResourceProperties("AWS::Lambda::Function", {
+      FunctionName: "jawstack-test-dev-staleworkrequestreminder-scheduler",
+      Runtime: "nodejs22.x",
+      Handler: "index.handler",
+      Timeout: 12,
+      MemorySize: 384,
+      ReservedConcurrentExecutions: 7,
+      Environment: {
+        Variables: Match.objectLike({
+          JAWSTACK_SCHEDULE_NAME: "staleWorkRequestReminder",
+          JAWSTACK_SCHEDULE_TARGET_HANDLER: "staleWorkRequestReminder",
+        }),
+      },
+    });
     template.hasResourceProperties("AWS::Logs::LogGroup", {
       LogGroupName: "/aws/lambda/jawstack-test-dev-sendnotification-worker",
+      RetentionInDays: 7,
+    });
+    template.hasResourceProperties("AWS::Logs::LogGroup", {
+      LogGroupName: "/aws/lambda/jawstack-test-dev-staleworkrequestreminder-scheduler",
       RetentionInDays: 7,
     });
   });
@@ -273,6 +297,60 @@ describe("@jawstack/aws-cdk", () => {
     });
   });
 
+  it("creates scheduler target Lambda, daily schedule, retry policy, and DLQ", () => {
+    const template = synthTemplate();
+
+    template.hasResourceProperties("AWS::SQS::Queue", {
+      QueueName: "jawstack-test-dev-staleworkrequestreminder-scheduler-dlq",
+      MessageRetentionPeriod: 1209600,
+    });
+    template.hasResourceProperties("AWS::Scheduler::Schedule", {
+      Name: "jawstack-test-dev-staleworkrequestreminder-schedule",
+      ScheduleExpression: "rate(1 day)",
+      FlexibleTimeWindow: {
+        Mode: "OFF",
+      },
+      State: "ENABLED",
+      Target: Match.objectLike({
+        Arn: {
+          "Fn::GetAtt": [Match.stringLikeRegexp("staleWorkRequestReminderFunction"), "Arn"],
+        },
+        RetryPolicy: {
+          MaximumRetryAttempts: 3,
+          MaximumEventAgeInSeconds: 7200,
+        },
+        DeadLetterConfig: {
+          Arn: {
+            "Fn::GetAtt": [Match.stringLikeRegexp("staleWorkRequestReminderDlq"), "Arn"],
+          },
+        },
+        Input: JSON.stringify({
+          scheduleName: "staleWorkRequestReminder",
+          targetHandler: "staleWorkRequestReminder",
+        }),
+      }),
+    });
+    template.hasResourceProperties("AWS::IAM::Policy", {
+      PolicyDocument: {
+        Statement: Match.arrayWith([
+          Match.objectLike({
+            Action: "lambda:InvokeFunction",
+            Effect: "Allow",
+          }),
+          Match.objectLike({
+            Action: "sqs:SendMessage",
+            Effect: "Allow",
+          }),
+        ]),
+      },
+      Roles: Match.arrayWith([
+        {
+          Ref: Match.stringLikeRegexp("staleWorkRequestReminderInvocationRole"),
+        },
+      ]),
+    });
+  });
+
   it("grants worker Lambda table access", () => {
     const template = synthTemplate();
 
@@ -288,6 +366,26 @@ describe("@jawstack/aws-cdk", () => {
       Roles: Match.arrayWith([
         {
           Ref: Match.stringLikeRegexp("sendNotificationFunctionServiceRole"),
+        },
+      ]),
+    });
+  });
+
+  it("grants scheduler Lambda table read access", () => {
+    const template = synthTemplate();
+
+    template.hasResourceProperties("AWS::IAM::Policy", {
+      PolicyDocument: {
+        Statement: Match.arrayWith([
+          Match.objectLike({
+            Action: Match.arrayWith(["dynamodb:Query", "dynamodb:GetItem"]),
+            Effect: "Allow",
+          }),
+        ]),
+      },
+      Roles: Match.arrayWith([
+        {
+          Ref: Match.stringLikeRegexp("staleWorkRequestReminderFunctionServiceRole"),
         },
       ]),
     });
@@ -326,6 +424,11 @@ function workflowProps(): JawStackResourceWorkflowAppProps {
         maxReceiveCount: 4,
         requireDlq: true,
       },
+      scheduler: {
+        maxRetryAttempts: 3,
+        maxEventAgeSeconds: 7200,
+        requireDlq: true,
+      },
     },
     auth: {
       mode: "external",
@@ -336,6 +439,9 @@ function workflowProps(): JawStackResourceWorkflowAppProps {
       outboxHandler: entrypointDir,
       workerHandlers: {
         sendNotification: entrypointDir,
+      },
+      schedulerHandlers: {
+        staleWorkRequestReminder: entrypointDir,
       },
     },
   };
@@ -349,6 +455,13 @@ function workerResource(): ResourceDefinition {
         name: "sendNotification",
         eventTypes: ["workRequest.created"],
         maxConcurrency: 2,
+      }),
+    ],
+    schedules: [
+      defineSchedule({
+        name: "staleWorkRequestReminder",
+        expression: "rate(1 day)",
+        targetHandler: "staleWorkRequestReminder",
       }),
     ],
   };

@@ -29,6 +29,8 @@ import {
   buildResourceStateTransactWriteItem,
   createApiGatewayLambdaHandler,
   createLambdaHttpHandler,
+  createSchedulerTargetAdapter,
+  createStaleWorkRequestReminderHandler,
   describePackage,
   DynamoDbCommandUnitOfWork,
   DynamoDbOutboxDispatcher,
@@ -1343,6 +1345,110 @@ describe("@jawstack/aws-runtime", () => {
       processed: 0,
       skipped: 1,
     });
+  });
+
+  it("dispatches scheduler events to named handlers", async () => {
+    const adapter = createSchedulerTargetAdapter({
+      handlers: {
+        staleWorkRequestReminder: (event) => ({ scheduleName: event.scheduleName }),
+      },
+    });
+
+    await expect(
+      adapter({
+        scheduleName: "staleWorkRequestReminder",
+        targetHandler: "staleWorkRequestReminder",
+      }),
+    ).resolves.toEqual({
+      targetHandler: "staleWorkRequestReminder",
+      result: {
+        scheduleName: "staleWorkRequestReminder",
+      },
+    });
+  });
+
+  it("returns no stale Work Request reminders when open items are still fresh", async () => {
+    const handler = createStaleWorkRequestReminderHandler({
+      repository: {
+        listProjection: async () => [
+          {
+            projectionName: "workRequest.list",
+            itemId: "wr_fresh",
+            sort: "fresh",
+            data: {
+              title: "Fresh request",
+              status: "open",
+              updatedAt: "2026-06-25T18:00:00.000Z",
+            },
+          },
+          {
+            projectionName: "workRequest.list",
+            itemId: "wr_closed",
+            sort: "closed",
+            data: {
+              title: "Closed request",
+              status: "closed",
+              updatedAt: "2026-06-23T12:00:00.000Z",
+            },
+          },
+        ],
+      },
+      clock: () => new Date("2026-06-26T12:00:00.000Z"),
+    });
+
+    await expect(handler({ scheduleName: "staleWorkRequestReminder" })).resolves.toEqual({
+      scanned: 2,
+      stale: 0,
+      reminders: [],
+    });
+  });
+
+  it("finds stale open Work Requests and invokes the notification stub", async () => {
+    const reminders: unknown[] = [];
+    const handler = createStaleWorkRequestReminderHandler({
+      repository: {
+        listProjection: async () => [
+          {
+            projectionName: "workRequest.list",
+            itemId: "wr_stale",
+            sort: "stale",
+            data: {
+              title: "Stale request",
+              status: "open",
+              assigneeId: "user_456",
+              updatedAt: "2026-06-24T12:00:00.000Z",
+            },
+          },
+        ],
+      },
+      clock: () => new Date("2026-06-26T12:00:00.000Z"),
+      onReminder: (reminder) => {
+        reminders.push(reminder);
+      },
+    });
+
+    await expect(handler({ scheduleName: "staleWorkRequestReminder" })).resolves.toEqual({
+      scanned: 1,
+      stale: 1,
+      reminders: [
+        {
+          resourceId: "wr_stale",
+          title: "Stale request",
+          updatedAt: "2026-06-24T12:00:00.000Z",
+          assigneeId: "user_456",
+          status: "open",
+        },
+      ],
+    });
+    expect(reminders).toEqual([
+      {
+        resourceId: "wr_stale",
+        title: "Stale request",
+        updatedAt: "2026-06-24T12:00:00.000Z",
+        assigneeId: "user_456",
+        status: "open",
+      },
+    ]);
   });
 });
 

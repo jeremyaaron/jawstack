@@ -116,10 +116,23 @@ export type WorkerDefinition = Readonly<{
   handler?: unknown;
 }>;
 
+export type ScheduleTargetCommand = Readonly<{
+  resourceType: string;
+  commandName: string;
+  input: unknown;
+}>;
+
+export type ScheduleRetryPolicy = Readonly<{
+  maxAttempts: number;
+  maxEventAgeSeconds: number;
+}>;
+
 export type ScheduleDefinition = Readonly<{
   name: string;
   expression: string;
+  targetCommand?: ScheduleTargetCommand;
   targetHandler?: string;
+  retry?: ScheduleRetryPolicy;
 }>;
 
 export type ResourceDefinition<
@@ -439,7 +452,9 @@ export type ManifestWorker = Readonly<{
 export type ManifestSchedule = Readonly<{
   name: string;
   expression: string;
+  targetCommand?: ScheduleTargetCommand;
   targetHandler?: string;
+  retry?: ScheduleRetryPolicy;
 }>;
 
 export type ManifestResource = Readonly<{
@@ -1428,6 +1443,24 @@ export function defineSchedule(input: ScheduleDefinition): ScheduleDefinition {
   assertName(input.name, "schedule.name.invalid", "schedule.name");
   assertNonEmptyString(input.expression, "schedule.expression.invalid", "schedule.expression");
 
+  if (input.targetCommand !== undefined) {
+    assertPlainObject(
+      input.targetCommand,
+      "schedule.target-command.invalid",
+      "schedule.targetCommand",
+    );
+    assertName(
+      input.targetCommand.resourceType,
+      "schedule.target-command.resource-type.invalid",
+      "schedule.targetCommand.resourceType",
+    );
+    assertName(
+      input.targetCommand.commandName,
+      "schedule.target-command.command-name.invalid",
+      "schedule.targetCommand.commandName",
+    );
+  }
+
   if (input.targetHandler !== undefined) {
     assertNonEmptyString(
       input.targetHandler,
@@ -1436,10 +1469,41 @@ export function defineSchedule(input: ScheduleDefinition): ScheduleDefinition {
     );
   }
 
+  if (input.retry !== undefined) {
+    assertPlainObject(input.retry, "schedule.retry.invalid", "schedule.retry");
+    assertPositiveInteger(
+      input.retry.maxAttempts,
+      "schedule.retry.max-attempts.invalid",
+      "schedule.retry.maxAttempts",
+    );
+    assertPositiveInteger(
+      input.retry.maxEventAgeSeconds,
+      "schedule.retry.max-event-age.invalid",
+      "schedule.retry.maxEventAgeSeconds",
+    );
+  }
+
   return deepFreeze({
     name: input.name,
     expression: input.expression,
+    ...(input.targetCommand === undefined
+      ? {}
+      : {
+          targetCommand: {
+            resourceType: input.targetCommand.resourceType,
+            commandName: input.targetCommand.commandName,
+            input: cloneValue(input.targetCommand.input),
+          },
+        }),
     ...(input.targetHandler === undefined ? {} : { targetHandler: input.targetHandler }),
+    ...(input.retry === undefined
+      ? {}
+      : {
+          retry: {
+            maxAttempts: input.retry.maxAttempts,
+            maxEventAgeSeconds: input.retry.maxEventAgeSeconds,
+          },
+        }),
   });
 }
 
@@ -1850,7 +1914,13 @@ function manifestResource(resource: ResourceDefinition): ManifestResource {
     schedules: resource.schedules.map((schedule) => ({
       name: schedule.name,
       expression: schedule.expression,
+      ...(schedule.targetCommand === undefined
+        ? {}
+        : {
+            targetCommand: sanitizeManifestRecord(schedule.targetCommand) as ScheduleTargetCommand,
+          }),
       ...(schedule.targetHandler === undefined ? {} : { targetHandler: schedule.targetHandler }),
+      ...(schedule.retry === undefined ? {} : { retry: { ...schedule.retry } }),
     })),
   };
 }
