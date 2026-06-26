@@ -1,3 +1,5 @@
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+
 import { z } from "zod";
 
 export const packageName = "@jawstack/core";
@@ -309,6 +311,32 @@ export type AuthProvider = Readonly<{
   resolve(requestContext: unknown): Promise<AuthContext> | AuthContext;
 }>;
 
+export type LocalHttpRequestContext = Readonly<{
+  method: string;
+  url: string;
+  headers: Readonly<Record<string, string | readonly string[] | undefined>>;
+}>;
+
+export type LocalHttpReadableRepository = ResourceRepository &
+  Readonly<{
+    listProjection?(projectionName: string): Promise<readonly ProjectionRecord[]>;
+    getActivity?(resourceType: string, resourceId: string): Promise<readonly ActivityRecord[]>;
+  }>;
+
+export type LocalHttpAdapterOptions = Readonly<{
+  appName: string;
+  stage: string;
+  registry: ResourceRegistry | readonly ResourceDefinition[];
+  repository: LocalHttpReadableRepository;
+  unitOfWork: CommandUnitOfWork;
+  authProvider: AuthProvider;
+  auth?: ManifestAuth;
+  costProfile?: CostProfile;
+  ids?: Partial<IdGenerator>;
+  clock?: () => Date;
+  source?: string;
+}>;
+
 export type ApiSuccess<T> = Readonly<{
   ok: true;
   data: T;
@@ -610,6 +638,98 @@ export function createInMemoryPersistence(store = new InMemoryStore()): Readonly
   };
 }
 
+export class TestAuthProvider implements AuthProvider {
+  constructor(private readonly auth: AuthContext) {}
+
+  resolve(): AuthContext {
+    return this.auth;
+  }
+}
+
+export class DevAuthProvider implements AuthProvider {
+  constructor(private readonly overrides: Partial<AuthContext> = {}) {}
+
+  resolve(): AuthContext {
+    return {
+      subject: this.overrides.subject ?? "dev_user",
+      ...(this.overrides.displayName === undefined
+        ? { displayName: "Dev User" }
+        : { displayName: this.overrides.displayName }),
+      ...(this.overrides.tenantId === undefined ? {} : { tenantId: this.overrides.tenantId }),
+      roles: this.overrides.roles ?? ["user", "manager"],
+      claims: this.overrides.claims ?? {},
+      mode: "dev",
+    };
+  }
+}
+
+export class HeaderAuthProvider implements AuthProvider {
+  resolve(requestContext: unknown): AuthContext {
+    const context = assertLocalHttpRequestContext(requestContext);
+    const subject = headerValue(context.headers, "x-jawstack-subject");
+
+    if (subject === undefined || subject.trim().length === 0) {
+      throw new JawStackRuntimeError("auth.missing", "Missing x-jawstack-subject header.");
+    }
+
+    const displayName = headerValue(context.headers, "x-jawstack-display-name");
+    const tenantId = headerValue(context.headers, "x-jawstack-tenant-id");
+    const roles = (headerValue(context.headers, "x-jawstack-roles") ?? "")
+      .split(",")
+      .map((role) => role.trim())
+      .filter((role) => role.length > 0);
+
+    return {
+      subject,
+      ...(displayName === undefined ? {} : { displayName }),
+      ...(tenantId === undefined ? {} : { tenantId }),
+      roles,
+      claims: {},
+      mode: "external",
+    };
+  }
+}
+
+export function createLocalHttpHandler(
+  options: LocalHttpAdapterOptions,
+): (request: IncomingMessage, response: ServerResponse) => Promise<void> {
+  return async (request, response) => {
+    const context = createLocalHttpRequestContext(request);
+    const requestId = headerValue(context.headers, "x-jawstack-request-id") ?? randomId("req");
+    const correlationId =
+      headerValue(context.headers, "x-jawstack-correlation-id") ?? randomId("corr");
+
+    try {
+      const result = await handleLocalHttpRequest(
+        context,
+        request,
+        options,
+        requestId,
+        correlationId,
+      );
+      writeJson(response, result.statusCode, result.body);
+    } catch (error) {
+      const apiErrorResponse =
+        error instanceof JawStackRuntimeError
+          ? apiError(error.code, error.message, requestId, correlationId, error.details)
+          : apiError(
+              "runtime.internal",
+              "An internal runtime error occurred.",
+              requestId,
+              correlationId,
+            );
+
+      writeJson(response, httpStatusForError(apiErrorResponse.error.code), apiErrorResponse);
+    }
+  };
+}
+
+export function createLocalHttpServer(options: LocalHttpAdapterOptions): Server {
+  return createServer((request, response) => {
+    void createLocalHttpHandler(options)(request, response);
+  });
+}
+
 function definitionError(code: string, message: string, path?: string): never {
   throw new JawStackDefinitionError(code, message, path);
 }
@@ -723,6 +843,319 @@ function deepFreeze<T>(value: T): T {
   }
 
   return value;
+}
+
+function assertLocalHttpRequestContext(value: unknown): LocalHttpRequestContext {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("headers" in value) ||
+    !("method" in value) ||
+    !("url" in value)
+  ) {
+    throw new JawStackRuntimeError("auth.missing", "HTTP request context is unavailable.");
+  }
+
+  return value as LocalHttpRequestContext;
+}
+
+function createLocalHttpRequestContext(request: IncomingMessage): LocalHttpRequestContext {
+  return {
+    method: request.method ?? "GET",
+    url: request.url ?? "/",
+    headers: request.headers,
+  };
+}
+
+function headerValue(
+  headers: Readonly<Record<string, string | readonly string[] | undefined>>,
+  name: string,
+): string | undefined {
+  const value = headers[name.toLowerCase()];
+
+  if (Array.isArray(value)) {
+    const first = value[0];
+    return typeof first === "string" ? first : undefined;
+  }
+
+  return typeof value === "string" ? value : undefined;
+}
+
+function httpStatusForError(code: RuntimeErrorCode): number {
+  switch (code) {
+    case "command.validation":
+      return 400;
+    case "auth.missing":
+      return 401;
+    case "auth.forbidden":
+      return 403;
+    case "resource.not_found":
+      return 404;
+    case "resource.conflict":
+    case "idempotency.conflict":
+      return 409;
+    case "command.rejected":
+      return 422;
+    case "resource.invalid_state":
+      return 422;
+    case "runtime.unavailable":
+      return 503;
+    case "runtime.internal":
+      return 500;
+  }
+}
+
+function writeJson(response: ServerResponse, statusCode: number, body: unknown): void {
+  response.statusCode = statusCode;
+  response.setHeader("content-type", "application/json; charset=utf-8");
+  response.end(`${JSON.stringify(body)}\n`);
+}
+
+function localApiSuccess<T>(data: T, requestId: string, correlationId: string): ApiSuccess<T> {
+  return apiSuccess(data, requestId, correlationId);
+}
+
+async function readJsonBody(request: IncomingMessage): Promise<unknown> {
+  const chunks: Buffer[] = [];
+
+  for await (const chunk of request) {
+    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+  }
+
+  if (chunks.length === 0) {
+    return {};
+  }
+
+  const raw = Buffer.concat(chunks).toString("utf8");
+
+  if (raw.trim().length === 0) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(raw);
+  } catch {
+    throw new JawStackRuntimeError("command.validation", "Request body must be valid JSON.");
+  }
+}
+
+function pathSegments(url: string): string[] {
+  const parsed = new URL(url, "http://localhost");
+  return parsed.pathname
+    .split("/")
+    .filter((segment) => segment.length > 0)
+    .map(decodeURIComponent);
+}
+
+function commandRequestBody(value: unknown): Readonly<{
+  input: unknown;
+  idempotencyKey?: string;
+}> {
+  if (!isRecord(value)) {
+    throw new JawStackRuntimeError("command.validation", "Command request body must be an object.");
+  }
+
+  const idempotencyKey = value.idempotencyKey;
+
+  if (idempotencyKey !== undefined && typeof idempotencyKey !== "string") {
+    throw new JawStackRuntimeError(
+      "command.validation",
+      "Command idempotencyKey must be a string when provided.",
+    );
+  }
+
+  return {
+    input: value.input ?? {},
+    ...(idempotencyKey === undefined ? {} : { idempotencyKey }),
+  };
+}
+
+async function requireAuth(
+  options: LocalHttpAdapterOptions,
+  context: LocalHttpRequestContext,
+): Promise<void> {
+  await options.authProvider.resolve(context);
+}
+
+async function handleLocalHttpRequest(
+  context: LocalHttpRequestContext,
+  request: IncomingMessage,
+  options: LocalHttpAdapterOptions,
+  requestId: string,
+  correlationId: string,
+): Promise<Readonly<{ statusCode: number; body: unknown }>> {
+  const segments = pathSegments(context.url);
+
+  if (
+    context.method === "GET" &&
+    segments.length === 2 &&
+    segments[0] === "api" &&
+    segments[1] === "health"
+  ) {
+    return {
+      statusCode: 200,
+      body: localApiSuccess({ status: "ok" }, requestId, correlationId),
+    };
+  }
+
+  if (
+    context.method === "GET" &&
+    segments.length === 2 &&
+    segments[0] === "api" &&
+    segments[1] === "manifest"
+  ) {
+    const manifest = createManifest({
+      appName: options.appName,
+      stage: options.stage,
+      stable: true,
+      resources: options.registry,
+      auth: options.auth ?? { mode: "dev", provider: "local" },
+      costProfile: options.costProfile ?? {},
+    });
+
+    return {
+      statusCode: 200,
+      body: localApiSuccess(manifest, requestId, correlationId),
+    };
+  }
+
+  if (segments[0] !== "api" || segments[1] !== "resources") {
+    return {
+      statusCode: 404,
+      body: apiError("resource.not_found", "Route not found.", requestId, correlationId),
+    };
+  }
+
+  await requireAuth(options, context);
+
+  const resourceType = segments[2];
+
+  if (resourceType === undefined) {
+    return {
+      statusCode: 404,
+      body: apiError(
+        "resource.not_found",
+        "Resource type route not found.",
+        requestId,
+        correlationId,
+      ),
+    };
+  }
+
+  if (context.method === "GET" && segments.length === 3) {
+    const projectionName = `${resourceType}.list`;
+    const items = await options.repository.listProjection?.(projectionName);
+
+    return {
+      statusCode: 200,
+      body: localApiSuccess({ items: items ?? [] }, requestId, correlationId),
+    };
+  }
+
+  if (context.method === "GET" && segments.length === 4) {
+    const resourceId = segments[3] ?? "";
+    const state = await options.repository.getState(resourceType, resourceId);
+
+    if (state === undefined) {
+      const error = apiError(
+        "resource.not_found",
+        `Resource "${resourceType}" with ID "${resourceId}" was not found.`,
+        requestId,
+        correlationId,
+      );
+      return { statusCode: 404, body: error };
+    }
+
+    return {
+      statusCode: 200,
+      body: localApiSuccess(state, requestId, correlationId),
+    };
+  }
+
+  if (context.method === "GET" && segments.length === 5 && segments[4] === "activity") {
+    const resourceId = segments[3] ?? "";
+    const state = await options.repository.getState(resourceType, resourceId);
+
+    if (state === undefined) {
+      const error = apiError(
+        "resource.not_found",
+        `Resource "${resourceType}" with ID "${resourceId}" was not found.`,
+        requestId,
+        correlationId,
+      );
+      return { statusCode: 404, body: error };
+    }
+
+    const activity = await options.repository.getActivity?.(resourceType, resourceId);
+    return {
+      statusCode: 200,
+      body: localApiSuccess({ items: activity ?? [] }, requestId, correlationId),
+    };
+  }
+
+  if (context.method === "POST" && segments.length === 5 && segments[3] === "commands") {
+    const body = commandRequestBody(await readJsonBody(request));
+    const result = await executeCommand(
+      {
+        requestId,
+        correlationId,
+        resourceType,
+        commandName: segments[4] ?? "",
+        input: body.input,
+        ...(body.idempotencyKey === undefined ? {} : { idempotencyKey: body.idempotencyKey }),
+        requestContext: context,
+      },
+      {
+        registry: options.registry,
+        repository: options.repository,
+        unitOfWork: options.unitOfWork,
+        authProvider: options.authProvider,
+        ...(options.ids === undefined ? {} : { ids: options.ids }),
+        ...(options.clock === undefined ? {} : { clock: options.clock }),
+        ...(options.source === undefined ? {} : { source: options.source }),
+      },
+    );
+
+    return {
+      statusCode: result.ok ? 200 : httpStatusForError(result.error.code),
+      body: result,
+    };
+  }
+
+  if (context.method === "POST" && segments.length === 6 && segments[4] === "commands") {
+    const body = commandRequestBody(await readJsonBody(request));
+    const result = await executeCommand(
+      {
+        requestId,
+        correlationId,
+        resourceType,
+        resourceId: segments[3] ?? "",
+        commandName: segments[5] ?? "",
+        input: body.input,
+        ...(body.idempotencyKey === undefined ? {} : { idempotencyKey: body.idempotencyKey }),
+        requestContext: context,
+      },
+      {
+        registry: options.registry,
+        repository: options.repository,
+        unitOfWork: options.unitOfWork,
+        authProvider: options.authProvider,
+        ...(options.ids === undefined ? {} : { ids: options.ids }),
+        ...(options.clock === undefined ? {} : { clock: options.clock }),
+        ...(options.source === undefined ? {} : { source: options.source }),
+      },
+    );
+
+    return {
+      statusCode: result.ok ? 200 : httpStatusForError(result.error.code),
+      body: result,
+    };
+  }
+
+  return {
+    statusCode: 404,
+    body: apiError("resource.not_found", "Route not found.", requestId, correlationId),
+  };
 }
 
 function cloneValue<T>(value: T): T {

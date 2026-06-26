@@ -2,16 +2,22 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import {
+  DevAuthProvider,
+  HeaderAuthProvider,
   InMemoryRepository,
   InMemoryStore,
   InMemoryUnitOfWork,
   JawStackDefinitionError,
+  TestAuthProvider,
+  type AuthProvider,
   type AuthContext,
   type CommandCommitInput,
   type IdGenerator,
+  type LocalHttpAdapterOptions,
   type ResourceDefinition,
   type ResourceState,
   type WorkRequestState,
+  createLocalHttpServer,
   createManifest,
   createResourceRegistry,
   defineCommand,
@@ -169,6 +175,73 @@ function createInMemoryWorkRequestRuntime(resourceId = "wr_flow") {
       clock: () => new Date("2026-06-25T12:00:00.000Z"),
       source: "jawstack.test",
     },
+  };
+}
+
+function createLocalHttpWorkRequestOptions(
+  authProvider: AuthProvider = new DevAuthProvider(),
+  resourceId = "wr_http",
+): LocalHttpAdapterOptions {
+  const store = new InMemoryStore();
+  const repository = new InMemoryRepository(store);
+  const unitOfWork = new InMemoryUnitOfWork(store);
+
+  return {
+    appName: "work-requests",
+    stage: "test",
+    registry: [workRequestResource],
+    repository,
+    unitOfWork,
+    authProvider,
+    auth: { mode: "test", provider: "test" },
+    costProfile: {},
+    ids: createSequenceIds(resourceId),
+    clock: () => new Date("2026-06-25T12:00:00.000Z"),
+    source: "jawstack.test",
+  };
+}
+
+async function withLocalHttpServer<T>(
+  options: LocalHttpAdapterOptions,
+  run: (baseUrl: string) => Promise<T>,
+): Promise<T> {
+  const server = createLocalHttpServer(options);
+
+  await new Promise<void>((resolve) => {
+    server.listen(0, "127.0.0.1", resolve);
+  });
+
+  try {
+    const address = server.address();
+
+    if (address === null || typeof address === "string") {
+      throw new Error("Expected local HTTP server to listen on a TCP address.");
+    }
+
+    return await run(`http://127.0.0.1:${address.port}`);
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => (error === undefined ? resolve() : reject(error)));
+    });
+  }
+}
+
+async function httpJson<T = unknown>(
+  baseUrl: string,
+  path: string,
+  init: RequestInit = {},
+): Promise<{ status: number; body: T }> {
+  const response = await fetch(`${baseUrl}${path}`, {
+    ...init,
+    headers: {
+      ...(init.body === undefined ? {} : { "content-type": "application/json" }),
+      ...(init.headers ?? {}),
+    },
+  });
+
+  return {
+    status: response.status,
+    body: (await response.json()) as T,
   };
 }
 
@@ -945,5 +1018,206 @@ describe("@jawstack/core registry and manifest", () => {
     });
 
     expect(manifest.generatedAt).toBe("2026-06-25T12:00:00.000Z");
+  });
+});
+
+describe("@jawstack/core local HTTP API adapter", () => {
+  it("runs the full Work Request flow over local HTTP", async () => {
+    await withLocalHttpServer(createLocalHttpWorkRequestOptions(), async (baseUrl) => {
+      const created = await httpJson<{ ok: true; data: { resourceId: string; status: string } }>(
+        baseUrl,
+        "/api/resources/workRequest/commands/create",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            input: {
+              title: "Local HTTP flow",
+              description: "Exercise the local API adapter.",
+            },
+            idempotencyKey: "http-create",
+          }),
+        },
+      );
+
+      expect(created.status).toBe(200);
+      expect(created.body.ok).toBe(true);
+      expect(created.body.data.status).toBe("open");
+      const resourceId = created.body.data.resourceId;
+
+      for (const [commandName, input] of [
+        ["assign", { assigneeId: "user_456" }],
+        ["changeStatus", { status: "inReview" }],
+        ["comment", { body: "Looks good over HTTP." }],
+        ["close", { reason: "Done" }],
+      ] as const) {
+        const command = await httpJson(
+          baseUrl,
+          `/api/resources/workRequest/${resourceId}/commands/${commandName}`,
+          {
+            method: "POST",
+            body: JSON.stringify({ input }),
+          },
+        );
+
+        expect(command.status).toBe(200);
+      }
+
+      const detail = await httpJson<{
+        ok: true;
+        data: { version: number; state: WorkRequestState };
+      }>(baseUrl, `/api/resources/workRequest/${resourceId}`);
+      const activity = await httpJson<{
+        ok: true;
+        data: { items: Array<{ activityType: string }> };
+      }>(baseUrl, `/api/resources/workRequest/${resourceId}/activity`);
+      const list = await httpJson<{
+        ok: true;
+        data: { items: Array<{ data: Record<string, unknown> }> };
+      }>(baseUrl, "/api/resources/workRequest");
+
+      expect(detail.status).toBe(200);
+      expect(detail.body.data.version).toBe(5);
+      expect(detail.body.data.state.status).toBe("closed");
+      expect(detail.body.data.state.comments).toHaveLength(1);
+      expect(activity.body.data.items.map((item) => item.activityType)).toEqual([
+        "created",
+        "assigned",
+        "statusChanged",
+        "commentAdded",
+        "closed",
+      ]);
+      expect(list.body.data.items).toHaveLength(1);
+      expect(list.body.data.items[0]?.data).toMatchObject({
+        resourceId,
+        title: "Local HTTP flow",
+        status: "closed",
+      });
+    });
+  });
+
+  it("maps API errors to documented status codes and envelopes", async () => {
+    await withLocalHttpServer(createLocalHttpWorkRequestOptions(), async (baseUrl) => {
+      const validation = await httpJson<{ ok: false; error: { code: string } }>(
+        baseUrl,
+        "/api/resources/workRequest/commands/create",
+        {
+          method: "POST",
+          body: JSON.stringify({ input: { title: "" } }),
+        },
+      );
+      const missing = await httpJson<{ ok: false; error: { code: string } }>(
+        baseUrl,
+        "/api/resources/workRequest/missing/activity",
+      );
+      const rejected = await httpJson<{ ok: false; error: { code: string } }>(
+        baseUrl,
+        "/api/resources/workRequest/commands/missing",
+        {
+          method: "POST",
+          body: JSON.stringify({ input: {} }),
+        },
+      );
+      await httpJson(baseUrl, "/api/resources/workRequest/commands/create", {
+        method: "POST",
+        body: JSON.stringify({
+          input: { title: "First idempotent payload" },
+          idempotencyKey: "same-key",
+        }),
+      });
+      const idempotencyConflict = await httpJson<{ ok: false; error: { code: string } }>(
+        baseUrl,
+        "/api/resources/workRequest/commands/create",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            input: { title: "Different idempotent payload" },
+            idempotencyKey: "same-key",
+          }),
+        },
+      );
+
+      expect(validation.status).toBe(400);
+      expect(validation.body).toMatchObject({
+        ok: false,
+        error: { code: "command.validation" },
+      });
+      expect(validation.body).toHaveProperty("meta.requestId");
+      expect(missing.status).toBe(404);
+      expect(missing.body.error.code).toBe("resource.not_found");
+      expect(rejected.status).toBe(422);
+      expect(rejected.body.error.code).toBe("command.rejected");
+      expect(idempotencyConflict.status).toBe(409);
+      expect(idempotencyConflict.body.error.code).toBe("idempotency.conflict");
+    });
+  });
+
+  it("enforces HeaderAuthProvider roles server-side", async () => {
+    await withLocalHttpServer(
+      createLocalHttpWorkRequestOptions(new HeaderAuthProvider(), "wr_header"),
+      async (baseUrl) => {
+        const noAuth = await httpJson<{ ok: false; error: { code: string } }>(
+          baseUrl,
+          "/api/resources/workRequest/commands/create",
+          {
+            method: "POST",
+            body: JSON.stringify({ input: { title: "No auth" } }),
+          },
+        );
+        const created = await httpJson<{ ok: true; data: { resourceId: string } }>(
+          baseUrl,
+          "/api/resources/workRequest/commands/create",
+          {
+            method: "POST",
+            headers: {
+              "x-jawstack-subject": "user_123",
+              "x-jawstack-roles": "user",
+            },
+            body: JSON.stringify({ input: { title: "Header auth" } }),
+          },
+        );
+        const forbidden = await httpJson<{ ok: false; error: { code: string } }>(
+          baseUrl,
+          `/api/resources/workRequest/${created.body.data.resourceId}/commands/close`,
+          {
+            method: "POST",
+            headers: {
+              "x-jawstack-subject": "user_123",
+              "x-jawstack-roles": "user",
+            },
+            body: JSON.stringify({ input: {} }),
+          },
+        );
+
+        expect(noAuth.status).toBe(401);
+        expect(noAuth.body.error.code).toBe("auth.missing");
+        expect(created.status).toBe(200);
+        expect(forbidden.status).toBe(403);
+        expect(forbidden.body.error.code).toBe("auth.forbidden");
+      },
+    );
+  });
+
+  it("returns safe manifest and health JSON", async () => {
+    await withLocalHttpServer(
+      createLocalHttpWorkRequestOptions(new TestAuthProvider(auth)),
+      async (baseUrl) => {
+        const health = await httpJson<{ ok: true; data: { status: string } }>(
+          baseUrl,
+          "/api/health",
+        );
+        const manifest = await httpJson<{ ok: true; data: { resources: unknown[] } }>(
+          baseUrl,
+          "/api/manifest",
+        );
+        const serialized = JSON.stringify(manifest.body);
+
+        expect(health.status).toBe(200);
+        expect(health.body.data.status).toBe("ok");
+        expect(manifest.status).toBe(200);
+        expect(manifest.body.data.resources).toHaveLength(1);
+        expect(serialized).not.toContain("decide");
+        expect(serialized).not.toContain("safeParse");
+      },
+    );
   });
 });

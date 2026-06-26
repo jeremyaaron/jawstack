@@ -30,6 +30,7 @@
   },
   "pkgGuard": {
     "ignore": [
+      "dependencies.workspace-range",
       "typescript.extends-unresolved",
       "typescript.types-source-file"
     ]
@@ -39,5 +40,10 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "lint": "eslint ."
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.1075.0",
+    "@aws-sdk/util-dynamodb": "^3.996.5",
+    "@jawstack/core": "workspace:*"
   }
 }
