@@ -3,9 +3,8 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "baseUrl": ".",
     "paths": {
-      "@jawstack/core": ["packages/core/src/index.ts"]
+      "@jawstack/core": ["./packages/core/src/index.ts"]
     },
     "lib": ["ES2022"],
     "strict": true,
