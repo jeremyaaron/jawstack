@@ -16,6 +16,7 @@ export default defineConfig({
         new URL("../../packages/angular/src/index.ts", import.meta.url),
       ),
       "@jawstack/core": fileURLToPath(new URL("../../packages/core/src/index.ts", import.meta.url)),
+      http: fileURLToPath(new URL("./src/browser-shims/node-http.ts", import.meta.url)),
       "node:http": fileURLToPath(new URL("./src/browser-shims/node-http.ts", import.meta.url)),
     },
   },
@@ -29,6 +30,7 @@ export default defineConfig({
     },
   },
   build: {
+    chunkSizeWarningLimit: 700,
     outDir: "dist",
     emptyOutDir: true,
   },

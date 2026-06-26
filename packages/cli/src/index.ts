@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
-import { mkdir, readFile, stat } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -1437,6 +1438,7 @@ async function importConfigModule(configPath: string): Promise<unknown> {
   const result = await build({
     entryPoints: [configPath],
     bundle: true,
+    external: [packageName],
     format: "esm",
     platform: "node",
     target: "node22",
@@ -1457,8 +1459,17 @@ async function importConfigModule(configPath: string): Promise<unknown> {
     );
   }
 
-  const encoded = Buffer.from(output).toString("base64");
-  return import(`data:text/javascript;base64,${encoded}`);
+  const cacheDirectory = path.join(path.dirname(configPath), ".jawstack", "cache");
+  const outputPath = path.join(cacheDirectory, `config-${Date.now()}-${randomUUID()}.mjs`);
+
+  await mkdir(cacheDirectory, { recursive: true });
+  await writeFile(outputPath, output);
+
+  try {
+    return await import(`${pathToFileURL(outputPath).href}?t=${Date.now()}`);
+  } finally {
+    await rm(outputPath, { force: true });
+  }
 }
 
 function normalizeConfig(moduleNamespace: unknown, configPath: string): JawStackConfig {

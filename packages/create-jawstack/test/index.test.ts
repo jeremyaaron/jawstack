@@ -58,13 +58,18 @@ describe("create-jawstack", () => {
     expect(packageJson.name).toBe("my-product-app");
     expect(packageJson.dependencies["@jawstack/core"]).toContain("packages/core");
     expect(packageJson.dependencies["@jawstack/angular"]).toContain("packages/angular");
+    expect(packageJson.dependencies["@jawstack/cli"]).toContain("packages/cli");
     expect(packageJson.scripts).toMatchObject({
+      doctor: "jawstack doctor",
       "dev:api": "tsx src/api.ts",
       "dev:web": "vite --host 127.0.0.1",
       test: "vitest run --config vitest.config.ts",
       typecheck: "tsc --noEmit -p tsconfig.json",
     });
     expect(indexHtml).toContain("<title>My Product App</title>");
+    await expect(readFile(join(targetDirectory, "jawstack.config.ts"), "utf8")).resolves.toContain(
+      "defineJawStackApp",
+    );
     await expect(readFile(join(targetDirectory, ".gitignore"), "utf8")).resolves.toContain("dist/");
   });
 
@@ -108,7 +113,16 @@ describe("create-jawstack", () => {
 
     await execFileAsync(
       "pnpm",
-      ["--filter", "@jawstack/core", "--filter", "@jawstack/angular", "run", "build"],
+      [
+        "--filter",
+        "@jawstack/core",
+        "--filter",
+        "@jawstack/angular",
+        "--filter",
+        "@jawstack/cli",
+        "run",
+        "build",
+      ],
       {
         cwd: repositoryRoot,
         timeout: 120_000,
@@ -128,6 +142,10 @@ describe("create-jawstack", () => {
       timeout: 120_000,
     });
     await execFileAsync("pnpm", ["test"], {
+      cwd: targetDirectory,
+      timeout: 120_000,
+    });
+    await execFileAsync("pnpm", ["doctor"], {
       cwd: targetDirectory,
       timeout: 120_000,
     });

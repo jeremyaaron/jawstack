@@ -35,5 +35,8 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Generated app verification
+        run: pnpm verify:generated
+
       - name: Package guard
         run: pnpm pkg:check

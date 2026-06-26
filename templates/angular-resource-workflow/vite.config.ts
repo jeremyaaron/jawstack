@@ -10,6 +10,7 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
+      http: fileURLToPath(new URL("./src/browser-shims/node-http.ts", import.meta.url)),
       "node:http": fileURLToPath(new URL("./src/browser-shims/node-http.ts", import.meta.url)),
     },
   },
@@ -23,6 +24,7 @@ export default defineConfig({
     },
   },
   build: {
+    chunkSizeWarningLimit: 700,
     outDir: "dist",
     emptyOutDir: true,
   },

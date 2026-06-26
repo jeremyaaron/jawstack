@@ -19,6 +19,8 @@ export const demoCostProfile = {
   },
   dynamodb: {
     billingMode: "onDemand",
+    maxReadRequestUnits: 100,
+    maxWriteRequestUnits: 50,
     pointInTimeRecovery: false,
   },
   eventBridge: {

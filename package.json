@@ -17,7 +17,8 @@
     "dev:api": "pnpm --filter demo-work-requests run dev:api",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "pkg:check": "pkg-guard check --workspaces"
+    "pkg:check": "pkg-guard check --workspaces",
+    "verify:generated": "node scripts/verify-generated-app.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",

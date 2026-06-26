@@ -113,6 +113,10 @@ export async function generateJawStackApp(
       localPackageRoot === undefined
         ? jawstackVersion
         : localPackageDependency(localPackageRoot, "angular"),
+    __JAWSTACK_CLI_DEPENDENCY__:
+      localPackageRoot === undefined
+        ? jawstackVersion
+        : localPackageDependency(localPackageRoot, "cli"),
     __JAWSTACK_CORE_DEPENDENCY__:
       localPackageRoot === undefined
         ? jawstackVersion
