@@ -1,8 +1,13 @@
 # AWS Dev Deploy Smoke
 
-Phase 21 adds an opt-in path for the first real JawStack AWS dev deployment.
+This working note is retained for contributors who want the Phase 21 context.
 
-This is intentionally not part of default CI. It creates real AWS resources, runs the Work Requests smoke test, and destroys the dev stack.
+For public instructions, use:
+
+- [Deploy To AWS](../deploy-to-aws.md)
+- [Destroy Your Stack](../destroy-your-stack.md)
+
+The AWS dev smoke path is intentionally not part of default CI. It creates real AWS resources, runs the Work Requests smoke test, and destroys the dev stack.
 
 ## Prerequisites
 

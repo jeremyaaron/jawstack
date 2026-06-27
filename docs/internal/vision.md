@@ -76,10 +76,7 @@ export const WorkRequest = defineResource({
       .requiresRole("manager")
       .emits("workRequest.assigned"),
 
-    close: command()
-      .input(CloseWorkRequest)
-      .requiresRole("manager")
-      .emits("workRequest.closed"),
+    close: command().input(CloseWorkRequest).requiresRole("manager").emits("workRequest.closed"),
   },
 
   views: {

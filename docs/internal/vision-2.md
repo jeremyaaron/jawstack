@@ -182,10 +182,7 @@ Then the DSL can keep this:
 
 ```ts
 commands: {
-  assign: command()
-    .input(AssignWorkRequest)
-    .requiresRole("manager")
-    .emits("workRequest.assigned");
+  assign: command().input(AssignWorkRequest).requiresRole("manager").emits("workRequest.assigned");
 }
 ```
 
