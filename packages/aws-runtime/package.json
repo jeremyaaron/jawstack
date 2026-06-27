@@ -1,0 +1,50 @@
+{
+  "name": "@jawstack/aws-runtime",
+  "version": "0.0.1",
+  "license": "MIT",
+  "type": "module",
+  "packageManager": "pnpm@10.21.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jeremyaaron/jawstack.git",
+    "directory": "packages/aws-runtime"
+  },
+  "bugs": {
+    "url": "https://github.com/jeremyaaron/jawstack/issues"
+  },
+  "homepage": "https://github.com/jeremyaaron/jawstack#readme",
+  "types": "./dist/index.d.ts",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "pkgGuard": {
+    "ignore": [
+      "dependencies.workspace-range",
+      "typescript.extends-unresolved",
+      "typescript.types-source-file"
+    ]
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.1075.0",
+    "@aws-sdk/client-eventbridge": "^3.1075.0",
+    "@aws-sdk/util-dynamodb": "^3.996.5",
+    "@jawstack/core": "workspace:*"
+  }
+}

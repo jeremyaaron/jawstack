@@ -1,0 +1,68 @@
+{
+  "name": "__APP_PACKAGE_NAME__",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.21.0",
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=10.0.0"
+  },
+  "scripts": {
+    "dev:web": "vite --host 127.0.0.1",
+    "dev:api": "tsx src/api.ts",
+    "build": "tsc --noEmit -p tsconfig.json && vite build",
+    "build:aws": "node scripts/build-aws-entrypoints.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --config vitest.config.ts",
+    "lint": "eslint .",
+    "doctor": "jawstack doctor",
+    "doctor:deploy": "jawstack doctor --deploy --stage dev",
+    "deploy:dev": "jawstack deploy dev",
+    "smoke:dev": "jawstack smoke dev",
+    "destroy:dev": "jawstack destroy dev",
+    "synth": "cdk synth --quiet"
+  },
+  "dependencies": {
+    "@angular/common": "21.2.17",
+    "@angular/core": "21.2.17",
+    "@angular/forms": "21.2.17",
+    "@angular/platform-browser": "21.2.17",
+    "@angular/router": "21.2.17",
+    "@aws-sdk/client-dynamodb": "^3.1075.0",
+    "@aws-sdk/client-eventbridge": "^3.1075.0",
+    "@jawstack/angular": "__JAWSTACK_ANGULAR_DEPENDENCY__",
+    "@jawstack/aws-cdk": "__JAWSTACK_AWS_CDK_DEPENDENCY__",
+    "@jawstack/aws-runtime": "__JAWSTACK_AWS_RUNTIME_DEPENDENCY__",
+    "@jawstack/cli": "__JAWSTACK_CLI_DEPENDENCY__",
+    "@jawstack/core": "__JAWSTACK_CORE_DEPENDENCY__",
+    "aws-cdk-lib": "^2.260.0",
+    "constructs": "^10.6.0",
+    "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "@analogjs/vite-plugin-angular": "^2.6.2",
+    "@angular/build": "21.2.17",
+    "@angular/compiler": "21.2.17",
+    "aws-cdk": "^2.1128.1",
+    "esbuild": "^0.28.1",
+    "@eslint/js": "^9.0.0",
+    "@types/node": "^22.0.0",
+    "eslint": "^9.0.0",
+    "jsdom": "^26.1.0",
+    "prettier": "^3.0.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.5.0",
+    "typescript-eslint": "^8.0.0",
+    "vite": "^8.1.0",
+    "vitest": "^4.1.9"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@parcel/watcher",
+      "esbuild",
+      "lmdb",
+      "msgpackr-extract"
+    ]
+  }
+}

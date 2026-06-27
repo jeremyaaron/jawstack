@@ -1,0 +1,45 @@
+{
+  "name": "jawstack-workspace",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.21.0",
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=10.0.0"
+  },
+  "scripts": {
+    "build": "pnpm --filter './packages/*' --filter './apps/*' run build",
+    "typecheck": "pnpm --filter './packages/*' --filter './apps/*' run typecheck",
+    "test": "pnpm --filter './packages/*' --filter './apps/*' run test",
+    "lint": "pnpm --filter './packages/*' --filter './apps/*' run lint",
+    "dev:web": "pnpm --filter demo-work-requests run dev:web",
+    "dev:api": "pnpm --filter demo-work-requests run dev:api",
+    "aws:dev:smoke": "node scripts/aws-dev-smoke.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "pkg:check": "pkg-guard check --workspaces",
+    "verify:generated": "node scripts/verify-generated-app.mjs",
+    "verify:pack": "node scripts/verify-package-dry-run.mjs",
+    "verify:release": "pnpm format:check && pnpm typecheck && pnpm test && pnpm lint && pnpm build && pnpm pkg:check && pnpm verify:generated && pnpm verify:pack"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "@types/node": "^22.0.0",
+    "eslint": "^9.0.0",
+    "pkg-guard": "^0.3.0",
+    "prettier": "^3.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.5.0",
+    "typescript-eslint": "^8.0.0",
+    "vitest": "^3.0.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@parcel/watcher",
+      "esbuild",
+      "lmdb",
+      "msgpackr-extract"
+    ]
+  }
+}
