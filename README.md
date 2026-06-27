@@ -8,7 +8,7 @@ The MVP starter is intentionally narrow: it ships a Work Requests workflow that 
 
 ## Status
 
-JawStack is pre-release. The repository is ready for local dogfooding, generated-app verification, and opt-in AWS dev deploy smoke testing. Package publication and release automation are still on the roadmap.
+JawStack is pre-release. The repository is ready for a `v0.0.1` dogfood tag, generated-app verification, package dry-run checks, and opt-in AWS dev deploy smoke testing. Package publication and npm release automation are still on the roadmap.
 
 ## Quickstart
 
@@ -26,6 +26,13 @@ pnpm typecheck
 pnpm test
 pnpm build
 pnpm verify:generated
+pnpm verify:pack
+```
+
+For the full pre-tag gate:
+
+```sh
+pnpm verify:release
 ```
 
 Run the demo app locally:
@@ -179,6 +186,7 @@ Planning documents are still available for contributors:
 - [PRD](docs/prd.md)
 - [Technical Design](docs/technical-design.md)
 - [Implementation Plan](docs/implementation-plan.md)
+- [Release Checklist](docs/release-checklist.md)
 
 Early vision drafts are archived under `docs/internal/`.
 
@@ -186,9 +194,9 @@ Early vision drafts are archived under `docs/internal/`.
 
 Near-term:
 
-- Package release preparation with Changesets and dry-run package validation
-- First dogfooding release candidate
-- Package README polish and publish workflow
+- Make the generated app meaningfully customizable beyond Work Requests
+- Generalize smoke tests beyond the Work Requests resource
+- Add Changesets and npm publish workflow when packages are worth publishing
 
 Post-MVP directions:
 

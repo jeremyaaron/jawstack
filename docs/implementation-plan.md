@@ -756,43 +756,52 @@ Acceptance criteria:
 - Roadmap matches PRD future directions.
 - Working docs do not conflict with public docs.
 
-## Phase 23: Release Preparation
+## Phase 23: v0.0.1 Dogfood Release Preparation
 
-Goal: prepare the workspace for a `0.0.x` dogfooding release and eventual `0.1.0`.
+Goal: prepare the workspace for a `v0.0.1` dogfood tag that can be merged to
+`main`, tagged, and used as the baseline for the next sprint.
 
 Scope:
 
-- Add Changesets.
 - Verify package names, exports, files, and dependency ranges.
-- Add package README stubs.
-- Add release workflow.
-- Add npm provenance or publish settings if appropriate.
+- Promote package versions and generated template defaults to `0.0.1`.
+- Add package README content that accurately describes the current dogfood
+  surface.
+- Add release notes and a release checklist.
 - Dry-run package packing.
 - Verify `create-jawstack` template references compatible package versions.
+- Add a release verification command that runs the local quality gate and
+  package dry-run checks.
 
 Out of scope:
 
-- Actually publishing unless explicitly approved.
-- Stabilizing post-MVP APIs.
+- Publishing `v0.0.1` to npm.
+- Adding Changesets or an automated release workflow before npm publication is
+  useful.
+- Stabilizing post-dogfood APIs.
 
 Acceptance criteria:
 
-- `pnpm changeset` workflow is documented.
-- `pnpm pack` or equivalent dry run succeeds for publishable packages.
+- `pnpm verify:release` succeeds locally.
 - Package tarballs contain expected files.
-- Release workflow is present but does not publish accidentally.
+- Release docs state that `v0.0.1` is a Git tag only.
+- CI verifies package dry runs on pull requests.
 
-## Phase 24: MVP Release Candidate
+## Phase 24: Deferred 0.1.0 Release Candidate
 
-Goal: cut the first coherent `0.1.0` release candidate state.
+Goal: revisit `0.1.0` once JawStack can generate more than one meaningful
+workflow shape or has enough customization to support an early real product.
 
 Scope:
 
 - Run full local verification.
 - Run generated app verification.
 - Run opt-in AWS deploy, smoke, and destroy.
+- Add Changesets.
+- Add npm provenance or publish settings.
+- Add a guarded publish workflow.
 - Fix release-blocking docs and packaging issues.
-- Tag an internal release candidate or prepare release PR.
+- Tag an internal release candidate or prepare a release PR.
 
 Out of scope:
 
@@ -805,7 +814,7 @@ Acceptance criteria:
 - All MVP acceptance criteria in the PRD are satisfied.
 - No known release-blocking doctor, deploy, smoke, or destroy issues remain.
 - Public docs and package metadata describe the product accurately.
-- The repository is ready for a release commit or PR.
+- The repository is ready for npm publication or a documented prerelease.
 
 ## Cross-Phase Rules
 

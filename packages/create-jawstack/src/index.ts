@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 export const packageName = "create-jawstack";
 export const defaultTemplateName = "angular-resource-workflow";
-export const defaultJawStackVersion = "0.0.0";
+export const defaultJawStackVersion = "0.0.1";
 
 export type GenerateJawStackAppOptions = Readonly<{
   appName?: string;

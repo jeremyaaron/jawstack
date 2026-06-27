@@ -40,3 +40,6 @@ jobs:
 
       - name: Package guard
         run: pnpm pkg:check
+
+      - name: Package dry run
+        run: pnpm verify:pack

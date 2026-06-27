@@ -1,6 +1,6 @@
 {
   "name": "jawstack-workspace",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.21.0",
@@ -19,7 +19,9 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "pkg:check": "pkg-guard check --workspaces",
-    "verify:generated": "node scripts/verify-generated-app.mjs"
+    "verify:generated": "node scripts/verify-generated-app.mjs",
+    "verify:pack": "node scripts/verify-package-dry-run.mjs",
+    "verify:release": "pnpm format:check && pnpm typecheck && pnpm test && pnpm lint && pnpm build && pnpm pkg:check && pnpm verify:generated && pnpm verify:pack"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",

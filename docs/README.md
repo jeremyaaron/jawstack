@@ -12,6 +12,7 @@ Public MVP documentation:
 - [Worker](worker.md)
 - [Schedule](schedule.md)
 - [Cost Profile](cost-profile.md)
+- [Release Checklist](release-checklist.md)
 
 Contributor planning documents:
 
