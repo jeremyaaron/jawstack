@@ -42,7 +42,7 @@ pnpm pkg:check
 pnpm verify:generated
 ```
 
-`pnpm verify:generated` creates a temporary app, installs it offline, runs typecheck/test/build, builds Lambda assets, synthesizes CDK, and runs `jawstack doctor`.
+`pnpm verify:generated` creates a temporary app, installs it with pnpm's cached packages preferred, runs typecheck/test/build, builds Lambda assets, synthesizes CDK, and runs `jawstack doctor`.
 
 ## Generate A Local App
 

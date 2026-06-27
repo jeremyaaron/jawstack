@@ -1,9 +1,7 @@
-import { execFile } from "node:child_process";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Writable } from "node:stream";
-import { promisify } from "node:util";
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -15,7 +13,6 @@ import {
   runCreateJawStackCli,
 } from "../src/index";
 
-const execFileAsync = promisify(execFile);
 const tempDirectories: string[] = [];
 const repositoryRoot = resolve(import.meta.dirname, "../../..");
 
@@ -120,61 +117,22 @@ describe("create-jawstack", () => {
     );
   });
 
-  it("generates a fixture that installs, typechecks, and tests", async () => {
+  it("uses release package versions without local package overrides", async () => {
     const directory = await makeTempDirectory();
-    const targetDirectory = join(directory, "fixture-app");
+    const targetDirectory = join(directory, "published-app");
 
-    await execFileAsync(
-      "pnpm",
-      [
-        "--filter",
-        "@jawstack/core",
-        "--filter",
-        "@jawstack/angular",
-        "--filter",
-        "@jawstack/aws-cdk",
-        "--filter",
-        "@jawstack/aws-runtime",
-        "--filter",
-        "@jawstack/cli",
-        "run",
-        "build",
-      ],
-      {
-        cwd: repositoryRoot,
-        timeout: 120_000,
-      },
-    );
-    await generateJawStackApp({
-      localPackageRoot: repositoryRoot,
-      targetDirectory,
-    });
+    await generateJawStackApp({ targetDirectory });
 
-    await execFileAsync("pnpm", ["install", "--offline"], {
-      cwd: targetDirectory,
-      timeout: 120_000,
-    });
-    await execFileAsync("pnpm", ["typecheck"], {
-      cwd: targetDirectory,
-      timeout: 120_000,
-    });
-    await execFileAsync("pnpm", ["test"], {
-      cwd: targetDirectory,
-      timeout: 120_000,
-    });
-    await execFileAsync("pnpm", ["doctor"], {
-      cwd: targetDirectory,
-      timeout: 120_000,
-    });
-    await execFileAsync("pnpm", ["build:aws"], {
-      cwd: targetDirectory,
-      timeout: 120_000,
-    });
-    await execFileAsync("pnpm", ["synth"], {
-      cwd: targetDirectory,
-      timeout: 120_000,
-    });
-  }, 240_000);
+    const packageJson = JSON.parse(
+      await readFile(join(targetDirectory, "package.json"), "utf8"),
+    ) as { dependencies: Record<string, string> };
+
+    expect(packageJson.dependencies["@jawstack/angular"]).toBe("0.0.1");
+    expect(packageJson.dependencies["@jawstack/aws-cdk"]).toBe("0.0.1");
+    expect(packageJson.dependencies["@jawstack/aws-runtime"]).toBe("0.0.1");
+    expect(packageJson.dependencies["@jawstack/cli"]).toBe("0.0.1");
+    expect(packageJson.dependencies["@jawstack/core"]).toBe("0.0.1");
+  });
 });
 
 async function makeTempDirectory(): Promise<string> {
