@@ -1,7 +1,7 @@
 # Iteration 2: Content Operations
 
-Status: Phases 0-12 complete. Checkpointed due/reminder/cleanup jobs, strict time conversion,
-live DynamoDB/S3 job protocols, and workspace regressions passed. Phase 13 is next.
+Status: Phases 0-13 complete. Durable failure collection/reconciliation, targeted atomic replay,
+owned CLI recovery, live DynamoDB/S3 checks, and workspace regressions passed. Phase 14 is next.
 
 ## Documents
 
@@ -41,7 +41,7 @@ attachment slots and freezes verified references for review; the asset read mode
 internal materialization primitives. Phase 9 adds their shared source-version-aware handlers,
 durable local notification sink, and deterministic bounded memory outbox pump. Notification
 atomicity has memory/SDK contracts, not a live consumer deployment. HTTP upload/download
-routes, deployed consumer Scheduler targets, and durable failure recovery remain later work.
+routes and deployed consumer worker/Scheduler targets remain later work.
 
 Phase 10 adds schedule generations, frozen publication intent, 90-second fenced claims,
 bounded attempts/retry generations, and atomic redacted attempt history in memory/DynamoDB.
@@ -57,4 +57,9 @@ cutoffs, persisted leases/cursors, UTC-day reminder facts/notifications, Tempora
 rejection, upload expiry, and safe conditional orphan deletion. Explicit memory ticks and
 bundled Scheduler entrypoints exist; consumer Scheduler deployment remains Phase 20. Live
 checks prove the shared jobs on real DynamoDB/S3 with an injected clock, not deployed targets.
-Tombstones and verified historical objects remain retained. Durable failure recovery is next.
+Tombstones and verified historical objects remain retained. Phase 13 adds permanent bounded
+failure/recovery history, resumable collection, live/expired publication reconciliation,
+editor retry of explicit stalled delivery, atomic targeted outbox replay, owned CLI inspection/
+replay, and shared SQS collector/worker bundles. Memory uses the same policies. Direct live
+adapter checks prove durable state/marker ordering and one logical delivery/artifact after
+recovery; this is not deployed consumer queue evidence. Loopback HTTP composition is next.

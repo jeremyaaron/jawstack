@@ -24,6 +24,14 @@ export const publicationReferenceInput = z.strictObject({
   generation: publicationGenerationSchema,
 });
 export const claimPublicationInput = publicationReferenceInput.extend({ attemptId: idSchema });
+export const reconcilePublicationFailureInput = publicationReferenceInput.extend({
+  failureId: z.string().regex(/^[a-f0-9]{64}$/),
+  sourceEventId: z
+    .string()
+    .min(1)
+    .max(128)
+    .regex(/^[A-Za-z0-9_.:-]+$/),
+});
 export const publicationFenceInput = claimPublicationInput.extend({ fencingToken: idSchema });
 export const completePublicationInput = publicationFenceInput.extend({
   artifact: z.strictObject({

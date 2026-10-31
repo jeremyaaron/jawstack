@@ -41,6 +41,7 @@ import {
   createPublicationCommands,
   dueWorkerIdentity,
   publisherIdentity,
+  failureCollectorIdentity,
 } from "./publication-commands";
 
 type ResourceOptions = Readonly<{ newId?: () => string }>;
@@ -105,13 +106,15 @@ function storedContent(
     | "uploadVerifier"
     | "assetJanitor"
     | "publisher"
-    | "dueWorker",
+    | "dueWorker"
+    | "collector",
 ): ResourceState<ContentState> {
   const identity =
     policy === "uploadVerifier" ||
     policy === "assetJanitor" ||
     policy === "publisher" ||
-    policy === "dueWorker"
+    policy === "dueWorker" ||
+    policy === "collector"
       ? (serviceActor(
           context.auth,
           policy === "uploadVerifier"
@@ -120,7 +123,9 @@ function storedContent(
               ? assetJanitorIdentity
               : policy === "publisher"
                 ? publisherIdentity
-                : dueWorkerIdentity,
+                : policy === "collector"
+                  ? failureCollectorIdentity
+                  : dueWorkerIdentity,
         ),
         undefined)
       : actor(context.auth);

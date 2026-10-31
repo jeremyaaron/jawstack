@@ -11,6 +11,7 @@ import { contentWorkers, type ContentWorkerName } from "../domain/subscriptions"
 import { renderNotification, type NotificationSink } from "./notifications";
 import type { createContentDispatch } from "./dispatch";
 import type { createPublisher } from "./publisher";
+import type { createFailureService } from "./failures";
 
 export function createContentWorkers(options: {
   repository: ResourceRepository;
@@ -19,6 +20,7 @@ export function createContentWorkers(options: {
   clock?: () => Date;
   source?: string;
   publisher?: ReturnType<typeof createPublisher>;
+  recovery?: Pick<ReturnType<typeof createFailureService>, "authorize" | "complete">;
 }) {
   const source = options.source ?? contentEventSource;
   if (!source.trim() || source.length > 200) throw new Error("Invalid application event source.");
@@ -120,6 +122,15 @@ export function createContentWorkers(options: {
             "command.rejected",
             "Worker is not subscribed to this fact.",
           );
+        if (event.recovery) {
+          if (event.recovery.consumer !== name) return "ignored" as const;
+          if (!options.recovery)
+            throw new JawStackRuntimeError(
+              "runtime.unavailable",
+              "Durable recovery dependency is not configured.",
+            );
+          await options.recovery.authorize(name, input);
+        }
         if (name === "publishContent") {
           if (!options.publisher)
             throw new JawStackRuntimeError(
@@ -132,9 +143,12 @@ export function createContentWorkers(options: {
           await options.notifications.deliver(
             renderNotification(event, options.clock?.() ?? new Date()),
           );
+          if (event.recovery) await options.recovery!.complete(name, input);
           return "delivered" as const;
         }
-        return await materialize(name, event);
+        const outcome = await materialize(name, event);
+        if (event.recovery) await options.recovery!.complete(name, input);
+        return outcome;
       } catch (error) {
         if (error instanceof JawStackRuntimeError) throw error;
         throw new JawStackRuntimeError(

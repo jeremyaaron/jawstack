@@ -369,10 +369,51 @@ isolated generated-app verification, and six package dry runs. Only the private 
 the pinned Temporal polyfill dependency; no public implementation/version or workflow changed.
 No real AWS resource was created or contacted.
 
+## Phase 13: Durable Failure and Recovery
+
+Observed on October 31, 2026, with the same pinned LocalStack `2026.10.0` image/digest,
+ARM64 runtime, guarded local-only clients, and user-attested Hobby tier. The complete
+`feasibility-paging-transactions-assets-publication-jobs-and-recovery` gate started
+`2026-10-31T22:05:07.787Z` and completed `2026-10-31T22:08:56.837Z` in 229.050 seconds,
+with `decision: go`.
+
+Recovery run ID: `aee9f5a0-3659-4e5d-9cb8-aab0165842bd`.
+Notification failure ID: `0af3dcd26fb4a6c0ea43df4768be543bf872afa803783e34e1a68408b8275827`.
+
+| Check                                 | Observed Result                                                                                                                                                                                                                                                              |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Owned CLI                             | Real `jobs:inspect` and `jobs:replay` processes validated the ready lab/table ownership and returned redacted record/recovery metadata.                                                                                                                                      |
+| Atomic recovery                       | Strong DynamoDB reads found the recovery request and its fresh transport's public outbox item; repeating the same request UUID retained exactly one cycle.                                                                                                                   |
+| One notification                      | A direct shared SQS worker adapter wrote the real DynamoDB notification destination/history and resolved the recovery. Physical deletion of its exact worker marker allowed processing again without another business delivery.                                              |
+| Pending publication collection        | After an injected post-object interruption, the shared collector persisted a pending failure but deferred while the matching publication claim was live. Its collector marker remained absent.                                                                               |
+| Reconciliation before acknowledgement | Advancing the injected clock 90 seconds closed the expired claim and stalled the authoritative publication; only then did the real DynamoDB collector marker appear.                                                                                                         |
+| Editor recovery                       | The normal editor command advanced publication generation. Matching S3 bytes recovered to one logical artifact. Deleting the exact collector marker and redelivering the old failure left the successful content version unchanged.                                          |
+| Earlier gates                         | Actual stream/bus/queue/Lambda, paging, scoped transactions/rollback, attachments, publication recovery/corruption, due jobs/conditional cleanup, automatic Scheduler, receives 1/2/3 and durable DLQ collection, sentinel-safe reset, and reprovisioned spine passed again. |
+| Cleanup                               | Owned reset preserved the independently owned sentinel/nonce, with zero owned Lambda containers afterward. Final `local:down` removed the emulator/network; filtered Docker inventories were empty.                                                                          |
+
+The consumer SQS batches used direct shared-adapter calls with allowlisted local origin ARNs;
+the consumer queues/mappings were not deployed, nor did a consumer failure actually redrive
+to its own queue in this scenario. The separate spine still exercised real SQS redrive and
+DLQ collection, not a substitute direct invocation. Marker deletion models physical TTL
+cleanup, not a seven-day wall-clock wait; lease expiry used logical clock advancement.
+CLI child output was captured privately and only safe booleans/IDs entered the evidence.
+No real AWS resource was created or contacted.
+
+Credential-free verification added 22 tests (397 consumer/682 workspace total), covering
+pending-record/domain-commit interruptions, duplicate collection, replay response loss,
+atomic transaction rollback, three-cycle limits, unchanged recovery history after marker
+age, exact durable replay authorization, stale publication generation/success, failed durable
+writes, acknowledgement/marker gaps, whole-batch partial progress and retained poison traffic.
+`pnpm verify:release` passed, including zero pkg-guard findings, isolated generated-app
+verification, and six package dry runs. The four-archive build contract now has a localized
+30-second compilation timeout; an earlier five-second deadline failed under concurrent live
+lab load, not because a runtime delivery timed out. No dependencies, public implementations/
+versions, or workflows changed.
+
 ## Current Coverage and Exclusions
 
-Phases 11/12 add actual publication and due/maintenance execution with the live recovery
-evidence above. The live shared consumer protocols and separate transport spine have passed,
+Phases 11-13 add publication, due/maintenance, and durable failure/replay execution with the
+live evidence above. Shared consumer protocols and the separate transport spine have passed,
 but consumer SQS/Lambda/Scheduler deployment is not claimed by combining independent checks.
 
 | Capability                                      | Status                                                                                                                                                                                    |
@@ -387,7 +428,8 @@ but consumer SQS/Lambda/Scheduler deployment is not claimed by combining indepen
 | Materializers/notification sink/memory pump     | Phase 9 contracts plus Phases 11/12 publication/reminder memory flows passed; consumer handlers were not deployed to LocalStack queues/Lambdas.                                           |
 | Publication execution                           | Phase 11 live DynamoDB/S3 crash/lease recovery, one logical artifact, completed duplicate, and corrupt-object rejection passed. Bundled SQS marker ordering is unit-tested, not deployed. |
 | Due/reminder/expiry/orphan jobs                 | Phase 12 direct live DynamoDB/S3 checkpoint/lease, daily reminder, expiry and conditional deletion passed; consumer Scheduler targets remain undeployed.                                  |
-| Full editorial workflow and recovery            | Not implemented; later phases.                                                                                                                                                            |
+| Durable failure/recovery                        | Phase 13 owned CLI, transactional replay outbox, direct shared SQS marker/reconciliation checks, and one logical notification/artifact passed; consumer DLQ mappings remain undeployed.   |
+| Full deployed/browser editorial workflow        | Not implemented; later phases.                                                                                                                                                            |
 | API Gateway/CloudFormation/CDK asset deployment | Excluded from this Hobby lab; SDK provisioning is not deployment-parity evidence.                                                                                                         |
 | IAM enforcement, production auth, real AWS      | Not verified; no real-AWS deployment performed.                                                                                                                                           |
 

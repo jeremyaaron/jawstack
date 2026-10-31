@@ -19,6 +19,7 @@ import {
   completePublicationInput,
   failPublicationInput,
   scheduleReferenceInput,
+  reconcilePublicationFailureInput,
 } from "../shared/publication-inputs";
 import { contentUi } from "../shared/presentation";
 import { limits } from "../shared/validation";
@@ -28,11 +29,15 @@ export const publisherIdentity = Object.freeze({
   role: "contentPublisher",
 });
 export const dueWorkerIdentity = Object.freeze({ subject: "due_worker", role: "dueWorker" });
+export const failureCollectorIdentity = Object.freeze({
+  subject: "failure_collector",
+  role: "failureCollector",
+});
 type Dependencies = {
   load(
     context: CommandContext,
     version: number,
-    policy: "editor" | "publisher" | "dueWorker",
+    policy: "editor" | "publisher" | "dueWorker" | "collector",
   ): ResourceState<ContentState>;
   finish(
     context: CommandContext,
@@ -135,9 +140,11 @@ export function createPublicationCommands(d: Dependencies) {
     authorId: publication.intent.snapshot.authorId,
     title: publication.intent.snapshot.title,
     outcome: publication.phase === "succeeded" ? "published" : "failed",
-    outcomeAt: publication.lastAttempt!.finishedAt!,
+    outcomeAt: publication.deliveryFailure?.at ?? publication.lastAttempt!.finishedAt!,
     artifact: publication.artifact,
-    failureCode: publication.lastAttempt?.failureCode ?? null,
+    failureCode: publication.deliveryFailure
+      ? "execution.interrupted"
+      : (publication.lastAttempt?.failureCode ?? null),
   });
   const expire = (
     previous: ResourceState<ContentState>,
@@ -167,6 +174,7 @@ export function createPublicationCommands(d: Dependencies) {
       },
       generation: 1,
       phase: "queued",
+      deliveryFailure: null,
       attemptsInGeneration: 0,
       claim: null,
       lastAttempt: null,
@@ -441,6 +449,59 @@ export function createPublicationCommands(d: Dependencies) {
         );
       },
     }),
+    reconcilePublicationFailure: defineCommand({
+      title: "Reconcile exhausted publication delivery",
+      roles: [failureCollectorIdentity.role],
+      input: reconcilePublicationFailureInput,
+      emits: [
+        { eventType: "contentItem.publicationFailed", schemaVersion: 1 },
+        { eventType: "contentItem.publicationLeaseExpired", schemaVersion: 1 },
+      ],
+      decide: (context) => {
+        const previous = d.load(context, context.input.expectedVersion, "collector");
+        const publication = active(previous, context.input);
+        requireThat(
+          !["failed", "stalled", "succeeded"].includes(publication.phase),
+          "Publication is already terminal.",
+          true,
+        );
+        requireThat(
+          !publication.claim ||
+            (publication.lastAttempt!.sourceEventId === context.input.sourceEventId &&
+              Date.parse(publication.claim.leaseUntil) <= context.now.getTime()),
+          "A matching publication claim is still live or changed.",
+          true,
+        );
+        const expired = publication.claim
+          ? {
+              ...publication.lastAttempt!,
+              status: "expired" as const,
+              finishedAt: context.now.toISOString(),
+              failureCode: null,
+            }
+          : publication.lastAttempt;
+        const next: PublicationState = {
+          ...publication,
+          phase: "stalled",
+          claim: null,
+          lastAttempt: expired,
+          deliveryFailure: {
+            failureId: context.input.failureId,
+            sourceEventId: context.input.sourceEventId,
+            at: context.now.toISOString(),
+          },
+        };
+        return d.finish(
+          context,
+          previous,
+          { ...previous.state, publication: next },
+          "contentItem.publicationFailed",
+          "Publication delivery exhausted",
+          outcomePayload(previous, next),
+          expire(previous, publication, context.now),
+        );
+      },
+    }),
     retryPublication: defineCommand({
       ...contentUi.commands.retryPublication,
       emits: [
@@ -457,6 +518,7 @@ export function createPublicationCommands(d: Dependencies) {
         );
         requireThat(
           publication.phase === "failed" ||
+            publication.phase === "stalled" ||
             (publication.lastAttempt?.status === "failed" &&
               publication.lastAttempt.generation === publication.generation) ||
             publication.claim,
@@ -478,6 +540,7 @@ export function createPublicationCommands(d: Dependencies) {
           ...publication,
           generation: publication.generation + 1,
           phase: "queued",
+          deliveryFailure: null,
           attemptsInGeneration: 0,
           claim: null,
           lastAttempt: expired,

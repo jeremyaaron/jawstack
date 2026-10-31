@@ -1,7 +1,7 @@
 # Iteration 2 Implementation Plan: Content Operations
 
-Status: reviewed. Phases 0-12 are complete. Checkpointed due/reminder/cleanup jobs, strict time
-conversion, live DynamoDB/S3 job protocols, and workspace regressions passed. Phase 13 is next.
+Status: reviewed. Phases 0-13 are complete. Durable failure collection/reconciliation,
+targeted atomic replay, owned CLI recovery, and workspace regressions passed. Phase 14 is next.
 
 ## Purpose
 
@@ -95,7 +95,7 @@ work may proceed only after an explicit sequencing decision, without claiming th
 | 10    | Consumer domain            | Publication intent, claims and generation transitions     | Complete |
 | 11    | Consumer workers           | Recoverable publication execution                         | Complete |
 | 12    | Consumer jobs              | Due work, reminders, time zones and cleanup               | Complete |
-| 13    | Consumer operations        | Failure collection and bounded recovery                   | Planned  |
+| 13    | Consumer operations        | Failure collection and bounded recovery                   | Complete |
 | 14    | Consumer API               | Loopback HTTP, bounded queries and typed routes           | Planned  |
 | 15    | Consumer UI                | Workbench, drafting and browser boundary                  | Planned  |
 | 16    | Consumer UI                | Review queue, frozen snapshots and activity               | Planned  |
@@ -1133,6 +1133,59 @@ integration gate, documentation walkthrough, local links, and `git diff --check`
 - No public framework/template implementation, package versions, workflows, real AWS
   resources, release, or commit changed. Durable failure collection/recovery is Phase 13;
   HTTP/UI, consumer cloud wiring, and production authentication remain later work.
+
+### Phase 13: October 31, 2026
+
+- Added deterministic consumer/original-event failed-delivery identity, validated immutable
+  original envelope/fingerprint, bounded collection/recovery history, redacted operations
+  projections, and memory/DynamoDB stores. Records are at most 128 KiB, with four collection
+  stages and three manual requests; memory defaults to 1,000 records and never evicts identities.
+  Permanent business history has no marker TTL or silent recovery-budget reset.
+- Implemented resumable record -> publication reconciliation -> collection completion.
+  Pending record existence is not acknowledgement. Live matching claims defer; expired
+  attempts close atomically with explicit stalled delivery and a durable failure reference.
+  Unclaimed exhausted delivery can stall without fabricating execution. Existing terminal/
+  newer generations/success are not replaced. Editor publication retry clears the marker and
+  advances the original bounded generation protocol with frozen intent/key preserved.
+- Implemented editor inspection and targeted replay for materializer/notification failures.
+  Reconstruct only a stored validated envelope, with a fresh transport UUID/time, original
+  business identity/correlation/actor, and consumer/failure metadata. Recovery state, view
+  and create-only public outbox entry commit atomically. Lost responses and already queued
+  cycles do not consume extra requests; replay success resolves its history before markers.
+  Publication uses its domain retry rather than generic old-generation envelope replay.
+- Added owned local-only `jobs:inspect` / `jobs:replay`: explicit fixture editor, strict
+  arguments, ready manifest and table ownership verification, bounded redacted output,
+  optional stable request UUID, no payload/queue/consumer/endpoint/AWS override. Memory exposes
+  equivalent programmatic recovery. No production-authentication claim is made.
+- Registered terminal memory collection with retained one-second deferred retries and separate
+  bounded collector caches; no successful worker marker is written for failed work. Added
+  actual `recovery.zip` worker/collector SQS entrypoints. Shared whole-batch snapshot validation
+  and durable replay authorization precede cached-marker acknowledgement. Explicitly set
+  consumer marker TTLs to seven days instead of inheriting the framework's fourteen-day default.
+  Invalid/foreign/unrecorded traffic is retained unacknowledged for investigation, not replayed.
+- Added 22 tests (397 consumer/682 workspace total): memory/SDK collection idempotency and
+  partial-record crashes, ambiguous replay response, atomic outbox-collision rollback, three
+  cycles and marker-age invariance, forged replay/CLI override rejection, live/expired claim
+  reconciliation, post-domain/pre-record crash, stale generation/success protection, memory
+  terminal/replay flow, bounded retention, failed durable writes, collector/worker marker gaps,
+  whole-batch partial progress and physical marker deletion with one logical notification.
+  Bundle coverage now checks real recovery exports; its localized 30-second compile timeout
+  accommodates four compressed SDK archives, rather than a five-second unit deadline.
+- `local:up`, `local:provision`, and `verify:local --confirm-reset` passed the full live gate
+  in 229.050 seconds. Owned CLI inspect/replay, actual DynamoDB replay outbox, permanent
+  notification dedup after exact marker deletion, pending collection during a live publication
+  claim, marker-after-reconciliation, editor retry to one S3 artifact, and late failure after
+  success passed. These were direct shared adapters on real services, not deployed consumer
+  queues. Earlier actual spine/Scheduler/redrive/reset/reprovision checks passed again; see
+  [recorded evidence](localstack-evidence.md) for IDs and exclusions.
+- `local:down` passed; no owned containers/network remained. `pnpm verify:release` passed:
+  format/typecheck/tests/lint/build, zero pkg-guard findings, isolated generated-app
+  install/typecheck/tests/build/AWS bundle/synth/doctor, and six package dry runs. Local Markdown
+  links and `git diff --check` passed.
+- No dependencies, public framework/template implementations, versions, workflows, real AWS
+  resources, release, or commit changed. Consumer mappings/grants and service-level Scheduler
+  failed-target topology remain Phase 20/21; HTTP/UI remain later phases. Recurring tick
+  recovery continues through the Phase 12 checkpoints, not arbitrary fact replay.
 
 For later phases, append the date, meaningful behavior delivered, commands/results,
 not-run checks, design changes, and remaining limitations. Do not replace observed

@@ -130,7 +130,7 @@ export function createPublisher(options: {
       const state = classify(publication);
       if (state === "obsolete") return "ignored" as const;
       if (state === "complete") return "alreadyPublished" as const;
-      if (publication!.phase === "failed")
+      if (["failed", "stalled"].includes(publication!.phase))
         throw new JawStackRuntimeError(
           "command.rejected",
           "Publication cycle has failed; explicit recovery is required.",

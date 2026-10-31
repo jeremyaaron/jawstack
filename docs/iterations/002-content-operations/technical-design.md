@@ -875,7 +875,8 @@ or same-ID transport rewrites fail the drain explicitly rather than being treate
 due work, not that delayed/failed work disappeared. `createFixtureClock` supplies monotonic
 explicit clock advancement for tests; no drain sleeps or advances the clock implicitly.
 Use a fresh runtime for a reset/reseed, since outbox cursors and permanent business records
-belong to the same volatile dataset. Automatic pumping, durable failure collection/replay,
+belong to the same volatile dataset. Phase 13 adds durable failure collection/replay within
+that dataset. Automatic HTTP pumping,
 and deployed consumer transports remain later phases.
 
 ### Failure Collection and Replay
@@ -915,6 +916,89 @@ before enqueueing; old deliveries cannot claim the new generation.
 Keep source messages for four days and DLQs for fourteen days. Retain completed worker
 markers for seven days, but keep business-level deduplication records for the life of the
 development dataset. Marker TTL expiry alone must not allow a second publication/delivery.
+
+### Phase 13 Implementation Decisions
+
+`createFailureService` implements collection, publication reconciliation, inspection, replay
+authorization, and successful replay resolution. It accepts only validated source-scoped
+facts subscribed by one of the four implemented workers. Deterministic failure IDs hash
+consumer plus original event ID, not a delivery receive/message ID. Retain one canonical
+validated original envelope/fingerprint, at most four collection stages, and three bounded
+recovery requests. The canonical form preserves every original envelope/business field;
+JSON property insertion order is normalized through the existing strict schemas.
+
+Application-owned `FAILURE#<id>` / `DELIVERY` rows (`APP_FAILURE`) are permanent for the
+development dataset, version-conditioned, and bounded to 128 KiB. Collection stages retain
+transport ID/generation, first collection time, pending/final reconciliation and result.
+Recovery requests retain fresh UUID, time, editor and request UUID. The public
+`contentItem.failures` projection exposes only bounded redacted summaries/history and trace
+identity, not original private bodies. Memory defaults to 1,000 records with a 10,000 maximum
+override and never evicts identities to make room; capacity fails safely. DynamoDB has the
+same record/history bounds and dataset-lifetime retention, without a global count scan.
+
+First persist a pending collection, then reconcile, then mark that collection complete.
+Repeats must continue pending work rather than treating record existence as acknowledgement.
+Live matching publication claims defer without a collector marker. Expired matching claims
+close as expired in the same content/history transaction that sets `phase: "stalled"` and
+its required nullable `deliveryFailure` marker. An exhausted queued delivery can stall with
+zero attempts; do not fabricate worker execution. The resulting publication-failure fact
+uses the reconciliation instant and sanitized `execution.interrupted` code, not a raw SDK
+error. Already failed/succeeded, replaced generations and nonmatching newer claims are
+classified without overwriting current authority. A retry after the domain commit but before
+collection completion recognizes the durable marker and finishes the second step.
+
+Editor `retryPublication` now admits explicit stalled delivery, clears its marker and
+advances the existing maximum-four generation protocol with the same frozen intent. Generic
+CLI replay rejects publication; it cannot enqueue the old generation as a substitute retry.
+Its three-cycle budget is authoritative on content, not reset by new failure record IDs.
+
+Manual envelope recovery allows only review/asset materializers and the notification sink.
+Load the original from its validated stored record, assign fresh transport UUID/time, retain
+original actor/correlation/business payload, and set causation to the original event ID.
+Payload `delivery` adds `{ originalEventId, generation, consumer, failureId }`. Consumer and
+failure ID must appear together; existing two-field metadata remains parse-compatible only
+for older trusted fixtures, not accepted as a new durable recovery. Authorization reconstructs
+the exact expected replay from the stored request, rejecting altered facts, IDs, consumers,
+and unrecorded generations. Workers ignore unrelated targeted fan-out copies without effects.
+
+Commit recovery state/view and the create-only public outbox item in one DynamoDB transaction
+or non-yielding memory commit. No direct bus/queue publication occurs. Conditional conflicts
+or ambiguous responses get at most three strong reread/update attempts; a stored request UUID
+or already queued cycle does not burn another cycle. The next manual cycle requires collected
+failure of the previous delivery. Success marks the corresponding recovery resolved before
+the worker marker; old collection cannot downgrade a later successful generation. Permanent
+source-version/delivery/publication checks survive physical marker deletion/TTL expiry.
+
+Memory terminal jobs call the same collector, release capacity only after collection, and
+use a separate bounded collection cache rather than falsely marking failed workers successful.
+Deferred/failed collection retains the source job with a one-second injected-clock retry.
+Foreign/malformed envelopes, unsupported consumers and unrecorded replay traffic are rejected
+without acknowledgement. Investigate these in the retained DLQ; there is no unbounded
+collector-DLQ chain or replay path for arbitrary content. Periodic job ticks resume through
+their checkpoints/next invocation rather than entering manual fact replay; service-level
+Scheduler failed-target wiring remains part of the Phase 20/21 deployment boundary.
+
+`recovery.zip` exports actual worker/collector entrypoints backed by public SQS adapters.
+Snapshot and validate the complete bounded batch (origin ARN, source/type, schema and
+subscription) before any marker lookup; authorize durable replays/collected originals even
+on cached delivery. The publication entrypoint shares this transport validation. Consumer
+wrappers explicitly configure seven-day markers, avoiding the framework's fourteen-day
+default without changing public packages. No consumer mappings/queues are provisioned yet.
+
+`jobs:inspect` / `jobs:replay` are local-only CLI commands. Require an explicit editor fixture,
+strict arguments and an owned ready lab manifest; verify the table ownership tag before
+operation. Inspection pages 50/100 maximum; replay accepts only a failure ID and optional
+stable request UUID. No payload, queue, consumer, endpoint or real-AWS override is accepted.
+CLI output is redacted and errors omit raw SDK/child output. Memory exposes equivalent
+programmatic methods; it cannot inspect another process's volatile dataset. These fixtures
+are not production authentication. The private publication schema evolves in place; reset
+older ephemeral datasets rather than implying a migration guarantee.
+
+Fault callbacks at exact record/reconciliation/replay-commit boundaries are construction-time
+test dependencies only. The live gate exercises shared adapters and owned CLI on real local
+DynamoDB/S3, including a physical worker-marker deletion, deferred/expired publication
+collection and editor retry to one artifact. It does not substitute these direct calls for
+the separate actual spine/redrive proof or claim deployed consumer DLQ mappings.
 
 ## HTTP and Angular Design
 

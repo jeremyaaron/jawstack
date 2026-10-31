@@ -11,9 +11,10 @@ asset handlers, a local notification destination, and an explicit memory pump. P
 adds scheduling/publication intent, fenced execution state, and atomic attempt history.
 Phase 11 adds stable JSON artifacts, recoverable publication execution, outcome notifications,
 and a bundled SQS publisher entrypoint. Phase 12 adds checkpointed due/reminder/asset jobs,
-strict local-time conversion, and conditional orphan cleanup. Consumer Lambda/queue/Scheduler
-deployment, HTTP, and Angular UI remain later work. The live lab exercises the separate event
-spine, direct consumer transactions, attachments, publication, and jobs on real local S3/DynamoDB.
+strict local-time conversion, and conditional orphan cleanup. Phase 13 adds durable failure
+records, resumable collection, publication reconciliation, and bounded targeted recovery.
+Consumer Lambda/queue/Scheduler deployment, HTTP, and Angular UI remain later work. The live
+lab exercises the separate event spine and shared consumer protocols on real local S3/DynamoDB.
 
 ## Credential-Free Checks
 
@@ -30,7 +31,7 @@ pnpm --filter content-operations run build
 ```
 
 These commands do not start Docker, load the token file, resolve AWS credentials, or
-connect to any AWS service. The build creates bundled Node 22 `spine.zip`, `publication.zip`, and `jobs.zip`
+connect to any AWS service. The build creates bundled Node 22 `spine.zip`, `publication.zip`, `jobs.zip`, and `recovery.zip`
 Lambda archives under `dist/`; only the spine is provisioned by the current lab.
 Build the workspace once so the harness can bundle installed public package entrypoints.
 Unit tests are explicitly restricted to `test/unit/**/*.test.ts`; live integration is a
@@ -229,8 +230,11 @@ views, 50 by default and 100 maximum. Rows also live in the memory repository's
 `contentItem.notifications[.<fixtureId>]` projections, matching DynamoDB. Stored records
 retain the first delivery's transport/correlation/causation metadata; replay does not rewrite
 it. Reserved payload metadata `delivery: { originalEventId, generation }` is strictly
-validated (generations 1-3) and excluded from the fact fingerprint. Recovery/replay commands
-that produce it remain Phase 13; there is no arbitrary public replay endpoint.
+validated (generations 1-3) and excluded from the fact fingerprint. New durable replays also
+include `consumer` and `failureId`, validated against the persisted request before effects
+or cached-marker acknowledgement. Legacy two-field metadata remains parse-compatible for
+existing trusted fixtures, not accepted as a new durable recovery. There is no public payload
+submission/replay endpoint.
 
 ### Explicit Memory Processing
 
@@ -244,7 +248,7 @@ Retries occur at injected-clock cutoffs of +1 and +2 seconds and become terminal
 attempts. `createFixtureClock(iso).now`/`.advance(ms)` makes this deterministic; a drain never
 advances time or sleeps until a retry. Idle can therefore include deferred/terminal jobs.
 Inspect `app.pump.inspect()` and the returned pending/terminal/next-attempt/backpressure
-fields. Failed jobs retain their original event privately but expose only sanitized summaries.
+fields. Uncollected failed jobs retain their original event privately but expose only sanitized summaries.
 
 The pump defaults to 200 pending/terminal jobs and 1,000 bounded seven-day transport markers
 (each capacity configurable up to 10,000). Marker capacity may evict old cache entries;
@@ -255,8 +259,13 @@ content at the same transport event ID stop a drain explicitly. Recreate the run
 resetting its dataset; do not clear the outbox underneath an existing cursor.
 
 Memory processing is volatile and does not imitate EventBridge/SQS/Lambda infrastructure.
-Automatic managed pumping belongs to later HTTP composition. Durable failure collection/
-manual recovery and live consumer queues are not implemented by this phase. Tests exercise
+Automatic managed pumping belongs to later HTTP composition. Terminal memory jobs now enter
+the same durable collection/recovery protocol, and collected work releases its pump capacity.
+Collection failure/live-claim deferral retains the job and retries at an injected-clock
+one-second cutoff, without a successful worker marker. Separate bounded seven-day collection
+caches never replace permanent failure/recovery history. Invalid/foreign envelopes stay
+unacknowledged for investigation instead of being silently discarded. Live consumer queues
+remain undeployed. Tests exercise
 the complete headless draft/upload/review/publication/notification flow and SDK notification atomicity;
 the live LocalStack harness below has not been extended to deploy these consumer handlers.
 
@@ -291,6 +300,10 @@ the live LocalStack harness below has not been extended to deploy these consumer
   and terminal failures never unlock editing, attachment mutation, reopen, or archive.
   A failed or expired current cycle can be explicitly retried only without a live claim;
   an already-queued retry cannot burn another generation based on an older failure.
+- Exhausted delivery collection can explicitly set `phase: "stalled"` with a durable
+  `deliveryFailure` reference. It does not invent a worker attempt when none ran. Expired
+  claims close as expired in the same domain commit; live claims defer collection. Editor
+  retry clears the delivery marker and advances the bounded generation with the same intent.
 - There are three attempts per generation and at most four generations (initial plus three
   editor retries). Storage-unavailable/interrupted attempts release the claim for another
   attempt; the third failure becomes terminal. Artifact mismatch/invalid snapshot fails
@@ -397,6 +410,64 @@ Published/terminal-failure facts include `outcomeAt` from the completed attempt.
 local notification templates use this business instant and original event ID, so replay
 cannot duplicate a delivery or change its ordering. There are no email/provider side effects.
 
+## Failures and Recovery
+
+`createFailureService` shares policy between memory, the bundled SQS collector/worker,
+and the development CLI. Each deterministic SHA-256 failure ID is scoped to consumer and
+original transport event ID. One validated original envelope is retained privately, with
+an immutable fingerprint, at most four collection stages (original plus three replays),
+and at most three operator recovery requests. Memory defaults to 1,000 records (bounded
+override up to 10,000); capacity rejects new failures without evicting existing identities.
+Business history has no TTL and lasts for the development dataset.
+
+Collection persists a pending record before publication reconciliation. A live matching
+claim throws for later retry; an expired claim closes as expired, while queued exhausted
+delivery becomes explicitly stalled. Stalling emits the ordinary publication outcome fact
+without inventing an execution attempt. Repeated collection completes a partial record;
+late failures cannot replace a newer generation or completed artifact. The source message
+is acknowledged/collector-marked only after applicable reconciliation is durable. Invalid
+source/envelope/consumer or unrecorded replay traffic remains unacknowledged, requiring
+investigation in the DLQ rather than creating an infinite collector-DLQ chain.
+
+Replay is editor-only and limited to `materializeReview`, `materializeAsset`, and
+`deliverNotification` failures. It loads the stored fact, never a supplied payload, URL,
+queue, or consumer override. A fresh transport UUID/time carries original business payload,
+correlation/actor, causation to the original event, and targeted `delivery` metadata.
+Recovery state, its operations projection, and a create-only public outbox item commit in
+one transaction (or one non-yielding memory commit). There is no direct `PutEvents` or SQS
+send. A lost CLI response can be retried with the same request UUID; an already queued cycle
+does not consume another. The next cycle requires collected failure of the previous one.
+Successful replay marks its history resolved before transport acknowledgement; cached and
+expired-marker redeliveries still rely on permanent business deduplication.
+
+Publication uses the existing editor `retryPublication` command instead of envelope replay.
+Its authoritative generation must advance before a new request is queued, with at most
+three manual retries and the same frozen bytes/key. Recurring job ticks resume through their
+checkpoints and next invocation, not arbitrary fact replay. Consumer Scheduler/queue topology
+and service-level failed-target wiring remain Phase 20/21 work.
+
+In a memory runtime, use `app.failures.inspect(fixtureAuth("editor_1"))` or
+`app.failures.replay(failureId, fixtureAuth("editor_1"), crypto.randomUUID())`, then drain
+the pump. Inspection returns bounded redacted summaries/history, not the private envelope.
+The CLI operates only against a provisioned, ownership-tagged local lab; it never loads
+real AWS credentials or accepts an AWS runtime/endpoint override:
+
+```sh
+pnpm --filter content-operations jobs:inspect --actor editor_1
+pnpm --filter content-operations jobs:inspect <failureId> --actor editor_1
+pnpm --filter content-operations jobs:replay <failureId> --actor editor_1 --request-id <uuid>
+```
+
+`--lab <id>` selects an owned local instance. List inspection accepts `--limit` (1-100,
+default 50) and `--cursor`; replay accepts an optional stable `--request-id` (otherwise
+generated). These are development fixture identities, not production authentication.
+`recovery.zip` exports `collector` and `worker`, using the framework SQS adapter with
+whole-batch retry and validated fixed consumer/queue names. The entire batch is snapshotted
+and validated before marker lookup; recorded replay authorization also precedes cached
+markers. Non-targeted workers may acknowledge targeted fan-out copies as ignored without
+executing business effects. Consumer wrappers explicitly set seven-day marker TTLs rather
+than inheriting the framework's fourteen-day default. The four-function spine lab is unchanged.
+
 ## LocalStack Prerequisites
 
 - A running Docker engine with Compose v2 and enough RAM for LocalStack plus four Node Lambdas.
@@ -489,6 +560,15 @@ clock. It checks overlapping publication ticks, review checkpoint restart and da
 slot expiry, young-object retention, old-orphan deletion with tombstone retention, and
 expired-lease takeover/stale-writer rejection. This is a direct shared-service proof, not
 consumer Scheduler deployment. The separate automatic feasibility schedule is still tested.
+
+The recovery proof executes owned CLI inspection/replay and checks the transactional replay
+outbox against real DynamoDB. Direct shared SQS adapters execute one local notification,
+then physical deletion of its exact marker still leaves one business delivery. A publication
+interrupted after object creation retains a pending failure record while its claim is live;
+the collector has no completion marker until lease expiry/reconciliation. Editor retry
+recovers one artifact, and a late collector delivery cannot replace success. These are
+direct adapter checks, not deployed consumer queue evidence; the separate spine still proves
+actual redrive/collection. All fixtures are discarded by the same owned reset.
 
 `--confirm-reset` is required because the full gate then deletes the owned proof dataset,
 checks that a separately owned sentinel table and its nonce survived, and reprovisions

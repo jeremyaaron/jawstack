@@ -9,7 +9,7 @@ import {
 import { createContentDispatch } from "../application/dispatch";
 import { createPublisher } from "../application/publisher";
 import { parseContentEvent } from "../shared/events";
-import { limits } from "../shared/validation";
+import { validatedDeliveryBatch, deliveryMarkerTtlSeconds } from "./delivery";
 import { createLabConfig } from "../lab/config";
 import { createClients, destroyClients } from "../lab/clients";
 import { queueArn } from "../lab/capabilities";
@@ -29,6 +29,7 @@ export function createPublicationSqsHandler(options: {
     idempotencyStore: new DynamoDbWorkerIdempotencyStore({
       client: options.client,
       tableName: options.tableName,
+      ttlSeconds: deliveryMarkerTtlSeconds,
       ...(options.clock ? { clock: options.clock } : {}),
     }),
     ...(options.clock ? { clock: options.clock } : {}),
@@ -36,46 +37,14 @@ export function createPublicationSqsHandler(options: {
       await options.publisher(parseContentEvent(event, options.source));
     },
   });
-  return async (input: SqsEvent) => {
-    // Validate every record before even a cached marker can acknowledge a foreign delivery.
-    const batch = z
-      .object({
-        Records: z
-          .array(
-            z.object({
-              messageId: z.string().min(1).max(128),
-              body: z.string().max(limits.eventBytes * 2 + 16384),
-              eventSourceARN: z.literal(options.expectedQueueArn),
-            }),
-          )
-          .min(1)
-          .max(10),
-      })
-      .parse(input);
-    for (const record of batch.Records) {
-      if (Buffer.byteLength(record.body) > limits.eventBytes * 2 + 16384)
-        throw new Error("Publication transport byte budget exceeded.");
-      const decoded: unknown = JSON.parse(record.body);
-      let envelope = decoded;
-      if (typeof decoded === "object" && decoded !== null && "detail" in decoded) {
-        const outer = decoded as Record<string, unknown>;
-        envelope = typeof outer.detail === "string" ? JSON.parse(outer.detail) : outer.detail;
-        const inner = parseContentEvent(envelope, options.source);
-        if (
-          (outer.source !== undefined && outer.source !== options.source) ||
-          (outer["detail-type"] !== undefined && outer["detail-type"] !== inner.eventType)
-        )
-          throw new Error("Publication transport source/type mismatch.");
-      }
-      const event = parseContentEvent(envelope, options.source);
-      if (
-        event.eventType !== "contentItem.publicationRequested" &&
-        event.eventType !== "contentItem.publicationRetried"
-      )
-        throw new Error("Unexpected publication fact.");
-    }
-    return adapter.handle(input);
-  };
+  return async (input: SqsEvent) =>
+    adapter.handle(
+      validatedDeliveryBatch(input, {
+        queueArn: options.expectedQueueArn,
+        source: options.source,
+        consumer: "publishContent",
+      }),
+    );
 }
 
 export async function publisher(event: SqsEvent) {

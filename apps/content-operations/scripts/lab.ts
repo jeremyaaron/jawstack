@@ -21,6 +21,7 @@ import { verifyScopedTransactions } from "../src/lab/verify-transactions";
 import { verifyAssets } from "../src/lab/verify-assets";
 import { verifyPublication } from "../src/lab/verify-publication";
 import { verifyJobs } from "../src/lab/verify-jobs";
+import { verifyFailures } from "../src/lab/verify-failures";
 import { verifyCapabilities, verifySentinelReset } from "../src/lab/verify-capabilities";
 import { buildLab } from "./build-lab";
 
@@ -234,7 +235,7 @@ async function main() {
       const started = Date.now();
       const evidence: Record<string, unknown> = {
         status: "running",
-        scenario: "feasibility-paging-transactions-assets-publication-and-jobs",
+        scenario: "feasibility-paging-transactions-assets-publication-jobs-and-recovery",
         recordedAt: new Date().toISOString(),
         durationMs: Date.now() - started,
         image: manifest.image,
@@ -266,6 +267,10 @@ async function main() {
           "Checking leased due jobs, reminders, expiry, and conditional orphan cleanup...",
         );
         evidence.jobs = await verifyJobs(clients, config);
+        console.log(
+          "Checking durable failure collection, owned CLI replay, and marker-gap recovery...",
+        );
+        evidence.recovery = await verifyFailures(clients, config);
         console.log("Waiting for automatic Scheduler and actual SQS redrive/collector...");
         evidence.capabilities = await verifyCapabilities(clients, config);
         console.log("Checking ownership-safe reset with an unrelated-resource sentinel...");

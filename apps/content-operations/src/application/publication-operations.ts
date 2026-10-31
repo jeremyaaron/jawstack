@@ -52,7 +52,7 @@ export function publicationOperations(
         ? ["succeeded"]
         : command === "failPublication"
           ? ["failed"]
-          : command === "retryPublication"
+          : command === "retryPublication" || command === "reconcilePublicationFailure"
             ? ["expired"]
             : [];
   const parsed = contentStateSchema.safeParse(input.resource.next.state);

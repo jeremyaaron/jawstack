@@ -10,6 +10,8 @@ import { contentEventSource } from "../shared/events";
 import { createPublisher } from "./publisher";
 import { createMemoryJobStore } from "./job-store";
 import { createContentJobs } from "./jobs";
+import { createMemoryFailureStore } from "./failure-records";
+import { createFailureService } from "./failures";
 
 export function createFixtureClock(instant: string) {
   let value = Date.parse(instantSchema.parse(instant));
@@ -39,6 +41,14 @@ export function createMemoryRuntime(options: { clock?: () => Date; source?: stri
     clock,
   });
   const notifications = createMemoryNotificationSink({ store: persistence.store });
+  const failureStore = createMemoryFailureStore({ source, store: persistence.store });
+  const failures = createFailureService({
+    store: failureStore,
+    repository: persistence.repository,
+    dispatch,
+    clock,
+    source,
+  });
   const publisher = createPublisher({
     repository: persistence.repository,
     dispatch,
@@ -52,8 +62,15 @@ export function createMemoryRuntime(options: { clock?: () => Date; source?: stri
     clock,
     source,
     publisher,
+    recovery: failures,
   });
-  const pump = createMemoryPump({ outbox: () => persistence.store.outbox, workers, clock });
+  const pump = createMemoryPump({
+    outbox: () => persistence.store.outbox,
+    workers,
+    clock,
+    source,
+    failures,
+  });
   const jobStore = createMemoryJobStore();
   const jobs = createContentJobs({
     repository: persistence.repository,
@@ -81,6 +98,8 @@ export function createMemoryRuntime(options: { clock?: () => Date; source?: stri
     pump,
     jobStore,
     jobs,
+    failureStore,
+    failures,
     drainUntilIdle,
   };
 }

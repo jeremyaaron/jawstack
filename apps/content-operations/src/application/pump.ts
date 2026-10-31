@@ -3,6 +3,8 @@ import { JawStackRuntimeError, type JawStackEvent, type RuntimeErrorCode } from 
 import type { ContentWorkerName } from "../domain/subscriptions";
 import { jsonBytes, limits } from "../shared/validation";
 import type { createContentWorkers } from "./workers";
+import type { createFailureService } from "./failures";
+import { parseContentEvent, contentEventSource } from "../shared/events";
 
 export const workerMarkerTtlMs = 7 * 24 * 60 * 60 * 1000;
 type Job = {
@@ -23,6 +25,8 @@ export function createMemoryPump(options: {
   clock?: () => Date;
   maxJobs?: number;
   maxMarkers?: number;
+  source?: string;
+  failures?: Pick<ReturnType<typeof createFailureService>, "collect">;
 }) {
   const maxJobs = options.maxJobs ?? 200;
   const maxMarkers = options.maxMarkers ?? 1000;
@@ -31,6 +35,7 @@ export function createMemoryPump(options: {
       throw new Error("Invalid memory pump capacity.");
   const jobs = new Map<string, Job>();
   const markers = new Map<string, { fingerprint: string; expiresAt: number }>();
+  const collected = new Map<string, { fingerprint: string; expiresAt: number }>();
   let cursor = 0;
   let tail = Promise.resolve();
   const drain = async (limit = 50) => {
@@ -45,7 +50,17 @@ export function createMemoryPump(options: {
     try {
       const now = (options.clock?.() ?? new Date()).getTime();
       for (const [key, marker] of markers) if (marker.expiresAt <= now) markers.delete(key);
-      const result = { scanned: 0, attempted: 0, succeeded: 0, retried: 0, failed: 0, ignored: 0 };
+      for (const [key, marker] of collected) if (marker.expiresAt <= now) collected.delete(key);
+      const result = {
+        scanned: 0,
+        attempted: 0,
+        succeeded: 0,
+        retried: 0,
+        failed: 0,
+        ignored: 0,
+        collected: 0,
+        collectionFailed: 0,
+      };
       let blockedNeeded = 0;
       const outbox = options.outbox();
       if (outbox.length < cursor)
@@ -60,10 +75,18 @@ export function createMemoryPump(options: {
             "command.validation",
             "Committed outbox event exceeds its budget.",
           );
-        const names = options.workers.subscribers(event.eventType);
+        let names = options.workers.subscribers(event.eventType);
+        try {
+          const parsed = parseContentEvent(event, options.source ?? contentEventSource);
+          if (parsed.recovery) names = names.filter((name) => name === parsed.recovery!.consumer);
+        } catch {
+          /* Invalid envelopes remain failed work, never successful no-ops. */
+        }
         const needed = names.filter(
           (name) =>
-            !jobs.has(identity(name, event.eventId)) && !markers.has(identity(name, event.eventId)),
+            !jobs.has(identity(name, event.eventId)) &&
+            !markers.has(identity(name, event.eventId)) &&
+            !collected.has(identity(name, event.eventId)),
         );
         if (jobs.size + needed.length > maxJobs) {
           blockedNeeded = needed.length;
@@ -72,7 +95,7 @@ export function createMemoryPump(options: {
         const hash = fingerprint(event);
         for (const name of names) {
           const key = identity(name, event.eventId);
-          const marker = markers.get(key);
+          const marker = markers.get(key) ?? collected.get(key);
           const job = jobs.get(key);
           if ((marker && marker.fingerprint !== hash) || (job && fingerprint(job.event) !== hash))
             throw new JawStackRuntimeError(
@@ -121,13 +144,35 @@ export function createMemoryPump(options: {
           }
         }
       }
+      if (options.failures)
+        for (const [key, job] of jobs) {
+          if (result.attempted + result.collected + result.collectionFailed >= limit) break;
+          if (job.status !== "failed" || job.dueAt > now) continue;
+          try {
+            await options.failures.collect(job.worker, structuredClone(job.event));
+            jobs.delete(key);
+            collected.set(key, {
+              fingerprint: fingerprint(job.event),
+              expiresAt: now + workerMarkerTtlMs,
+            });
+            if (collected.size > maxMarkers) collected.delete(collected.keys().next().value!);
+            result.collected++;
+          } catch {
+            job.dueAt = now + 1000;
+            result.collectionFailed++;
+          }
+        }
       const pending = [...jobs.values()].filter((job) => job.status === "pending");
       const next = pending.length ? Math.min(...pending.map((job) => job.dueAt)) : undefined;
       return {
         ...result,
         pending: pending.length,
         terminal: jobs.size - pending.length,
-        hasMore: cursor < options.outbox().length || pending.some((job) => job.dueAt <= now),
+        hasMore:
+          cursor < options.outbox().length ||
+          pending.some((job) => job.dueAt <= now) ||
+          (!!options.failures &&
+            [...jobs.values()].some((job) => job.status === "failed" && job.dueAt <= now)),
         ...(next === undefined ? {} : { nextAttemptAt: new Date(next).toISOString() }),
         backpressured: blockedNeeded > 0 && jobs.size + blockedNeeded > maxJobs,
       };

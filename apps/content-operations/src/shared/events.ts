@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { JawStackEvent } from "@jawstack/core";
 import { contentEventSchemas } from "./contracts";
 import { idSchema, instantSchema, jsonBytes, limits } from "./validation";
 
@@ -29,10 +30,17 @@ const envelopeSchema = z.strictObject({
   occurredAt: instantSchema,
   payload: z.unknown(),
 });
-export const replayMetadataSchema = z.strictObject({
-  originalEventId: eventIdentitySchema,
-  generation: z.number().int().min(1).max(3),
-});
+export const replayMetadataSchema = z
+  .strictObject({
+    originalEventId: eventIdentitySchema,
+    generation: z.number().int().min(1).max(3),
+    consumer: z.enum(["materializeReview", "materializeAsset", "deliverNotification"]).optional(),
+    failureId: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional(),
+  })
+  .refine((value) => (value.consumer === undefined) === (value.failureId === undefined));
 
 export function parseContentEvent(input: unknown, source = contentEventSource) {
   const envelope = envelopeSchema.parse(input);
@@ -61,6 +69,40 @@ export function parseContentEvent(input: unknown, source = contentEventSource) {
     ...envelope,
     payload: parsed,
     originalEventId: replay?.originalEventId ?? envelope.eventId,
+    ...(replay?.consumer
+      ? {
+          recovery: replay as typeof replay & {
+            consumer: NonNullable<typeof replay.consumer>;
+            failureId: string;
+          },
+        }
+      : {}),
   };
 }
 export type ContentEvent = ReturnType<typeof parseContentEvent>;
+
+export function parseContentWire(
+  input: unknown,
+  source = contentEventSource,
+): JawStackEvent<Record<string, unknown>> {
+  const envelope = envelopeSchema.parse(input);
+  const parsed = parseContentEvent(envelope, source);
+  const delivery = (envelope.payload as Record<string, unknown>).delivery;
+  const { actor, causationId, ...base } = envelope;
+  return {
+    ...base,
+    ...(actor
+      ? {
+          actor: {
+            subject: actor.subject,
+            ...(actor.displayName !== undefined ? { displayName: actor.displayName } : {}),
+          },
+        }
+      : {}),
+    ...(causationId !== undefined ? { causationId } : {}),
+    payload: {
+      ...parsed.payload,
+      ...(delivery === undefined ? {} : { delivery: replayMetadataSchema.parse(delivery) }),
+    },
+  };
+}

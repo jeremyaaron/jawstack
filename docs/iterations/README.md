@@ -6,10 +6,10 @@ release the framework.
 
 ## Index
 
-| Iteration                                                   | Status            | Outcome                                                                                                  |
-| ----------------------------------------------------------- | ----------------- | -------------------------------------------------------------------------------------------------------- |
-| [001: Foundation](001-foundation/README.md)                 | Archived baseline | Merged and tagged `v0.0.1` in Git; npm publication and `0.1.0` deferred.                                 |
-| [002: Content Operations](002-content-operations/README.md) | Phase 12 complete | Checkpointed due/reminder/cleanup jobs, strict time conversion, and live DynamoDB/S3 protocols verified. |
+| Iteration                                                   | Status            | Outcome                                                                                                    |
+| ----------------------------------------------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------- |
+| [001: Foundation](001-foundation/README.md)                 | Archived baseline | Merged and tagged `v0.0.1` in Git; npm publication and `0.1.0` deferred.                                   |
+| [002: Content Operations](002-content-operations/README.md) | Phase 13 complete | Durable failure reconciliation, targeted atomic replay, owned CLI, and live DynamoDB/S3 recovery verified. |
 
 ## Planning Flow
 

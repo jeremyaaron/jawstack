@@ -235,20 +235,36 @@ export const publicationStateSchema = z
   .strictObject({
     intent: publicationIntentSchema,
     generation: publicationGenerationSchema,
-    phase: z.enum(["queued", "running", "failed", "succeeded"]),
+    phase: z.enum(["queued", "running", "failed", "stalled", "succeeded"]),
+    deliveryFailure: z
+      .strictObject({
+        failureId: z.string().regex(/^[a-f0-9]{64}$/),
+        sourceEventId: z
+          .string()
+          .min(1)
+          .max(128)
+          .regex(/^[A-Za-z0-9_.:-]+$/),
+        at: instantSchema,
+      })
+      .nullable(),
     attemptsInGeneration: z.number().int().min(0).max(limits.publicationAttempts),
     claim: publicationClaimSchema.nullable(),
     lastAttempt: publicationAttemptSchema.nullable(),
     artifact: publicationArtifactSchema.nullable(),
   })
   .superRefine((value, ctx) => {
+    if ((value.phase === "stalled") !== (value.deliveryFailure !== null))
+      ctx.addIssue({
+        code: "custom",
+        message: "Stalled publication requires a durable delivery failure.",
+      });
     if (
       (value.phase === "running") !== (value.claim !== null) ||
       (value.phase === "succeeded") !== (value.artifact !== null)
     )
       ctx.addIssue({ code: "custom", message: "Publication phase/claim/artifact mismatch." });
     if (
-      (value.phase !== "queued" && value.attemptsInGeneration === 0) ||
+      (!["queued", "stalled"].includes(value.phase) && value.attemptsInGeneration === 0) ||
       (value.phase === "queued" &&
         value.attemptsInGeneration > 0 &&
         value.lastAttempt?.status !== "failed") ||

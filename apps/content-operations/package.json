@@ -12,7 +12,9 @@
     "local:provision": "tsx scripts/lab.ts provision",
     "local:reset": "tsx scripts/lab.ts reset",
     "local:down": "tsx scripts/lab.ts down",
-    "verify:local": "tsx scripts/lab.ts verify"
+    "verify:local": "tsx scripts/lab.ts verify",
+    "jobs:inspect": "tsx scripts/jobs.ts inspect",
+    "jobs:replay": "tsx scripts/jobs.ts replay"
   },
   "dependencies": {
     "@aws-sdk/client-cloudwatch-logs": "3.1075.0",
