@@ -1,7 +1,7 @@
 # Iteration 2 Implementation Plan: Content Operations
 
-Status: reviewed. Phases 0-10 are complete. Scheduling/publication domain transitions,
-fenced claims, atomic attempt history, and workspace regressions passed. Phase 11 has not started.
+Status: reviewed. Phases 0-11 are complete. Recoverable publication artifacts, memory workflow,
+bundled SQS contracts, live DynamoDB/S3 recovery, and workspace regressions passed. Phase 12 is next.
 
 ## Purpose
 
@@ -93,7 +93,7 @@ work may proceed only after an explicit sequencing decision, without claiming th
 | 8     | Consumer services          | Attachment lifecycle and verified object storage          | Complete |
 | 9     | Consumer workers           | Materializers, notification sink and memory event pump    | Complete |
 | 10    | Consumer domain            | Publication intent, claims and generation transitions     | Complete |
-| 11    | Consumer workers           | Recoverable publication execution                         | Planned  |
+| 11    | Consumer workers           | Recoverable publication execution                         | Complete |
 | 12    | Consumer jobs              | Due work, reminders, time zones and cleanup               | Planned  |
 | 13    | Consumer operations        | Failure collection and bounded recovery                   | Planned  |
 | 14    | Consumer API               | Loopback HTTP, bounded queries and typed routes           | Planned  |
@@ -1040,6 +1040,48 @@ integration gate, documentation walkthrough, local links, and `git diff --check`
   release, or commit was changed/created. No actual artifact serializer/writer/verifier or
   `publishContent` subscription is presented as implemented; that protocol is Phase 11.
   Internal completion currently accepts trusted metadata with fixed key/size/digest shape.
+
+### Phase 11: October 31, 2026
+
+- Added explicit-order version-1 UTF-8 JSON artifacts with UTC instants, asset-ID-sorted
+  attachments, trailing LF, bounded bytes, fixed key, and exact SHA-256. Frozen intent alone
+  determines bytes across attempt/generation retries; execution metadata is excluded.
+- Memory and guarded local S3 stores conditionally create and verify artifacts without
+  overwrite. S3 checks exact bytes plus JSON type, length, digest, and object identity.
+  Matching objects recover; corruption terminalizes the current publication generation.
+- Implemented shared claim -> write/verify -> domain completion execution with strong
+  rereads, fresh attempt UUID/action keys, finite conflict budgets, lease/fence checks, and
+  conditional failure recording. Live competitors throw for retry; stale workers cannot
+  fail successors. Completed duplicates and obsolete generations do not mutate business state.
+- Registered the real memory publisher and publication success/terminal-failure notifications.
+  Outcome facts include the attempt's stable `outcomeAt`, retaining replay-safe notification
+  identity/order. No direct notification provider calls or second publication authority exist.
+- Added `publication.zip` with the public framework SQS adapter/marker store. The entire
+  bounded batch validates queue/source/type/facts before marker lookup; markers follow domain
+  completion. The Lambda S3 path requires the owned publisher context/fixed local endpoint.
+  The existing four-function spine topology is unchanged; consumer deployment remains Phase 20.
+- Added 28 tests (331 consumer/616 workspace total): actual memory publication/notification,
+  crashes before/after object creation and completion, lease recovery, live duplicate rejection,
+  stale-worker fencing, attempt budgets, corruption and explicit generation retry, stable
+  serialization/Unicode/attachment order, memory/S3 parity and bounded 409 retries, metadata/
+  stream corruption, Lambda context isolation, bundle exports, marker-write gaps/physical
+  expiry, and validation of cached deliveries/whole batches. Fault callbacks are test-only
+  dependencies at exact operations, not environment switches or public endpoints.
+- `local:up`, `local:provision`, and `verify:local --confirm-reset` passed the complete live
+  gate in 206.167 seconds. The shared publisher on real DynamoDB/S3 recovered an injected
+  post-object interruption after logical lease expiry, retained expired/succeeded history,
+  converged on one artifact, left completed duplicates unchanged, and terminalized corrupt
+  bytes without overwrite. Earlier managed transport/Scheduler/redrive/reset/reprovision
+  proofs passed again. See [recorded evidence](localstack-evidence.md) for IDs and exclusions.
+- `local:down` passed; no owned containers/network remained. The publication service was
+  called directly for this focused proof, not deployed as a consumer Lambda. This is not
+  replaced transport evidence: the separate spine still used actual stream/bus/queue/Lambda.
+- `pnpm verify:release` passed: format/typecheck/tests/lint/build, zero pkg-guard findings,
+  isolated generated-app install/typecheck/tests/build/AWS bundle/synth/doctor, and six package
+  dry runs. Local Markdown links and `git diff --check` passed.
+- No public framework implementation, dependencies, versions, workflows, real AWS resources,
+  release, or commit was changed/created. Automatic due/reminder/cleanup jobs, full consumer
+  AWS wiring, HTTP, UI, and operational recovery remain later phases.
 
 For later phases, append the date, meaningful behavior delivered, commands/results,
 not-run checks, design changes, and remaining limitations. Do not replace observed

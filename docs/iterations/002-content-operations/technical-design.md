@@ -212,10 +212,10 @@ intersects fixture roles with resolved auth roles and rejects unknown/external f
 identities. Browser metadata imports Angular/core types only, not server factories or SDKs.
 
 Current state validates editorial lifecycle, bounded review/attachment snapshots, approval,
-and Phase 10 scheduling/publication execution state. Publication-object execution and automatic
-due work/local-time conversion remain Phases 11-12. Editorial guard tests now enter scheduled/
-publishing/published through real domain commands; completion metadata is trusted test input,
-not evidence of artifact creation.
+and Phase 10 scheduling/publication execution state. Phase 11 adds verified publication-object
+execution; automatic due work/local-time conversion remains Phase 12. Editorial guard tests
+enter scheduled/publishing/published through real domain commands with trusted test metadata;
+separate publisher tests verify artifact creation and recovery.
 Input titles are trimmed; stored titles must already be canonical. Body whitespace is
 preserved, Unicode is validated, and serialized snapshot/state/event byte bounds apply in
 addition to the raw UTF-8 body limit. An unchanged save advances resource version without
@@ -604,10 +604,45 @@ The stage facts are `publicationClaimed`, `publicationAttemptSucceeded`,
 `publicationAttemptFailed`, and `publicationLeaseExpired`. Requested/retried facts carry
 the complete frozen intent; published/terminal-failure facts carry bounded outcome metadata.
 All are version 1 and use the existing envelope/correlation/causation path. Internal publisher
-and due-worker roles are not exposed as UI commands or fixture choices. No `publishContent`
-handler/subscription is registered until Phase 11 can actually write/verify objects. Phase 10
+and due-worker roles are not exposed as UI commands or fixture choices. Phase 11 now registers
+`publishContent` with actual object write/verification. Phase 10
 completion accepts trusted internal metadata (fixed key, SHA-256 shape, at most 80 KiB) but
 does not claim object existence, serialization/digest equality, or cloud execution.
+
+### Phase 11 Execution Decisions
+
+The v1 artifact is UTF-8 JSON with explicit insertion order and one trailing LF. Fields are
+`schemaVersion`, `publicationId`, `contentId`, `requestedAt`, `approval`, `schedule`, and
+`content`; nested content fields are revision, author, title, body, submission instant, and
+attachments sorted lexically by asset UUID. All instants serialize as UTC milliseconds.
+Preserve body Unicode/whitespace; exclude operational generations, claims, and completion
+times. SHA-256 and size cover the exact bounded bytes. This is a versioned application
+format, not a general RFC canonical JSON implementation.
+
+Memory/S3 stores conditionally create and verify the exact bytes. S3 additionally checks
+JSON type, length, digest, and content/publication metadata with bounded readback. Matching
+existing objects recover; mismatches terminate without overwrite. The publisher checks the
+frozen event against authoritative intent before claiming, uses a fresh attempt UUID/key,
+and rereads/rechecks the fence before object work and completion. A live competitor throws;
+obsolete generations and matching completed work are the only successful no-op outcomes.
+Failing/releasing a lease is conditional on still owning it; a stale worker cannot fail its
+successor. A hard crash leaves the lease intact, including the object/domain split.
+
+Exact-operation fault callbacks are construction-time test dependencies only. Injected
+process interruptions bypass normal failure recording to model lease recovery. There is no
+HTTP fault endpoint, environment failure switch, direct notification provider, or alternate
+publication authority. Published/terminal facts add `outcomeAt` from the attempt finish so
+local outcome notification identity/order remains stable across replay.
+
+The memory runtime registers the real publisher. A separate `publication.zip` exports its
+SQS entrypoint using the public framework adapter/marker store. Validate the entire batch
+(1-10 records, bounded bytes, queue ARN, exact source/type and strict app facts) before marker
+lookup. Mark only after domain completion; marker gaps/expiry recover through business state.
+The Lambda object store accepts only the owned publisher name/lab ID and fixed worker
+endpoint, with explicit dummy credentials and final destination guards. The four-function
+spine lab is unchanged; application deployment/route grants remain Phase 20/21. Phase 11's
+live consumer artifact proof calls the shared service on real DynamoDB/S3, not a substitute
+for deployed SQS delivery. The separate spine still verifies the actual managed transport.
 
 ## Asset Protocol
 

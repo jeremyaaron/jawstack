@@ -1,7 +1,7 @@
 # Iteration 2: Content Operations
 
-Status: Phases 0-10 complete. Scheduling/publication domain, fenced claims, atomic attempt
-history, and workspace regressions passed. Actual publication execution begins in Phase 11.
+Status: Phases 0-11 complete. Recoverable publication artifacts, memory workflow, bundled
+SQS contracts, live DynamoDB/S3 recovery, and workspace regressions passed. Phase 12 is next.
 
 ## Documents
 
@@ -28,7 +28,7 @@ ownership-safe reset/reprovisioning; production-parity exclusions are recorded e
 The [consumer README](../../../apps/content-operations/README.md) describes the current
 harness and headless editorial domain. Shared handlers and an explicit memory pump now
 materialize related resources and deliver notifications; HTTP, live consumer transport
-orchestration, publication-object execution, and editorial screens remain unimplemented.
+orchestration and editorial screens remain unimplemented.
 Angular components now accept browser-safe presentation definitions and the fetch client
 exposes structured API errors; these contracts do not implement the editorial screens.
 Named CDK worker/scheduler bindings now support application-owned grants and DLQ collectors
@@ -46,5 +46,10 @@ routes, automatic cleanup, and durable failure recovery remain later work.
 Phase 10 adds schedule generations, frozen publication intent, 90-second fenced claims,
 bounded attempts/retry generations, and atomic redacted attempt history in memory/DynamoDB.
 Publication remains locked through failure/lease expiry, and stale claim-response replay
-does not grant a usable lease. These are domain/SDK contracts, not proof of writing a
-publication artifact. No publisher subscription is advertised until Phase 11 implements it.
+does not grant a usable lease. Phase 11 adds stable versioned JSON serialization/digest,
+conditional write/verification, fenced publication execution, success/failure notifications,
+and the real publisher in the memory pump. Crash/lease/marker-gap tests and a focused live
+DynamoDB/S3 scenario pass. A separate SQS publisher bundle uses the framework adapter and
+marks only after domain completion; deploying consumer queue/mapping wiring remains Phase 20.
+The latest full live gate also reran earlier transport, scheduling, DLQ, reset, and reprovision
+checks, then stopped the owned lab. Automatic due jobs/reminders/cleanup remain Phase 12.

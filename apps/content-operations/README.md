@@ -9,8 +9,10 @@ persistence. Phase 8 adds content-owned attachment slots, an asset read-model pr
 immutable memory/local-S3 objects, and a bounded upload service. Phase 9 adds shared review/
 asset handlers, a local notification destination, and an explicit memory pump. Phase 10
 adds scheduling/publication intent, fenced execution state, and atomic attempt history.
-Actual publication-object execution, consumer Lambda/queue wiring, HTTP, and Angular UI remain later work; the live lab still
-exercises the separate event spine, direct transactions, and attachment protocol.
+Phase 11 adds stable JSON artifacts, recoverable publication execution, outcome notifications,
+and a bundled SQS publisher entrypoint. Consumer Lambda/queue deployment, HTTP, automatic due
+jobs, and Angular UI remain later work. The live lab exercises the separate event spine,
+direct consumer transactions, attachments, and the shared publisher against real local S3/DynamoDB.
 
 ## Credential-Free Checks
 
@@ -27,7 +29,8 @@ pnpm --filter content-operations run build
 ```
 
 These commands do not start Docker, load the token file, resolve AWS credentials, or
-connect to any AWS service. The build creates a bundled Node 22 Lambda ZIP under `dist/`.
+connect to any AWS service. The build creates bundled Node 22 `spine.zip` and `publication.zip`
+Lambda archives under `dist/`; only the spine is provisioned by the current lab.
 Build the workspace once so the harness can bundle installed public package entrypoints.
 Unit tests are explicitly restricted to `test/unit/**/*.test.ts`; live integration is a
 separate script, never a token-dependent test in default discovery.
@@ -125,12 +128,12 @@ Factories generate separate revision/review UUIDs lazily, with injectable `newId
 
 ### Staged Capabilities
 
-Scheduling and publication domain commands are implemented, but the publication-object
-writer is not. `publishNow` or a due request currently freezes an intent and queues a fact;
-draining the memory pump does not publish it. Phase 11 supplies actual serialization,
-conditional object writes/readback, and the publisher handler. Automatic due jobs and
-Temporal local-time/DST conversion remain Phase 12. Domain completion tests use trusted
-artifact metadata without claiming an object was created.
+Scheduling and publication commands and the publication-object writer are implemented.
+`publishNow` or an internal due request freezes an intent and queues a fact; draining the
+memory pump claims it, writes/verifies its immutable JSON artifact, completes the content,
+and delivers the outcome notification. Automatic due jobs and Temporal local-time/DST
+conversion remain Phase 12. Domain-only completion tests still use trusted metadata;
+publisher tests additionally assert actual artifact bytes and digest.
 
 Core requires commands and separates create from update, so the review resource has two
 internal primitives. They require `review_projector`/`reviewProjector`, preserve submitted
@@ -189,11 +192,13 @@ sanitization, antivirus scanning, or permission to embed PDFs as active document
 
 ## Workers and Notifications
 
-`src/domain/subscriptions.ts` advertises exactly three implemented workers on `contentItem`:
+`src/domain/subscriptions.ts` advertises four implemented workers on `contentItem`:
 
 - `materializeReview`: requested, decided, and superseded review facts.
 - `materializeAsset`: registered, ready, removed, and expired asset facts.
-- `deliverNotification`: review requests to the assigned editor and decisions to the author.
+- `publishContent`: publication requests/retries through the recoverable artifact protocol.
+- `deliverNotification`: review requests to the assigned editor; review decisions and
+  publication success/terminal failure to the author.
 
 `src/application/workers.ts` supplies the shared transport-independent handlers. They validate
 the exact application/stage source (default `content-operations`), version-1 envelope, bounded
@@ -206,7 +211,7 @@ equal-version rewrites, and try at most three optimistic upserts. They use only 
 snapshot commands, preserve correlation, and use the incoming event ID as command request ID
 and downstream causation. Full closed/tombstone snapshots can arrive first. Neither
 `reviewTask.snapshotApplied` nor `asset.snapshotApplied` has subscribers; there is no loop.
-Publication/reminder subscriptions are not advertised before those handlers exist.
+Reminder subscriptions remain unimplemented.
 
 The local notification sink is the delivery destination, not an email/Slack stub. Stable
 SHA-256 delivery IDs derive from original event ID, fixture recipient, and versioned template.
@@ -249,7 +254,7 @@ resetting its dataset; do not clear the outbox underneath an existing cursor.
 Memory processing is volatile and does not imitate EventBridge/SQS/Lambda infrastructure.
 Automatic managed pumping belongs to later HTTP composition. Durable failure collection/
 manual recovery and live consumer queues are not implemented by this phase. Tests exercise
-the complete headless draft/upload/review/notification flow and SDK notification atomicity;
+the complete headless draft/upload/review/publication/notification flow and SDK notification atomicity;
 the live LocalStack harness below has not been extended to deploy these consumer handlers.
 
 ## Scheduling and Publication State
@@ -294,13 +299,42 @@ the live LocalStack harness below has not been extended to deploy these consumer
   commit as the successor state. Query rows retain stable start-time/attempt ordering and
   show the latest stage; immutable history has no growing root array or second write.
 - Completion verifies role/fence/reference/size/digest shape, marks `published`, and emits
-  an outcome. Its byte metadata is trusted internal input until Phase 11 adds the actual
-  object verifier. Metadata cannot choose a different key or exceed 80 KiB. Published content
+  an outcome. The publisher verifies actual object bytes before supplying this internal
+  metadata. Metadata cannot choose a different key or exceed 80 KiB. Published content
   can be archived without deleting its artifact reference or approved history.
 
-No `publishContent` subscription is registered yet, and publication notifications are not
-advertised as operational. Tests cover decisions and memory/SDK transaction contracts, not
-artifact existence, a deployed publisher, an automatic due evaluator, or production auth.
+### Recoverable Publisher
+
+`src/application/publication-artifact.ts` defines version-1 JSON: explicit field order,
+normalized UTC milliseconds, attachments sorted by asset UUID, UTF-8 with one trailing LF,
+and SHA-256 over those exact bytes (at most 80 KiB). The artifact contains only frozen intent,
+not attempt IDs, leases, execution generations, completion times, or current wall time.
+Retries therefore recover the same key, bytes, and digest.
+
+`createPublisher` strongly rereads authority, acquires a fresh fenced attempt, conditionally
+creates/verifies the artifact, then completes the domain transaction. Both memory and guarded
+S3 adapters refuse different existing bytes; S3 also verifies type, length, digest, and
+content/publication identity metadata with bounded streaming. A private object written before
+completion is not a completed publication. Live competing claims throw for retry rather than
+being acknowledged. Old generations are ignored; completed matching deliveries are read-only.
+
+Transient failures record a failed attempt and release its lease; corruption terminalizes
+the cycle immediately. A process crash leaves the claim until expiry. Tests inject exact
+`afterClaim`, `afterObjectWrite`, `beforeCompletion`, and `afterCompletion` interruptions
+through factory callbacks only, never environment switches or public endpoints. A late worker
+cannot complete or fail its successor. Explicit retries preserve the original artifact intent.
+
+`src/aws/publication.ts` bundles the shared protocol behind the public `SqsWorkerAdapter`.
+It validates the whole bounded batch, queue ARN, exact source, envelope, and subscribed fact
+before any marker lookup. Processing markers follow domain completion, never claim/object
+creation. Redelivery after a marker gap or physical marker expiry uses domain deduplication.
+`publication.zip` exports `publisher` as the Lambda handler; deploying its route/mapping is
+Phase 20, not part of the current four-function feasibility lab. Lambda S3 construction
+requires the exact owned publisher context and fixed worker endpoint with dummy credentials.
+
+Published/terminal-failure facts include `outcomeAt` from the completed attempt. Versioned
+local notification templates use this business instant and original event ID, so replay
+cannot duplicate a delivery or change its ordering. There are no email/provider side effects.
 
 ## LocalStack Prerequisites
 
@@ -380,6 +414,14 @@ different retry bytes, and recovers matching completion. It checks concurrent co
 creation, one logical key, frozen review references, approved-upload rejection, retained
 removed bytes, and expiry without an object write. PNG/JPEG/PDF signature fixtures round
 trip; this is not evidence of full media decoding. These objects are removed by owned reset.
+
+The publication proof runs the shared publisher directly against real local DynamoDB/S3.
+It interrupts after object creation, observes a still-running claim and private artifact,
+rejects an early competitor, advances the injected clock by 90 seconds, and recovers one
+logical artifact plus expired/succeeded attempt history. A duplicate does not mutate completed
+state. A second exact-key corrupt object causes terminal failure without overwrite. This
+proves the consumer object/transaction boundary, not its deployed SQS route; the separate
+spine continues to prove actual stream/bus/queue/Lambda delivery without direct invocation.
 
 `--confirm-reset` is required because the full gate then deletes the owned proof dataset,
 checks that a separately owned sentinel table and its nonce survived, and reprovisions

@@ -292,26 +292,65 @@ enforcement, real AWS, media decoding, and antivirus remain outside this evidenc
 removed bytes are conservatively retained until reset; no production retention guarantee
 or automatic deletion is claimed.
 
+## Phase 11: Recoverable Publication Artifacts
+
+Observed on October 31, 2026, with the same pinned LocalStack image/digest, ARM64 runtime,
+guarded local-only clients, and user-attested Hobby tier. The complete
+`feasibility-paging-transactions-assets-and-publication` gate started
+`2026-10-31T21:06:23.935Z` and completed `2026-10-31T21:09:50.102Z` in 206.167 seconds,
+with `decision: go`.
+
+Publication run ID: `5aca0a7e-c77e-4fe4-89c0-08f263210f48`.
+Content ID: `14ed302e-472f-4d7b-9597-b20bdf937dd4`.
+Artifact SHA-256: `d5f5ed1df8adf4309d6aac26b1ecf29df016e2334f0e88ccfe983758d8778311`.
+
+| Check               | Observed Result                                                                                                                                                                                                                              |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Object/domain split | The shared publisher claimed through real DynamoDB commands and wrote/read back actual immutable S3 bytes. An exact-operation injected process interruption after object creation left the domain claim running and artifact metadata unset. |
+| Competing delivery  | An early duplicate threw `resource.conflict`, not a successful processed result.                                                                                                                                                             |
+| Lease recovery      | Advancing the injected clock exactly 90 seconds allowed a fresh claim to recover the matching object and complete the domain. Query history contained expired and succeeded attempts.                                                        |
+| Stable artifact     | The completed digest matched exact serialized bytes, and listing the content publication prefix found one logical artifact. A later duplicate left the completed content version unchanged.                                                  |
+| Corruption          | A second owned exact-key fixture had correct metadata but altered bytes. Publication terminalized with `artifact.mismatch`; direct S3 readback confirmed the existing bytes were not overwritten.                                            |
+| Earlier gates       | Actual stream/bus/queue/Lambda spine, paging, scoped transactions/rollback, attachments, automatic Scheduler, receives exactly 1/2/3 with durable DLQ collection, sentinel-safe reset, and reprovisioned spine all passed again.             |
+| Owned reset         | Fixture objects/table were removed while the separately owned sentinel and its nonce survived. No owned Lambda containers remained after reset.                                                                                              |
+
+This consumer scenario runs the shared service directly on real DynamoDB/S3. It is not
+deployed editorial SQS/Lambda evidence. The separate spine still proves actual managed
+delivery without substitute direct invocation. The newly bundled `publication.zip` entrypoint
+and framework marker ordering are credential-free contracts; application queue/mapping/
+permission provisioning remains Phase 20/21. Clock advancement models lease expiry without
+waiting 90 wall-clock seconds; injection models process interruption, not an OS kill.
+No real AWS resource was created or contacted.
+
+Final `local:down` removed the owned emulator and network; filtered Docker container/network
+inventories were empty. Credential-free verification added 28 tests (331 consumer/616
+workspace tests total), including bundle exports, marker gaps/expiry, whole-batch validation,
+stale-worker fencing, stable serialization, and memory/S3 corruption/conditional-write
+contracts. `pnpm verify:release` passed with zero pkg-guard findings, isolated generated-app
+verification, and six package dry runs. No dependencies, public package versions, or
+framework implementations changed.
+
 ## Current Coverage and Exclusions
 
-Phase 10 adds credential-free memory/SDK contracts for schedules, publication intent,
-fenced claims/retries, and atomic attempt history. No artifact writer or live publisher was
-run in this phase; Phase 11 owns that execution evidence. The Phase 8 gate remains the most
-recent live integration run, not proof of the newer publication protocol.
+Phase 10 supplied scheduling/publication domain and memory/SDK contracts. Phase 11 now adds
+actual artifact execution and the live recovery evidence above. The live consumer protocol
+and separate transport spine have both passed, but consumer SQS/Lambda deployment is not
+claimed by combining these independent checks.
 
-| Capability                                      | Status                                                                                                                                                                |
-| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| S3 conditional artifact storage                 | Passed in Phase 1.                                                                                                                                                    |
-| Automatic Scheduler target                      | Passed in Phase 1; AWS-equivalent failed-delivery retries are not verified.                                                                                           |
-| Actual SQS failure redrive/DLQ collector        | Passed in Phase 1.                                                                                                                                                    |
-| Live unrelated-service-resource sentinel        | Passed in Phase 1 across service-resource reset.                                                                                                                      |
-| Paged DynamoDB projection/activity queries      | Passed in Phase 3, including live memory parity, service continuation, and transactional projection moves.                                                            |
-| Scoped consumer transactions                    | Passed in Phase 7: concurrent original-response replay, logical expiry, conditional rollback, and exact-key projection moves across memory/live DynamoDB.             |
-| Attachment lifecycle/object storage             | Passed in Phase 8: real immutable S3 readback, interrupted completion recovery, frozen review references, removal retention, and logical expiry with no object write. |
-| Materializers/notification sink/memory pump     | Phase 9 memory-flow and SDK transaction contracts passed; consumer handlers were not deployed to LocalStack queues/Lambdas. No additional live gate was run.          |
-| Full editorial workflow and recovery            | Not implemented; later phases.                                                                                                                                        |
-| API Gateway/CloudFormation/CDK asset deployment | Excluded from this Hobby lab; SDK provisioning is not deployment-parity evidence.                                                                                     |
-| IAM enforcement, production auth, real AWS      | Not verified; no real-AWS deployment performed.                                                                                                                       |
+| Capability                                      | Status                                                                                                                                                                                    |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| S3 conditional artifact storage                 | Passed in Phase 1.                                                                                                                                                                        |
+| Automatic Scheduler target                      | Passed in Phase 1; AWS-equivalent failed-delivery retries are not verified.                                                                                                               |
+| Actual SQS failure redrive/DLQ collector        | Passed in Phase 1.                                                                                                                                                                        |
+| Live unrelated-service-resource sentinel        | Passed in Phase 1 across service-resource reset.                                                                                                                                          |
+| Paged DynamoDB projection/activity queries      | Passed in Phase 3, including live memory parity, service continuation, and transactional projection moves.                                                                                |
+| Scoped consumer transactions                    | Passed in Phase 7: concurrent original-response replay, logical expiry, conditional rollback, and exact-key projection moves across memory/live DynamoDB.                                 |
+| Attachment lifecycle/object storage             | Passed in Phase 8: real immutable S3 readback, interrupted completion recovery, frozen review references, removal retention, and logical expiry with no object write.                     |
+| Materializers/notification sink/memory pump     | Phase 9 memory-flow and SDK transaction contracts passed; consumer handlers were not deployed to LocalStack queues/Lambdas. No additional live gate was run.                              |
+| Publication execution                           | Phase 11 live DynamoDB/S3 crash/lease recovery, one logical artifact, completed duplicate, and corrupt-object rejection passed. Bundled SQS marker ordering is unit-tested, not deployed. |
+| Full editorial workflow and recovery            | Not implemented; later phases.                                                                                                                                                            |
+| API Gateway/CloudFormation/CDK asset deployment | Excluded from this Hobby lab; SDK provisioning is not deployment-parity evidence.                                                                                                         |
+| IAM enforcement, production auth, real AWS      | Not verified; no real-AWS deployment performed.                                                                                                                                           |
 
 The overall feasibility decision is **go**. The documented
 [Scheduler emulation limitations](https://docs.localstack.cloud/aws/services/scheduler/#current-limitations),

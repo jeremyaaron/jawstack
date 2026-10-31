@@ -9,6 +9,12 @@ import {
   type ObjectReference,
 } from "../shared/assets";
 import { idSchema, limits } from "../shared/validation";
+import {
+  PublicationExecutionError,
+  serializePublication,
+  verifyPublicationBytes,
+  type PublicationObjectStore,
+} from "./publication-artifact";
 
 export type AssetTarget = Pick<AssetSlot, "contentId" | "assetId" | "mediaType" | "expectedSize">;
 export type ByteSource = Uint8Array | AsyncIterable<Uint8Array>;
@@ -102,7 +108,7 @@ export async function readBoundedBytes(source: ByteSource, maximum: number, sign
 
 export function createMemoryObjectStore(
   options: { maxBytes?: number; maxObjects?: number } = {},
-): AssetObjectStore {
+): AssetObjectStore & PublicationObjectStore {
   const maxBytes = options.maxBytes ?? 128 * 1024 * 1024;
   const maxObjects = options.maxObjects ?? 128;
   if (
@@ -124,6 +130,24 @@ export function createMemoryObjectStore(
     return Uint8Array.from(bytes);
   };
   return {
+    readPublication: async (intent) => {
+      const expected = serializePublication(intent);
+      const bytes = objects.get(expected.reference.objectKey);
+      if (!bytes) throw new PublicationExecutionError("storage.unavailable");
+      verifyPublicationBytes(intent, bytes);
+      return Uint8Array.from(bytes);
+    },
+    createPublication: async (intent) => {
+      const expected = serializePublication(intent);
+      if (!objects.has(expected.reference.objectKey)) {
+        if (objects.size >= maxObjects || storedBytes + expected.bytes.length > maxBytes)
+          throw new PublicationExecutionError("storage.unavailable");
+        objects.set(expected.reference.objectKey, Uint8Array.from(expected.bytes));
+        storedBytes += expected.bytes.length;
+      }
+      verifyPublicationBytes(intent, objects.get(expected.reference.objectKey)!);
+      return expected.reference;
+    },
     read,
     create: async (target, bytes) => {
       const ref = inspectAsset(target, bytes);

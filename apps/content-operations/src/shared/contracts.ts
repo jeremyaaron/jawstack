@@ -499,7 +499,7 @@ export const publicationAttemptFactSchema = z.strictObject({
   sourceVersion: versionSchema,
   attempt: publicationAttemptViewSchema,
 });
-const publicationOutcomeSchema = z
+export const publicationOutcomeSchema = z
   .strictObject({
     contentId: idSchema,
     publicationId: idSchema,
@@ -509,12 +509,14 @@ const publicationOutcomeSchema = z
     authorId: z.enum(fixtureIds),
     title: titleSchema,
     outcome: z.enum(["published", "failed"]),
+    outcomeAt: instantSchema,
     artifact: publicationArtifactSchema.nullable(),
     failureCode: z.enum(publicationFailureCodes).nullable(),
   })
   .refine((value) =>
     value.outcome === "published"
       ? value.artifact?.objectKey === publicationObjectKey(value.contentId, value.publicationId) &&
+        value.artifact.completedAt === value.outcomeAt &&
         value.failureCode === null
       : value.artifact === null && value.failureCode !== null,
   );

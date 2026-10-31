@@ -836,7 +836,7 @@ describe("publication boundaries", () => {
     expect(h.snapshot()).toEqual(before);
   });
 
-  it("does not register an unfinished publisher or create an artifact when the memory pump drains", async () => {
+  it("registers publication work but a composition without its executor cannot acknowledge it", async () => {
     const h = await harness();
     await h.publish();
     const request = h
@@ -849,7 +849,7 @@ describe("publication boundaries", () => {
       createContentOperationsResources()[0].workers.some(
         (worker) => worker.name === "publishContent",
       ),
-    ).toBe(false);
+    ).toBe(true);
     const workers = createContentWorkers({
       repository: h.repository,
       dispatch: h.dispatch,
@@ -863,7 +863,7 @@ describe("publication boundaries", () => {
     });
     await pump.drain();
     await pump.drain();
-    expect(workers.subscribers("contentItem.publicationRequested")).toEqual([]);
+    expect(workers.subscribers("contentItem.publicationRequested")).toEqual(["publishContent"]);
     expect((await h.current()).state.publication).toMatchObject({
       phase: "queued",
       artifact: null,

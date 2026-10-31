@@ -23,8 +23,22 @@ export const contentWorkers = [
   }),
   defineWorker({
     name: "deliverNotification",
-    eventTypes: ["contentItem.reviewRequested", "contentItem.reviewDecided"],
+    eventTypes: [
+      "contentItem.reviewRequested",
+      "contentItem.reviewDecided",
+      "contentItem.published",
+      "contentItem.publicationFailed",
+    ],
+    maxConcurrency: 2,
+  }),
+  defineWorker({
+    name: "publishContent",
+    eventTypes: ["contentItem.publicationRequested", "contentItem.publicationRetried"],
     maxConcurrency: 2,
   }),
 ] as const;
-export type ContentWorkerName = "materializeReview" | "materializeAsset" | "deliverNotification";
+export type ContentWorkerName =
+  | "materializeReview"
+  | "materializeAsset"
+  | "deliverNotification"
+  | "publishContent";

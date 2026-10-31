@@ -7,6 +7,7 @@ import { createContentWorkers } from "./workers";
 import { createMemoryPump } from "./pump";
 import { instantSchema } from "../shared/validation";
 import { contentEventSource } from "../shared/events";
+import { createPublisher } from "./publisher";
 
 export function createFixtureClock(instant: string) {
   let value = Date.parse(instantSchema.parse(instant));
@@ -36,12 +37,19 @@ export function createMemoryRuntime(options: { clock?: () => Date; source?: stri
     clock,
   });
   const notifications = createMemoryNotificationSink({ store: persistence.store });
+  const publisher = createPublisher({
+    repository: persistence.repository,
+    dispatch,
+    objects,
+    clock,
+  });
   const workers = createContentWorkers({
     repository: persistence.repository,
     dispatch,
     notifications,
     clock,
     source,
+    publisher,
   });
   const pump = createMemoryPump({ outbox: () => persistence.store.outbox, workers, clock });
   const drainUntilIdle = async (maxPasses = 20) => {

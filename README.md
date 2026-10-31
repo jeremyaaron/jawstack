@@ -8,7 +8,7 @@ The MVP starter is intentionally narrow: it ships a Work Requests workflow that 
 
 ## Status
 
-JawStack is pre-release. The first foundation iteration is merged and tagged `v0.0.1` in Git. The repository includes generated-app verification, package dry-run checks, and opt-in AWS dev deploy smoke tooling. Packages are not published to npm. Iteration 2's [Content Operations consumer](apps/content-operations/README.md) includes a passing LocalStack feasibility harness, scoped domain dispatch, immutable attachments, shared materializers, a local notification sink, an explicit headless memory workflow, and fenced scheduling/publication state. Actual publication-object execution, live consumer worker wiring, HTTP, and UI remain planned. This does not imply a `v0.0.2` release.
+JawStack is pre-release. The first foundation iteration is merged and tagged `v0.0.1` in Git. The repository includes generated-app verification, package dry-run checks, and opt-in AWS dev deploy smoke tooling. Packages are not published to npm. Iteration 2's [Content Operations consumer](apps/content-operations/README.md) includes a passing LocalStack feasibility harness, scoped domain dispatch, immutable attachments, shared materializers, a local notification sink, an explicit headless memory workflow, and recoverable publication with real immutable artifacts. Live consumer worker wiring, automatic due jobs, HTTP, and UI remain planned. This does not imply a `v0.0.2` release.
 
 ## Quickstart
 

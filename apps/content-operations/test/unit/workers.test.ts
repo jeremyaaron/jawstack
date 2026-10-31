@@ -376,7 +376,7 @@ describe("shared application workers", () => {
     expect(
       contentWorkers
         .flatMap((w) => w.eventTypes)
-        .some((type) => /published|reminder|snapshotApplied/.test(type)),
+        .some((type) => /reminder|snapshotApplied/.test(type)),
     ).toBe(false);
   });
 });

@@ -13,7 +13,7 @@ import { projectionKey } from "@jawstack/aws-runtime";
 import { eventIdentitySchema, type ContentEvent } from "../shared/events";
 import { fixtureIds, type FixtureId } from "../shared/identities";
 import { idSchema, instantSchema, jsonBytes } from "../shared/validation";
-import { reviewTaskStateSchema } from "../shared/contracts";
+import { reviewTaskStateSchema, publicationOutcomeSchema } from "../shared/contracts";
 
 export const notificationSchema = z
   .strictObject({
@@ -23,11 +23,23 @@ export const notificationSchema = z
       .regex(/^[a-f0-9]+$/),
     sourceEventId: eventIdentitySchema,
     transportEventId: eventIdentitySchema,
-    eventType: z.enum(["contentItem.reviewRequested", "contentItem.reviewDecided"]),
+    eventType: z.enum([
+      "contentItem.reviewRequested",
+      "contentItem.reviewDecided",
+      "contentItem.published",
+      "contentItem.publicationFailed",
+    ]),
     contentId: idSchema,
-    reviewId: idSchema,
+    reviewId: idSchema.nullable(),
+    publicationId: idSchema.optional(),
     recipientId: z.enum(fixtureIds),
-    template: z.enum(["review-requested.v1", "review-approved.v1", "review-changes-requested.v1"]),
+    template: z.enum([
+      "review-requested.v1",
+      "review-approved.v1",
+      "review-changes-requested.v1",
+      "publication-succeeded.v1",
+      "publication-failed.v1",
+    ]),
     channel: z.literal("local"),
     status: z.literal("succeeded"),
     subject: z.string().min(1).max(220),
@@ -44,7 +56,18 @@ export const notificationSchema = z
   .refine(
     (value) =>
       value.deliveryId === notificationId(value.sourceEventId, value.recipientId, value.template) &&
-      jsonBytes(value) <= 8192,
+      jsonBytes(value) <= 8192 &&
+      (value.eventType === "contentItem.published" ||
+      value.eventType === "contentItem.publicationFailed"
+        ? value.reviewId === null &&
+          value.publicationId !== undefined &&
+          value.template ===
+            (value.eventType === "contentItem.published"
+              ? "publication-succeeded.v1"
+              : "publication-failed.v1")
+        : value.reviewId !== null &&
+          value.publicationId === undefined &&
+          !value.template.startsWith("publication-")),
   );
 export type NotificationDelivery = z.infer<typeof notificationSchema>;
 export type NotificationQuery = Readonly<{
@@ -63,6 +86,46 @@ export function notificationId(eventId: string, recipientId: string, template: s
     .digest("hex");
 }
 export function renderNotification(event: ContentEvent, now: Date): NotificationDelivery {
+  if (
+    event.eventType === "contentItem.published" ||
+    event.eventType === "contentItem.publicationFailed"
+  ) {
+    const outcome = publicationOutcomeSchema.parse(event.payload);
+    const succeeded = outcome.outcome === "published";
+    const template = succeeded ? "publication-succeeded.v1" : "publication-failed.v1";
+    return notificationSchema.parse({
+      deliveryId: notificationId(event.originalEventId, outcome.authorId, template),
+      sourceEventId: event.originalEventId,
+      transportEventId: event.eventId,
+      eventType: event.eventType,
+      contentId: outcome.contentId,
+      reviewId: null,
+      publicationId: outcome.publicationId,
+      recipientId: outcome.authorId,
+      template,
+      channel: "local",
+      status: "succeeded",
+      subject: `${succeeded ? "Published" : "Publication failed"}: ${outcome.title}`,
+      message: succeeded
+        ? `Publication ${outcome.publicationId} completed.`
+        : `Publication ${outcome.publicationId} requires recovery (${outcome.failureCode}).`,
+      payloadHash: createHash("sha256")
+        .update(
+          JSON.stringify([
+            event.source,
+            event.resourceType,
+            event.resourceId,
+            event.eventType,
+            event.payload,
+          ]),
+        )
+        .digest("hex"),
+      occurredAt: outcome.outcomeAt,
+      deliveredAt: now.toISOString(),
+      correlationId: event.correlationId,
+      causationId: event.eventId,
+    });
+  }
   if (
     event.eventType !== "contentItem.reviewRequested" &&
     event.eventType !== "contentItem.reviewDecided"
@@ -115,6 +178,7 @@ export function sameNotification(existing: NotificationDelivery, incoming: Notif
     eventType: value.eventType,
     contentId: value.contentId,
     reviewId: value.reviewId,
+    publicationId: value.publicationId,
     recipientId: value.recipientId,
     template: value.template,
     channel: value.channel,

@@ -10,6 +10,7 @@ import { reviewProjectorIdentity } from "../domain/resources";
 import { contentWorkers, type ContentWorkerName } from "../domain/subscriptions";
 import { renderNotification, type NotificationSink } from "./notifications";
 import type { createContentDispatch } from "./dispatch";
+import type { createPublisher } from "./publisher";
 
 export function createContentWorkers(options: {
   repository: ResourceRepository;
@@ -17,6 +18,7 @@ export function createContentWorkers(options: {
   notifications: NotificationSink;
   clock?: () => Date;
   source?: string;
+  publisher?: ReturnType<typeof createPublisher>;
 }) {
   const source = options.source ?? contentEventSource;
   if (!source.trim() || source.length > 200) throw new Error("Invalid application event source.");
@@ -114,6 +116,14 @@ export function createContentWorkers(options: {
             "command.rejected",
             "Worker is not subscribed to this fact.",
           );
+        if (name === "publishContent") {
+          if (!options.publisher)
+            throw new JawStackRuntimeError(
+              "runtime.unavailable",
+              "Publication execution dependency is not configured.",
+            );
+          return await options.publisher(event);
+        }
         if (name === "deliverNotification") {
           await options.notifications.deliver(
             renderNotification(event, options.clock?.() ?? new Date()),

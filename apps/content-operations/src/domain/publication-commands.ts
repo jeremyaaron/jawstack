@@ -135,6 +135,7 @@ export function createPublicationCommands(d: Dependencies) {
     authorId: publication.intent.snapshot.authorId,
     title: publication.intent.snapshot.title,
     outcome: publication.phase === "succeeded" ? "published" : "failed",
+    outcomeAt: publication.lastAttempt!.finishedAt!,
     artifact: publication.artifact,
     failureCode: publication.lastAttempt?.failureCode ?? null,
   });

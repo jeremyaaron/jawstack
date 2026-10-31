@@ -11,6 +11,8 @@ import { createLocalS3ObjectStore } from "../../src/aws/object-store";
 import { createLabConfig } from "../../src/lab/config";
 import { assetObjectKey } from "../../src/shared/assets";
 import { limits } from "../../src/shared/validation";
+import { serializePublication } from "../../src/application/publication-artifact";
+import { publicationHarness } from "../support/publication";
 
 const contentId = "00000000-0000-4000-8000-000000000001";
 const assetId = "00000000-0000-4000-8000-000000000002";
@@ -19,7 +21,13 @@ const png = Buffer.from(
   "base64",
 );
 const target = { contentId, assetId, mediaType: "image/png" as const, expectedSize: png.length };
-type Stored = { bytes: Uint8Array; type: string; digest: string; length?: number };
+type Stored = {
+  bytes: Uint8Array;
+  type: string;
+  digest: string;
+  length?: number;
+  metadata?: Record<string, string>;
+};
 function s3Harness() {
   const stored = new Map<string, Stored>();
   const commands: unknown[] = [];
@@ -40,6 +48,7 @@ function s3Harness() {
         bytes: Uint8Array.from(command.input.Body as Uint8Array),
         type: command.input.ContentType!,
         digest: command.input.Metadata!.sha256!,
+        metadata: command.input.Metadata!,
       });
       return {} as never;
     }
@@ -50,7 +59,7 @@ function s3Harness() {
         Body: Readable.from([object.bytes]),
         ContentLength: object.length ?? object.bytes.byteLength,
         ContentType: object.type,
-        Metadata: { sha256: object.digest },
+        Metadata: { ...object.metadata, sha256: object.digest },
       } as never;
     }
     throw new Error("Unexpected command");
@@ -72,6 +81,118 @@ function s3Harness() {
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
+});
+
+describe.each(["memory", "s3"] as const)("%s immutable publication store", (adapter) => {
+  it("conditionally creates one exact artifact, recovers matching writes, and copies read bytes", async () => {
+    const h = await publicationHarness();
+    const store = adapter === "memory" ? h.app.objects : s3Harness().store;
+    try {
+      const expected = serializePublication(h.intent);
+      const refs = await Promise.all(
+        Array.from({ length: 4 }, () => store.createPublication(h.intent)),
+      );
+      expect(refs).toEqual(Array.from({ length: 4 }, () => expected.reference));
+      const bytes = await store.readPublication(h.intent);
+      bytes[0] = 0;
+      expect(Buffer.from(await store.readPublication(h.intent))).toEqual(expected.bytes);
+      const changed = { ...h.intent, snapshot: { ...h.intent.snapshot, body: "Changed bytes" } };
+      await expect(store.createPublication(changed)).rejects.toMatchObject({
+        failureCode: "artifact.mismatch",
+      });
+      expect(Buffer.from(await store.readPublication(h.intent))).toEqual(expected.bytes);
+    } finally {
+      if ("close" in store) (store.close as () => void)();
+    }
+  });
+});
+
+describe("publication S3 verification", () => {
+  it("permits Lambda S3 only for the owned publisher on the fixed worker endpoint", () => {
+    const config = createLabConfig("dev", "lambda");
+    const send = vi.spyOn(S3Client.prototype, "send");
+    expect(() => createLocalS3ObjectStore(config, { execution: "lambda" })).toThrow(
+      "owned local publisher context",
+    );
+    vi.stubEnv("CONTENT_OPS_LAB_ID", "dev");
+    vi.stubEnv("AWS_LAMBDA_FUNCTION_NAME", "jawstack-content-ops-dev-worker");
+    expect(() => createLocalS3ObjectStore(config, { execution: "lambda" })).toThrow(
+      "owned local publisher context",
+    );
+    vi.stubEnv("AWS_LAMBDA_FUNCTION_NAME", "jawstack-content-ops-dev-publisher");
+    const store = createLocalS3ObjectStore(config, { execution: "lambda" });
+    store.close();
+    expect(() =>
+      createLocalS3ObjectStore(
+        { ...config, endpoint: "https://s3.amazonaws.com" },
+        { execution: "lambda" },
+      ),
+    ).toThrow();
+    expect(send).not.toHaveBeenCalled();
+  });
+  it.each(["bytes", "length", "type", "digest", "identity", "oversize"] as const)(
+    "rejects %s corruption without overwriting",
+    async (kind) => {
+      const h = await publicationHarness();
+      const s3 = s3Harness();
+      try {
+        const ref = await s3.store.createPublication(h.intent);
+        const stored = s3.stored.get(ref.objectKey)!;
+        if (kind === "bytes") stored.bytes[0] = 0;
+        if (kind === "length") stored.length = ref.size - 1;
+        if (kind === "type") stored.type = "text/html";
+        if (kind === "digest") stored.digest = "0".repeat(64);
+        if (kind === "identity") stored.metadata!.publicationid = "foreign";
+        if (kind === "oversize") {
+          stored.length = ref.size;
+          stored.bytes = Uint8Array.from(Buffer.concat([stored.bytes, Buffer.from("x")]));
+        }
+        const before = structuredClone(stored);
+        await expect(s3.store.createPublication(h.intent)).rejects.toMatchObject({
+          failureCode: "artifact.mismatch",
+        });
+        expect(s3.stored.get(ref.objectKey)).toEqual(before);
+      } finally {
+        s3.store.close();
+      }
+    },
+  );
+  it("bounds conditional conflicts and sanitizes unknown SDK errors", async () => {
+    const h = await publicationHarness();
+    const s3 = s3Harness();
+    try {
+      s3.conflict(2);
+      await expect(s3.store.createPublication(h.intent)).resolves.toEqual(
+        serializePublication(h.intent).reference,
+      );
+      s3.conflict(10);
+      const before = s3.commands.filter((c) => c instanceof PutObjectCommand).length;
+      await expect(s3.store.createPublication(h.intent)).resolves.toEqual(
+        serializePublication(h.intent).reference,
+      );
+      expect(s3.commands.filter((c) => c instanceof PutObjectCommand).length - before).toBe(3);
+      s3.fail("AccessDenied");
+      await expect(s3.store.createPublication(h.intent)).rejects.toMatchObject({
+        failureCode: "storage.unavailable",
+        message: "Publication execution failed (storage.unavailable).",
+      });
+    } finally {
+      s3.store.close();
+    }
+  });
+  it("does not interpret exhausted conflicts with no readable object as success", async () => {
+    const h = await publicationHarness();
+    const s3 = s3Harness();
+    try {
+      s3.conflict(10);
+      await expect(s3.store.createPublication(h.intent)).rejects.toMatchObject({
+        failureCode: "storage.unavailable",
+      });
+      expect(s3.commands.filter((c) => c instanceof PutObjectCommand)).toHaveLength(3);
+    } finally {
+      s3.store.close();
+    }
+  });
 });
 
 describe.each(["memory", "s3"] as const)("%s immutable asset object store", (adapter) => {
