@@ -9,12 +9,14 @@ import {
 } from "@jawstack/core";
 import { createContentOperationsResources } from "../domain/resources";
 import { captureScope, keyComponentSchema, type PersistenceFactory } from "./persistence";
+import { contentEventSource } from "../shared/events";
 
 export function createContentDispatch(options: {
   persistence: PersistenceFactory;
   clock?: () => Date;
   registry?: CommandExecutorOptions["registry"];
   ids?: CommandExecutorOptions["ids"];
+  source?: string;
 }) {
   const registry = options.registry ?? createContentOperationsResources();
   // Authentication belongs to the ingress; only its resolved identity enters dispatch.
@@ -26,7 +28,7 @@ export function createContentDispatch(options: {
     const executor: CommandExecutorOptions = {
       registry,
       clock: () => new Date(now),
-      source: "content-operations",
+      source: options.source ?? contentEventSource,
       ids: { resourceId: () => randomUUID(), ...options.ids },
       authProvider: {
         resolve: () => {

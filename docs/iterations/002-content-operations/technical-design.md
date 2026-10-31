@@ -237,9 +237,9 @@ core definitions require commands and the executor separates creation from optim
 update. Both require the dedicated review-projector identity; neither is an editorial UI
 command, and the review UI command map stays empty. They preserve the immutable submission
 and require increasing content `sourceVersion`; equal/older facts reject without a commit.
-Phase 9's worker must read/ignore stale facts, reload on optimistic conflicts, and validate
-envelopes/sources before invoking these primitives. That transport loop is not implemented
-in Phase 6. Public ingress must reject both internal names, and fixture selectors must never
+Phase 9's shared handlers read/ignore stale facts, reload on optimistic conflicts, and validate
+envelopes/sources before invoking these primitives. Live queue/Lambda wiring remains later
+work. Public ingress must reject both internal names, and fixture selectors must never
 resolve a service identity.
 
 This makes the three PRD resource types real queryable JawStack resources without requiring
@@ -315,11 +315,14 @@ the next content resource version as `sourceVersion`. This includes the frozen s
 for review outcomes and tombstone information for removed assets. Do not publish only a
 pointer that would require recovering an old revision from mutable content state.
 
-The projector reads the target strongly, ignores an equal/older source version, and uses
+The projector reads the target strongly, ignores older or equal-identical source versions, and uses
 the target's own optimistic commit to apply a newer snapshot. On conflict, reload and compare
 again. An approval arriving before the submission event still creates a complete approved
 review; the late submission cannot restore pending state. Deletions materialize tombstones,
 not physical row deletion that permits an older event to recreate an active attachment.
+Equal-version differing snapshots are conflicts, not silent successful replays. Shared
+handlers bound optimistic load/compare/upsert to three attempts and use internal scoped
+commands; target corruption or immutable/outcome violations fail without a secondary write.
 
 A decision submitted from a review page always targets the authoritative content command
 with content ID, review ID, revision, and expected version. Never authorize approval using
@@ -348,6 +351,20 @@ becomes terminal. `reviewTask.snapshotApplied` and `asset.snapshotApplied` are n
 to their materializers. A dedicated application/stage event bus scopes the rules, and
 handlers validate the expected source to avoid cross-consumer traffic. Projection generation
 is not a new automation engine.
+
+Phase 9 registers only `materializeReview`, `materializeAsset`, and review-request/decision
+notification subscriptions from this table, through `src/domain/subscriptions.ts`. The
+publication/reminder rows are later-phase design, not advertised stubs. Handler validation
+requires the exact configured source, envelope/schema version 1, bounded safe event/trace
+IDs, target-matching resource IDs, and strict typed outcome payloads. Tenant envelopes are
+rejected by this single-workspace consumer. Source checks supplement trusted transport/
+ingress configuration; a matching source string alone is not authentication.
+
+Reserved payload `delivery: { originalEventId, generation }` metadata supports the planned
+recovery boundary, with strict keys and generation 1-3. Strip it before strict fact parsing
+and business hashing, retaining the original event ID for delivery deduplication. Phase 13
+still owns authorized creation of replays from durable stored envelopes. Materialized output
+events retain incoming correlation and use the incoming transport event ID as causation.
 
 ## Persistence and Query Design
 
@@ -599,8 +616,9 @@ The asset factory supplies internal `createSnapshot`/`applySnapshot` commands un
 dedicated asset-projector identity, preserving immutable identity/verification and terminal
 retirement metadata. Complete tombstones may arrive before pending/ready facts; stale or
 regressing facts cannot revive them. Projections include stable `asset.list` and
-`asset.content.<contentId>` rows, including retired statuses. Phase 9 still owns envelope
-validation, out-of-order ignore/reload loops, subscriptions, and actual materializer workers.
+`asset.content.<contentId>` rows, including retired statuses. Phase 9 supplies envelope
+validation, out-of-order ignore/reload loops, subscriptions, and shared materializer handlers;
+their live Lambda/queue transport composition remains later work.
 
 Run bounded orphan cleanup only for objects older than 24 hours whose authoritative slot
 is removed/expired. Logical slot expiry is checked at command time. Keep tombstones at least
@@ -655,6 +673,55 @@ Because the durable local sink is the destination, duplicate executions can conv
 visible delivery without calling any external provider. The worker returns successfully
 only after that record is committed. A later email/Slack adapter would need a new delivery
 contract; do not claim these guarantees apply to arbitrary external effects.
+
+Phase 9 implements three version-1 templates: review request, approval, and changes requested.
+Recipients come from the validated immutable snapshot (assigned editor for requests, author
+for decisions), never from an address supplied by the transport. The delivery ID hashes
+`[originalEventId, recipientId, template]`; template names include `.v1`. A canonical parsed
+fact hash protects against different content at that same identity. Notifications contain
+bounded plain text and references, not raw body/asset bytes or active HTML. They are not
+an external-provider abstraction with an implied exactly-once guarantee.
+
+The sink commits four create-only rows: `NOTIFICATION#<deliveryId>/DELIVERY`, a typed
+`OPS#notificationDelivery/<deliveryId>` operation, and public projection-builder rows for
+`contentItem.notifications` and `contentItem.notifications.<fixtureId>`. Query order is the
+immutable fact occurrence time plus delivery ID; decision/request times come from their
+snapshot, not a replay transport's later timestamp. Query limits are 50 default/100 maximum
+with the public paging contract. A duplicate/ambiguous transaction rereads strongly and
+returns the first stored record, preserving its transport/correlation/causation/time metadata.
+Different business content conflicts; no destination/operation/query row has TTL.
+
+Memory uses the same query projections in the shared app store and synchronous staged map
+insertion; command commits and sink inserts cannot lose one another's projection rows.
+It retains up to 1,000 deliveries by default (bounded override to 10,000), never evicting
+business deduplication at capacity. New delivery attempts then fail retryably until reset
+or a later explicit retention feature. DynamoDB uses one typed four-action transaction;
+there is no arbitrary auxiliary-write DSL or fake resource mutation to represent delivery.
+
+### Memory Pump and Runtime
+
+`createMemoryRuntime` composes actual domain/persistence/upload/handler/sink components;
+construction starts no timer/server/client. The explicit pump scans committed outbox facts,
+selects only implemented subscribers, and invokes the same handlers used by later AWS
+transport adapters. It is not an emulation of buses, queues, Lambda, or distributed leases.
+Each pass scans/attempts at most 50 events/handlers by default (explicit limit 1-100), and
+concurrent drains serialize. Materializer output events are scanned but have no subscribers.
+
+Each job attempts at most three times, with injected-clock +1/+2-second backoff cutoffs.
+Terminal jobs retain the source privately and expose sanitized diagnostic summaries. The
+job bound is 200 pending/terminal entries; the success-marker cache is 1,000 entries with
+seven-day logical expiry and bounded oldest-entry eviction (both configurable up to 10,000).
+Marker loss/expiry is safe because resource source versions and permanent sink IDs are the
+business idempotency boundary. Capacity backpressures complete event fan-out without moving
+the outbox cursor; failed records are not silently evicted. Corrupt/oversized outbox entries
+or same-ID transport rewrites fail the drain explicitly rather than being treated as success.
+
+`drainUntilIdle` is bounded to 20 passes by default, 100 maximum; idle means no immediately
+due work, not that delayed/failed work disappeared. `createFixtureClock` supplies monotonic
+explicit clock advancement for tests; no drain sleeps or advances the clock implicitly.
+Use a fresh runtime for a reset/reseed, since outbox cursors and permanent business records
+belong to the same volatile dataset. Automatic pumping, durable failure collection/replay,
+and deployed consumer transports remain later phases.
 
 ### Failure Collection and Replay
 

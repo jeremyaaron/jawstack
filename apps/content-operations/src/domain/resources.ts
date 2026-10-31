@@ -35,6 +35,7 @@ import {
 } from "../shared/assets";
 import { limits } from "../shared/validation";
 import { createAssetResource } from "./asset-resource";
+import { contentWorkers } from "./subscriptions";
 
 type ResourceOptions = Readonly<{ newId?: () => string }>;
 type ContentResponse = Readonly<{
@@ -217,6 +218,7 @@ export function createContentItemResource(options: ResourceOptions = {}) {
   };
   return defineResource({
     name: contentUi.name,
+    workers: contentWorkers,
     title: contentUi.title,
     state: contentUi.state,
     views: contentUi.views,

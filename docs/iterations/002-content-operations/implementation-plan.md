@@ -1,7 +1,7 @@
 # Iteration 2 Implementation Plan: Content Operations
 
-Status: reviewed. Phases 0-8 are complete. Attachment lifecycle, immutable object uploads,
-the extended live LocalStack gate, and workspace regressions passed. Phase 9 has not started.
+Status: reviewed. Phases 0-9 are complete. Shared materializers, atomic local notification
+delivery, the explicit memory flow, and workspace regressions passed. Phase 10 has not started.
 
 ## Purpose
 
@@ -91,7 +91,7 @@ work may proceed only after an explicit sequencing decision, without claiming th
 | 6     | Consumer domain            | Draft and review aggregate                                | Complete |
 | 7     | Consumer persistence       | Scoped dispatch, atomic operation records and projections | Complete |
 | 8     | Consumer services          | Attachment lifecycle and verified object storage          | Complete |
-| 9     | Consumer workers           | Materializers, notification sink and memory event pump    | Planned  |
+| 9     | Consumer workers           | Materializers, notification sink and memory event pump    | Complete |
 | 10    | Consumer domain            | Publication intent, claims and generation transitions     | Planned  |
 | 11    | Consumer workers           | Recoverable publication execution                         | Planned  |
 | 12    | Consumer jobs              | Due work, reminders, time zones and cleanup               | Planned  |
@@ -946,6 +946,53 @@ integration gate, documentation walkthrough, local links, and `git diff --check`
   resource, release, or commit was changed/created. Signature checks are not full media
   decoding/sanitization or antivirus; no editorial HTTP/UI or deployed materializer is
   claimed. Phase 9 is next.
+
+### Phase 9: October 31, 2026
+
+- Added shared review/asset materializers with strict expected-source, version-1 envelope,
+  target, and full payload validation. Strong target reads ignore older/equal-identical
+  source versions; equal-version rewrites conflict. Newer snapshots use internal scoped
+  commands and at most three optimistic load/compare/upsert attempts. Full approved/removed/
+  expired snapshots may arrive first without later opening facts reviving them. Incoming
+  correlation is retained; the transport event ID becomes request/downstream causation ID.
+- Registered only the three implemented workers on content: review materialization,
+  asset materialization, and review request/decision notifications. Materializer outputs
+  have no subscribers. Publication/reminder subscriptions remain absent until implemented.
+  Dispatch and handlers share an explicit stage source; shared metadata/schema imports
+  remain browser-safe, while worker definitions live in the server domain layer.
+- Added strict deterministic notification rendering and an actual local destination, not
+  an external-provider stub. Original event ID, fixture recipient, and versioned template
+  determine a stable SHA-256 delivery ID. A canonical fact hash rejects different business
+  content at that identity. Reserved payload replay metadata has strict keys/generation 1-3;
+  Phase 13 still owns authorized replay creation from stored original envelopes.
+- Memory atomically inserts destination, typed operation, and two shared-store query rows;
+  DynamoDB conditionally commits those four rows in one transaction. Duplicates/ambiguous
+  responses strongly reread and return the first record and metadata. All/recipient queries
+  use public projection/paging contracts (50 default/100 maximum). Business deduplication
+  records have no TTL; memory capacity rejects new deliveries rather than evicting history.
+- Added explicit memory runtime composition, monotonic fixture clock, and bounded outbox
+  pump with no automatic service/timer/backend selection. Default passes scan/attempt at
+  most 50 events/handlers; retries use +1/+2-second injected-clock cutoffs and stop after
+  three attempts. Pending/terminal jobs and seven-day marker caches have bounded capacities;
+  whole event fan-out backpressures before cursor advancement. Failed jobs retain their
+  original event and expose sanitized diagnostics. Marker expiry/eviction cannot duplicate
+  business effects. Concurrent drains serialize; bounded drain-until-idle never advances time.
+- Added 40 tests (25 worker/memory-flow and 15 notification contracts): complete out-of-order
+  upserts, concurrent creates/updates/sink delivery, shared projection-write safety, invalid
+  envelopes/sources/outcomes, optimistic bounds, first-response replay after marker expiry/
+  new transport IDs, after-commit marker gaps, four-row rollback, ambiguous SDK success,
+  paged ties, capacities/backpressure, failed/healthy isolation, no loops, clock/drain guards,
+  and complete headless draft/upload/review/related-resource/notification flow. All 261
+  consumer tests passed.
+- `pnpm verify:release` passed: formatting, workspace typecheck, all 546 unit tests, lint,
+  builds, pkg-guard (zero findings), isolated generated-app install/typecheck/tests/build/
+  AWS bundle/synth/doctor, and six package dry runs. Local Markdown links and
+  `git diff --check` passed. No LocalStack run was required/performed; SDK transaction
+  contracts do not claim live consumer Lambda/queue integration. The Phase 8 live evidence
+  remains the last observed local integration gate, and its lab remains stopped.
+- No framework implementation, dependency, package version, workflow, real AWS resource,
+  release, or commit was changed/created. Live consumer transports, publication, automatic
+  HTTP pumping/UI, and durable failure collection/replay remain later work. Phase 10 is next.
 
 For later phases, append the date, meaningful behavior delivered, commands/results,
 not-run checks, design changes, and remaining limitations. Do not replace observed

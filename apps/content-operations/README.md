@@ -6,9 +6,10 @@ Phase 3 extends it with memory/DynamoDB paged-query parity and transactional pro
 Phase 6 adds a headless content/review domain, strict schemas, fixture identities, and
 browser-safe presentation metadata. Phase 7 adds scoped dispatch and atomic memory/DynamoDB
 persistence. Phase 8 adds content-owned attachment slots, an asset read-model primitive,
-immutable memory/local-S3 objects, and a bounded upload service. Editorial workers, HTTP,
-and Angular UI are not implemented yet; the lab exercises the separate event spine,
-direct consumer transactions, and the attachment/object-store protocol.
+immutable memory/local-S3 objects, and a bounded upload service. Phase 9 adds shared review/
+asset handlers, a local notification destination, and an explicit memory pump. Publication,
+consumer Lambda/queue wiring, HTTP, and Angular UI remain later work; the live lab still
+exercises the separate event spine, direct transactions, and attachment protocol.
 
 ## Credential-Free Checks
 
@@ -47,16 +48,14 @@ decisions. `src/domain/projections.ts` plans content/status/due-review and revie
 editor/pending membership, including explicit old-key deletions and stable sort keys.
 Factories/imports do not generate IDs, start services, resolve credentials, or call AWS.
 
-Credential-free headless composition through the consumer dispatcher:
+Credential-free headless composition through the memory runtime:
 
 ```ts
-import { createContentDispatch } from "./src/application/dispatch";
-import { createMemoryPersistence } from "./src/application/memory";
+import { createMemoryRuntime } from "./src/application/runtime";
 import { fixtureAuth } from "./src/shared/identities";
 
-const memory = createMemoryPersistence();
-const dispatch = createContentDispatch({ persistence: memory.factory });
-const result = await dispatch(
+const app = createMemoryRuntime();
+const result = await app.dispatch(
   {
     resourceType: "contentItem",
     commandName: "create",
@@ -66,6 +65,7 @@ const result = await dispatch(
   },
   fixtureAuth("author_1"),
 );
+await app.drainUntilIdle();
 ```
 
 Dispatch supplies UUID resource IDs and accepts only an already-resolved identity; an HTTP
@@ -133,8 +133,8 @@ states, not an executed publication workflow.
 Core requires commands and separates create from update, so the review resource has two
 internal primitives. They require `review_projector`/`reviewProjector`, preserve submitted
 fields, and reject stale source versions or regressing closed outcomes. A closed snapshot
-can arrive before its older requested fact without restoring pending state. Phase 9 will
-add envelope/source validation, ignore/reload behavior, worker retries, and the event pump.
+can arrive before its older requested fact without restoring pending state. Shared handlers
+now validate envelopes/sources, ignore older/equivalent snapshots, and reload on conflicts.
 The asset primitives apply the same dedicated-projector, increasing-source-version, and
 immutable-metadata rules, including terminal tombstones. Public ingress must reject snapshot
 commands, `completeUpload`, and `expireAsset` regardless of headers, and fixture
@@ -181,9 +181,74 @@ below includes consumer transactions, not deployed editorial workers or an HTTP 
 Compose `createMemoryObjectStore` from `src/application/object-store.ts` and
 `createUploadService` from `src/application/uploads.ts` with the existing memory repository
 and dispatcher for credential-free use. `createLocalS3ObjectStore` is explicitly local-only;
-it is not a production AWS client factory. Snapshot workers arrive in Phase 9 and HTTP
-upload/download routing in Phase 14. Signature detection is not full media decoding,
+it is not a production AWS client factory. Shared snapshot handlers and the explicit memory
+pump are implemented; HTTP upload/download routing remains Phase 14. Signature detection is not full media decoding,
 sanitization, antivirus scanning, or permission to embed PDFs as active documents.
+
+## Workers and Notifications
+
+`src/domain/subscriptions.ts` advertises exactly three implemented workers on `contentItem`:
+
+- `materializeReview`: requested, decided, and superseded review facts.
+- `materializeAsset`: registered, ready, removed, and expired asset facts.
+- `deliverNotification`: review requests to the assigned editor and decisions to the author.
+
+`src/application/workers.ts` supplies the shared transport-independent handlers. They validate
+the exact application/stage source (default `content-operations`), version-1 envelope, bounded
+IDs/payloads, target identity, and strict fact outcome. This single-workspace consumer rejects
+tenant-scoped envelopes. Source validation is not a substitute for authenticated ingress or
+trusted queue wiring. Dispatch and workers must use the same explicit stage source.
+
+Materializers strongly load the target, ignore older/identical source versions, reject
+equal-version rewrites, and try at most three optimistic upserts. They use only the internal
+snapshot commands, preserve correlation, and use the incoming event ID as command request ID
+and downstream causation. Full closed/tombstone snapshots can arrive first. Neither
+`reviewTask.snapshotApplied` nor `asset.snapshotApplied` has subscribers; there is no loop.
+Publication/reminder subscriptions are not advertised before those handlers exist.
+
+The local notification sink is the delivery destination, not an email/Slack stub. Stable
+SHA-256 delivery IDs derive from original event ID, fixture recipient, and versioned template.
+Memory atomically inserts the delivery, typed operation, and two query rows; DynamoDB uses
+one four-action conditional transaction. A competing or ambiguous success rereads the
+original delivery. Business records have no TTL and are never evicted on transport-marker
+expiry; different content at the same delivery ID conflicts. Memory defaults to 1,000
+deliveries (bounded override up to 10,000); capacity rejects new records but permits retries.
+
+`app.notifications.query({ recipientId?, limit?, cursor? })` pages all/fixture-recipient
+views, 50 by default and 100 maximum. Rows also live in the memory repository's
+`contentItem.notifications[.<fixtureId>]` projections, matching DynamoDB. Stored records
+retain the first delivery's transport/correlation/causation metadata; replay does not rewrite
+it. Reserved payload metadata `delivery: { originalEventId, generation }` is strictly
+validated (generations 1-3) and excluded from the fact fingerprint. Recovery/replay commands
+that produce it remain Phase 13; there is no arbitrary public replay endpoint.
+
+### Explicit Memory Processing
+
+`createMemoryRuntime` composes persistence, dispatch, immutable objects, uploads, notifications,
+workers, and pump without starting timers, a server, or AWS clients. Commands only commit to
+the outbox. Call `app.pump.drain()` for one bounded pass or `app.drainUntilIdle()` for at most
+20 passes (configurable up to 100). Each pass scans at most 50 outbox events and attempts
+50 handlers by default; the explicit per-pass limit is 1-100. Concurrent drains serialize.
+
+Retries occur at injected-clock cutoffs of +1 and +2 seconds and become terminal after three
+attempts. `createFixtureClock(iso).now`/`.advance(ms)` makes this deterministic; a drain never
+advances time or sleeps until a retry. Idle can therefore include deferred/terminal jobs.
+Inspect `app.pump.inspect()` and the returned pending/terminal/next-attempt/backpressure
+fields. Failed jobs retain their original event privately but expose only sanitized summaries.
+
+The pump defaults to 200 pending/terminal jobs and 1,000 bounded seven-day transport markers
+(each capacity configurable up to 10,000). Marker capacity may evict old cache entries;
+business-level source-version/delivery checks still prevent duplicate effects. Whole event
+fan-out is admitted before advancing the cursor. When failed jobs fill capacity, processing
+backpressures rather than discarding events. Corrupt oversized outbox entries or changed
+content at the same transport event ID stop a drain explicitly. Recreate the runtime after
+resetting its dataset; do not clear the outbox underneath an existing cursor.
+
+Memory processing is volatile and does not imitate EventBridge/SQS/Lambda infrastructure.
+Automatic managed pumping belongs to later HTTP composition. Durable failure collection/
+manual recovery and live consumer queues are not implemented by this phase. Tests exercise
+the complete headless draft/upload/review/notification flow and SDK notification atomicity;
+the live LocalStack harness below has not been extended to deploy these consumer handlers.
 
 ## LocalStack Prerequisites
 
