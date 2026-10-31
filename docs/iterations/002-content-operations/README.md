@@ -1,7 +1,7 @@
 # Iteration 2: Content Operations
 
-Status: Phases 0-2 complete. Core paged queries and the public-contract regression gate
-passed. The local feasibility gate remains go. Phase 3 has not started.
+Status: Phases 0-3 complete. Memory/DynamoDB paged queries, the extended live gate,
+and public-contract regression verification passed. Phase 4 has not started.
 
 ## Documents
 

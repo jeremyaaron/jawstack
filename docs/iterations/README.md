@@ -6,10 +6,10 @@ release the framework.
 
 ## Index
 
-| Iteration                                                   | Status            | Outcome                                                                                       |
-| ----------------------------------------------------------- | ----------------- | --------------------------------------------------------------------------------------------- |
-| [001: Foundation](001-foundation/README.md)                 | Archived baseline | Merged and tagged `v0.0.1` in Git; npm publication and `0.1.0` deferred.                      |
-| [002: Content Operations](002-content-operations/README.md) | Phase 2 complete  | Core paged queries added after the passing local feasibility gate; editorial app still ahead. |
+| Iteration                                                   | Status            | Outcome                                                                                      |
+| ----------------------------------------------------------- | ----------------- | -------------------------------------------------------------------------------------------- |
+| [001: Foundation](001-foundation/README.md)                 | Archived baseline | Merged and tagged `v0.0.1` in Git; npm publication and `0.1.0` deferred.                     |
+| [002: Content Operations](002-content-operations/README.md) | Phase 3 complete  | Memory/DynamoDB paged queries and the extended local gate passed; editorial app still ahead. |
 
 ## Planning Flow
 

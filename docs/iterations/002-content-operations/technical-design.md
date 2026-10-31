@@ -380,9 +380,26 @@ continuing; the cursor is not signed and confers no access. Invalid queries/curs
 the additive `query.invalid` runtime error (HTTP 400). Memory reads return detached records
 and continue by key comparison even after boundary deletion. Paging is not a snapshot;
 concurrent inserts or sort moves can change later pages. An absent cursor ends the read;
-an empty page is valid. Legacy array methods retain their behavior. The DynamoDB adapter
-implementation remains Phase 3 work; application filters need an outer, filter-bound cursor
-in the later query-handler phase, not unscoped filter options in this low-level API.
+an empty page is valid. Legacy array methods retain their behavior. Application filters
+need an outer, filter-bound cursor in the later query-handler phase, not unscoped filter
+options in this low-level API.
+
+Phase 3 implements both DynamoDB methods using the public key/item mappers and shared
+async `prepareProjectionQuery`/`prepareActivityQuery` contexts exported by core. The shared
+codec uses native Web Crypto without changing version-1 fingerprints. Each service read
+makes at most one Query, with the normalized limit and configured consistency. Fixed
+item-kind filters can yield empty pages; retain their exact `LastEvaluatedKey` sort key
+and reconstruct the selected partition. Validate returned keys and monotonic progress;
+malformed service pages fail as sanitized `runtime.internal` errors, not empty successes.
+
+For a half-open projection range, query from the near bound in the requested direction
+and trim/stop at the far bound in the adapter. This avoids pretending DynamoDB supports
+two separate sort-key inequalities or an exclusive `BETWEEN` upper bound. Never refill
+pages in an unbounded loop. Service byte limits and filters can shorten pages, including
+an empty page with continuation; only cursor absence means exhaustion. A continuation
+past the far bound is omitted because the requested range is exhausted. Consumer filter
+budgets remain above this API. The live harness compares multi-page reads and explicit
+transactional old-key deletion/sort/partition movement against memory.
 
 Board title/author filters are simple normalized substring/equality filters, not full-text
 search. Query the narrowest status partition, evaluate at most 200 candidates, and return

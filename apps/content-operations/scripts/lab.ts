@@ -16,6 +16,7 @@ import {
 import { createClients, destroyClients } from "../src/lab/clients";
 import { cleanupSpine, provisionSpine, waitFor } from "../src/lab/provision";
 import { verifySpine } from "../src/lab/verify";
+import { verifyPaging } from "../src/lab/verify-paging";
 import { verifyCapabilities, verifySentinelReset } from "../src/lab/verify-capabilities";
 import { buildLab } from "./build-lab";
 
@@ -229,7 +230,7 @@ async function main() {
       const started = Date.now();
       const evidence: Record<string, unknown> = {
         status: "running",
-        scenario: "phase-0-and-1-feasibility",
+        scenario: "feasibility-and-paged-queries",
         recordedAt: new Date().toISOString(),
         durationMs: Date.now() - started,
         image: manifest.image,
@@ -245,6 +246,8 @@ async function main() {
       try {
         console.log("Checking transactional spine and worker S3 output...");
         evidence.proof = await verifySpine(clients, config);
+        console.log("Checking multi-page DynamoDB queries and transactional projection moves...");
+        evidence.paging = await verifyPaging(clients, config);
         console.log("Waiting for automatic Scheduler and actual SQS redrive/collector...");
         evidence.capabilities = await verifyCapabilities(clients, config);
         console.log("Checking ownership-safe reset with an unrelated-resource sentinel...");

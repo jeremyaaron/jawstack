@@ -20,7 +20,7 @@ Status: `0.0.1` dogfood baseline. APIs are expected to change before `0.1.0`.
 `queryActivity(ActivityQuery): Promise<Page<ActivityRecord>>`. `InMemoryRepository`
 implements both interfaces. Existing `listProjection` and `getActivity` methods keep their
 array results and ordering; existing repository implementations need not add query methods.
-The DynamoDB query implementation follows in Iteration 2 Phase 3.
+`DynamoDbRepository` in `@jawstack/aws-runtime` implements the same query interface.
 
 ```ts
 import { createInMemoryPersistence, type QueryRepository } from "@jawstack/core";
@@ -41,6 +41,9 @@ const first = await queries.queryProjection({
 - Both methods default to 50 items and accept integer limits from 1 through 200. Projection
   reads default to ascending order; `descending: true` reverses it. Activity reads are
   always ascending and require `resourceType` and `resourceId`.
+- Pages need not be full, and service adapters may return an empty page with continuation.
+  Follow `nextCursor` even when `items` is empty. Memory and service page boundaries can
+  differ while their ordered results agree.
 - Ordering is UTF-8 byte order of the existing physical keys, not locale order. Projection
   keys are `sort#itemId`, without adding the suffix again when `sort` already ends in
   `#itemId`. Activity keys are `ACT#occurredAt#activityId`, including the ID tie-breaker.
@@ -64,3 +67,13 @@ or filters. Application handlers must authorize and select permitted queries. Cu
 not signed, secret, or authorization credentials; do not trust decoded cursor contents.
 Application-level filtered paging must additionally bind its filter context and preserve
 continuation through empty filtered pages; it is not implemented by this core contract.
+
+### Adapter Helpers
+
+`await prepareProjectionQuery(query)` and `await prepareActivityQuery(query)` expose the
+same normalization and version-1 cursor validation used by memory. They return typed
+`PreparedProjectionQuery`/`PreparedActivityQuery` contexts with normalized `query`, decoded
+`after`, `containsKey(key)`, and `cursorAfter(key)`. Cursor writers reject keys outside the
+query scope. Adapters reconstruct their own known partition rather than accepting a raw
+database request from a caller. These helpers use native Web Crypto for SHA-256; the
+existing version-1 cursor format and fingerprints remain compatible.

@@ -2,6 +2,7 @@
 
 Private first-party JawStack consumer. Iteration 2 Phases 0-1 supply a LocalStack feasibility
 harness for the event spine, object storage, scheduling, failure collection, and safe reset.
+Phase 3 extends it with memory/DynamoDB paged-query parity and transactional projection moves.
 The editorial application and Angular UI are not implemented yet.
 
 ## Credential-Free Checks
@@ -80,6 +81,14 @@ A deliberately failing command goes through the same real stream/bus/queue path.
 worker records receive counts 1, 2, and 3 before throwing. Actual SQS redrive moves the
 message to the DLQ; a collector persists the original event before returning successfully.
 The gate waits for that receipt, the collector marker, and an empty DLQ.
+
+The paging proof seeds 260 projection records with 8 KiB payloads, tied timestamps, and
+both existing sort-suffix forms, plus seventeen activity records. It checks an actual
+service-shortened page, continuation after an empty item-kind-filtered page, ascending/
+descending half-open ranges, and complete ordered parity with memory. Real public units
+of work move a projection sort and partition with explicit old-key deletion; a deleted
+boundary key still permits continuation. All fixture data stays in the owned table and
+is removed by the same reset. Batch writes are limited to 25 items and three attempts.
 
 `--confirm-reset` is required because the full gate then deletes the owned proof dataset,
 checks that a separately owned sentinel table and its nonce survived, and reprovisions

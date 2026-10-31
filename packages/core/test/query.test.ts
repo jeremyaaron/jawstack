@@ -1,7 +1,10 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   createInMemoryPersistence,
   JawStackRuntimeError,
+  prepareActivityQuery,
+  prepareProjectionQuery,
   type ActivityQuery,
   type ActivityRecord,
   type Page,
@@ -411,6 +414,67 @@ describe("memory activity paging", () => {
 });
 
 describe("query cursor validation", () => {
+  it("retains version-1 SHA-256 cursor fingerprints with native Web Crypto", async () => {
+    const { queries } = fixture([projection("a"), projection("b")], [activity("a"), activity("b")]);
+    const legacyCursor = (parts: readonly unknown[], key: string) =>
+      Buffer.from(
+        JSON.stringify({
+          version: 1,
+          scope: createHash("sha256").update(JSON.stringify(parts)).digest("hex"),
+          key: Buffer.from(key).toString("base64url"),
+        }),
+      ).toString("base64url");
+    expect(
+      (
+        await queries.queryProjection({
+          projectionName,
+          cursor: legacyCursor(
+            ["projection", "PROJ#contentItem#list", null, null, false],
+            `${instant}#a`,
+          ),
+        })
+      ).items.map((item) => item.itemId),
+    ).toEqual(["b"]);
+    expect(
+      (
+        await queries.queryActivity({
+          resourceType: "contentItem",
+          resourceId: "content_1",
+          cursor: legacyCursor(["activity", "RES#contentItem#content_1"], `ACT#${instant}#a`),
+        })
+      ).items.map((item) => item.activityId),
+    ).toEqual(["b"]);
+  });
+
+  it("shares normalized queries and scope-checked cursor writers with adapters", async () => {
+    const projection = await prepareProjectionQuery({
+      projectionName,
+      sortFrom: "a",
+      sortBefore: "z",
+    });
+    expect(projection.query).toEqual({
+      projectionName,
+      sortFrom: "a",
+      sortBefore: "z",
+      descending: false,
+      limit: 50,
+    });
+    expect(() => projection.cursorAfter("z")).toThrow(JawStackRuntimeError);
+    expect(() => projection.cursorAfter("0")).toThrow(JawStackRuntimeError);
+    const activity = await prepareActivityQuery({
+      resourceType: "contentItem",
+      resourceId: "content_1",
+    });
+    expect(activity.query.limit).toBe(50);
+    expect(() => activity.cursorAfter("STATE")).toThrow(JawStackRuntimeError);
+    const replay = await prepareActivityQuery({
+      resourceType: "contentItem",
+      resourceId: "content_1",
+      cursor: activity.cursorAfter(`ACT#${instant}#a`),
+    });
+    expect(replay.after).toBe(`ACT#${instant}#a`);
+  });
+
   async function cursorFixture() {
     const result = fixture(
       [projection("a", "a"), projection("b", "b")],

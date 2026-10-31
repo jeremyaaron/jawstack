@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 
 import { z } from "zod";
@@ -341,6 +340,22 @@ export type QueryRepository = Readonly<{
   queryActivity(query: ActivityQuery): Promise<Page<ActivityRecord>>;
 }>;
 
+export type PreparedQuery<TQuery> = Readonly<{
+  query: TQuery;
+  after: string | undefined;
+  containsKey(key: string): boolean;
+  cursorAfter(key: string): string;
+}>;
+
+export type PreparedProjectionQuery = PreparedQuery<
+  Omit<ProjectionQuery, "cursor" | "limit" | "descending"> &
+    Readonly<{ limit: number; descending: boolean }>
+>;
+
+export type PreparedActivityQuery = PreparedQuery<
+  Omit<ActivityQuery, "cursor" | "limit"> & Readonly<{ limit: number }>
+>;
+
 export type CommandUnitOfWork = Readonly<{
   commit<TState = unknown, TResponse = unknown>(
     input: CommandCommitInput<TState, TResponse>,
@@ -582,29 +597,8 @@ export class InMemoryRepository implements ResourceRepository, QueryRepository {
   }
 
   async queryProjection(query: ProjectionQuery): Promise<Page<ProjectionRecord>> {
-    const parsed = projectionQuerySchema.safeParse(query);
-    if (!parsed.success) throw invalidQuery();
-    const { projectionName, sortFrom, sortBefore, descending, limit, cursor } = parsed.data;
-    if (
-      sortFrom !== undefined &&
-      sortBefore !== undefined &&
-      compareQueryKeys(sortFrom, sortBefore) > 0
-    )
-      throw invalidQuery();
-    const [resourceType, ...segments] = projectionName.split(".");
-    const partition = `PROJ#${resourceType}#${segments.join("#")}`;
-    if (Buffer.byteLength(partition) > 2048) throw invalidQuery();
-    const scope = queryScope([
-      "projection",
-      partition,
-      sortFrom ?? null,
-      sortBefore ?? null,
-      descending,
-    ]);
-    const withinRange = (key: string) =>
-      (sortFrom === undefined || compareQueryKeys(key, sortFrom) >= 0) &&
-      (sortBefore === undefined || compareQueryKeys(key, sortBefore) < 0);
-    const after = readQueryCursor(cursor, scope, withinRange);
+    const prepared = await prepareProjectionQuery(query);
+    const { projectionName, descending, limit } = prepared.query;
     return queryMemoryPage(
       [...this.store.projections.values()]
         .filter((record) => record.projectionName === projectionName)
@@ -614,26 +608,21 @@ export class InMemoryRepository implements ResourceRepository, QueryRepository {
             ? record.sort
             : `${record.sort}#${record.itemId}`,
         }))
-        .filter(({ key }) => withinRange(key)),
-      { limit, descending, after, scope },
+        .filter(({ key }) => prepared.containsKey(key)),
+      { limit, descending, ...prepared },
     );
   }
 
   async queryActivity(query: ActivityQuery): Promise<Page<ActivityRecord>> {
-    const parsed = activityQuerySchema.safeParse(query);
-    if (!parsed.success) throw invalidQuery();
-    const { resourceType, resourceId, limit, cursor } = parsed.data;
-    const partition = `RES#${resourceType}#${resourceId}`;
-    if (Buffer.byteLength(partition) > 2048) throw invalidQuery();
-    const scope = queryScope(["activity", partition]);
-    const after = readQueryCursor(cursor, scope, (key) => /^ACT#.+#.+$/s.test(key));
+    const prepared = await prepareActivityQuery(query);
+    const { resourceType, resourceId, limit } = prepared.query;
     return queryMemoryPage(
       this.store.activity
         .filter(
           (record) => record.resourceType === resourceType && record.resourceId === resourceId,
         )
         .map((record) => ({ record, key: `ACT#${record.occurredAt}#${record.activityId}` })),
-      { limit, descending: false, after, scope },
+      { limit, descending: false, ...prepared },
     );
   }
 
@@ -1300,12 +1289,74 @@ function invalidQuery(): JawStackRuntimeError {
   return new JawStackRuntimeError("query.invalid", "Invalid query or continuation cursor.");
 }
 
+export async function prepareProjectionQuery(
+  query: ProjectionQuery,
+): Promise<PreparedProjectionQuery> {
+  const parsed = projectionQuerySchema.safeParse(query);
+  if (!parsed.success) throw invalidQuery();
+  const { projectionName, sortFrom, sortBefore, descending, limit, cursor } = parsed.data;
+  if (
+    sortFrom !== undefined &&
+    sortBefore !== undefined &&
+    compareQueryKeys(sortFrom, sortBefore) > 0
+  )
+    throw invalidQuery();
+  const [resourceType, ...segments] = projectionName.split(".");
+  const partition = `PROJ#${resourceType}#${segments.join("#")}`;
+  if (Buffer.byteLength(partition) > 2048) throw invalidQuery();
+  const scope = await queryScope([
+    "projection",
+    partition,
+    sortFrom ?? null,
+    sortBefore ?? null,
+    descending,
+  ]);
+  const containsKey = (key: string) =>
+    (sortFrom === undefined || compareQueryKeys(key, sortFrom) >= 0) &&
+    (sortBefore === undefined || compareQueryKeys(key, sortBefore) < 0);
+  return {
+    query: {
+      projectionName,
+      descending,
+      limit,
+      ...(sortFrom === undefined ? {} : { sortFrom }),
+      ...(sortBefore === undefined ? {} : { sortBefore }),
+    },
+    after: readQueryCursor(cursor, scope, containsKey),
+    containsKey,
+    cursorAfter: (key) => {
+      if (!containsKey(key)) throw invalidQuery();
+      return writeQueryCursor(key, scope);
+    },
+  };
+}
+
+export async function prepareActivityQuery(query: ActivityQuery): Promise<PreparedActivityQuery> {
+  const parsed = activityQuerySchema.safeParse(query);
+  if (!parsed.success) throw invalidQuery();
+  const { resourceType, resourceId, limit, cursor } = parsed.data;
+  const partition = `RES#${resourceType}#${resourceId}`;
+  if (Buffer.byteLength(partition) > 2048) throw invalidQuery();
+  const scope = await queryScope(["activity", partition]);
+  const containsKey = (key: string) => /^ACT#.+#.+$/s.test(key);
+  return {
+    query: { resourceType, resourceId, limit },
+    after: readQueryCursor(cursor, scope, containsKey),
+    containsKey,
+    cursorAfter: (key) => {
+      if (!containsKey(key)) throw invalidQuery();
+      return writeQueryCursor(key, scope);
+    },
+  };
+}
+
 function compareQueryKeys(left: string, right: string): number {
   return Buffer.compare(Buffer.from(left), Buffer.from(right));
 }
 
-function queryScope(parts: readonly unknown[]): string {
-  return createHash("sha256").update(JSON.stringify(parts)).digest("hex");
+async function queryScope(parts: readonly unknown[]): Promise<string> {
+  const bytes = new TextEncoder().encode(JSON.stringify(parts));
+  return Buffer.from(await globalThis.crypto.subtle.digest("SHA-256", bytes)).toString("hex");
 }
 
 function decodeQueryText(value: string): string {
@@ -1341,7 +1392,7 @@ function queryMemoryPage<T>(
     limit: number;
     descending: boolean;
     after: string | undefined;
-    scope: string;
+    cursorAfter(key: string): string;
   }>,
 ): Page<T> {
   const direction = options.descending ? -1 : 1;
@@ -1357,7 +1408,7 @@ function queryMemoryPage<T>(
     items: selected.map(({ record }) => cloneValue(record)),
     ...(last !== undefined && remaining.length > selected.length
       ? {
-          nextCursor: writeQueryCursor(last.key, options.scope),
+          nextCursor: options.cursorAfter(last.key),
         }
       : {}),
   };

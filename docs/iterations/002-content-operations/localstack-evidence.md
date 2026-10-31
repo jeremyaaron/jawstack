@@ -145,7 +145,7 @@ For the latter run, the automatic schedule used run ID
 
 ### Verification and Safety
 
-The app now has 42 credential-free tests, adding conditional-write conflict and error
+At Phase 1 completion the app had 42 credential-free tests, adding conditional-write conflict and error
 handling, failed receive recording, durable-before-acknowledgement collection, deduplication,
 wrong-source rejection, DLQ URL validation, foreign-bucket refusal, bounded/repeating
 cleanup pagination, refusal to enable an unexpected target, and disable-on-enable-error cleanup.
@@ -178,17 +178,59 @@ install/typecheck/tests/build/AWS bundle/synth/doctor, and all six package dry r
 Markdown links and `git diff --check` also passed. Final teardown left no owned containers
 or Docker network. No real AWS deployment, package version change, release, or commit was made.
 
+## Phase 3: DynamoDB Paged Queries
+
+Observed on October 31, 2026, using the same pinned LocalStack `2026.10.0` image/digest,
+ARM64 architecture, Docker runtime, local-only clients, and user-attested Hobby tier.
+The complete `feasibility-and-paged-queries` gate started `2026-10-31T17:28:42.904Z` and
+completed `2026-10-31T17:31:14.857Z` in 151.953 seconds with `decision: go`.
+
+Paging run ID: `32a79455-59f1-4093-a3ba-b1e9abaf1519`; projection partition selected by
+`spineProof.paging.32a79455-59f1-4093-a3ba-b1e9abaf1519`.
+
+| Check                        | Observed Result                                                                                                                                                                                                              |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Large multi-page dataset     | 260 projection records with 8,192-byte payloads, tied timestamps, and both existing sort-suffix forms. A Query requesting 200 items returned 123 matching items plus continuation, exercising a real service-shortened page. |
+| Empty filtered page          | An auxiliary non-projection record produced an empty one-item-limit page with a real `LastEvaluatedKey`. Continuing returned all 260 logical projection records without loss.                                                |
+| Range/direction parity       | Eight cases covered ascending/descending full reads, exact half-open boundaries within timestamp ties, equal bounds, and an empty upper range. Complete ordered results matched memory.                                      |
+| Activity parity              | Seventeen tied activity records were read in activity-ID order over six pages with a limit of three; complete results matched memory.                                                                                        |
+| Transactional sort move      | The public DynamoDB and memory units of work deleted the previous projection key and wrote its replacement. A strongly consistent Get confirmed the old physical key was absent; subsequent complete reads agreed.           |
+| Transactional partition move | Explicit old-key deletion and a replacement in the approved partition left the old list without that item and the new partition with exactly one item. Both adapters agreed.                                                 |
+| Deleted continuation key     | A descending page boundary row was deleted transactionally. The original service cursor still continued correctly; remaining ordered results matched memory.                                                                 |
+| Full prior gate              | Transactional spine/S3 proof, conditional object duplicates, automatic Scheduler invocation, real three-receive failure/redrive and durable DLQ collection passed again.                                                     |
+| Reset and reprovision        | Unrelated-owner sentinel `jawstack-content-ops-dev-sentinel-aae57d23` survived, owned resources and warm Lambda containers were absent, and post-reset spine/S3 proof `proof_e892140f-c578-4419-b6c2-2b7cce3c2e48` passed.   |
+| Final teardown               | `local:down` passed; no owned containers or Docker network remained.                                                                                                                                                         |
+
+The paging fixture uses only the existing owned table and public key/item mappers. Batch
+writes are bounded to 25 items and three attempts; memory projections are seeded through
+its public unit of work. It does not introduce a second provisioner or leave service data
+outside the existing reset boundary. The token remains Git-ignored and undisplayed.
+
+Credential-free coverage now includes fourteen shared query contract cases per adapter,
+additional SDK continuation/shape/progress tests, version-1 SHA-256 cursor compatibility,
+and bounded fixture writes. Current package counts are 111 core tests, 76 AWS runtime
+tests, and 45 consumer tests. `pnpm verify:release` passed with all 281 workspace unit tests,
+typechecking, lint, builds, pkg-guard (zero findings), isolated generated-app install/
+typecheck/tests/build/AWS bundle/synth/doctor, and all six package dry runs. Formatting,
+local Markdown links, and `git diff --check` also passed. No dependencies, versions,
+workflows, package release, commit, or real AWS resources were changed/created.
+
+This proves SDK-provisioned local query behavior, not a deployment, snapshot isolation,
+production authorization/IAM, or arbitrary application filtering. Existing exclusions below
+remain unchanged. Fixed item-kind filtering is not a user-supplied search expression.
+
 ## Current Coverage and Exclusions
 
-| Capability                                      | Status                                                                            |
-| ----------------------------------------------- | --------------------------------------------------------------------------------- |
-| S3 conditional artifact storage                 | Passed in Phase 1.                                                                |
-| Automatic Scheduler target                      | Passed in Phase 1; AWS-equivalent failed-delivery retries are not verified.       |
-| Actual SQS failure redrive/DLQ collector        | Passed in Phase 1.                                                                |
-| Live unrelated-service-resource sentinel        | Passed in Phase 1 across service-resource reset.                                  |
-| Full editorial workflow and recovery            | Not implemented; later phases.                                                    |
-| API Gateway/CloudFormation/CDK asset deployment | Excluded from this Hobby lab; SDK provisioning is not deployment-parity evidence. |
-| IAM enforcement, production auth, real AWS      | Not verified; no real-AWS deployment performed.                                   |
+| Capability                                      | Status                                                                                                     |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| S3 conditional artifact storage                 | Passed in Phase 1.                                                                                         |
+| Automatic Scheduler target                      | Passed in Phase 1; AWS-equivalent failed-delivery retries are not verified.                                |
+| Actual SQS failure redrive/DLQ collector        | Passed in Phase 1.                                                                                         |
+| Live unrelated-service-resource sentinel        | Passed in Phase 1 across service-resource reset.                                                           |
+| Paged DynamoDB projection/activity queries      | Passed in Phase 3, including live memory parity, service continuation, and transactional projection moves. |
+| Full editorial workflow and recovery            | Not implemented; later phases.                                                                             |
+| API Gateway/CloudFormation/CDK asset deployment | Excluded from this Hobby lab; SDK provisioning is not deployment-parity evidence.                          |
+| IAM enforcement, production auth, real AWS      | Not verified; no real-AWS deployment performed.                                                            |
 
 The overall feasibility decision is **go**. The documented
 [Scheduler emulation limitations](https://docs.localstack.cloud/aws/services/scheduler/#current-limitations),

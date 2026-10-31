@@ -1,7 +1,7 @@
 # Iteration 2 Implementation Plan: Content Operations
 
-Status: reviewed. Phases 0-2 are complete. The feasibility gate and Phase 2 public-contract
-regression verification passed. Phase 3 has not started.
+Status: reviewed. Phases 0-3 are complete. The extended local feasibility/paging gate and
+public-contract regression verification passed. Phase 4 has not started.
 
 ## Purpose
 
@@ -85,7 +85,7 @@ work may proceed only after an explicit sequencing decision, without claiming th
 | 0     | Consumer tooling           | Isolated lab and transactional event spine                | Complete |
 | 1     | Consumer tooling           | S3, Scheduler, DLQ, teardown proof and gate decision      | Complete |
 | 2     | Core                       | Paged query contracts and memory implementation           | Complete |
-| 3     | AWS runtime                | DynamoDB paged query implementation                       | Planned  |
+| 3     | AWS runtime                | DynamoDB paged query implementation                       | Complete |
 | 4     | Angular                    | Browser-safe presentation contract and structured errors  | Planned  |
 | 5     | AWS CDK                    | Named worker/scheduler bindings                           | Planned  |
 | 6     | Consumer domain            | Draft and review aggregate                                | Planned  |
@@ -742,6 +742,33 @@ integration gate, documentation walkthrough, local links, and `git diff --check`
 - No LocalStack scenario was rerun: no SDK/service boundary or provisioning behavior changed.
   No dependencies, package versions, workflows, real AWS resources, release, or commit were
   changed/created. Phase 3 has not started.
+
+### Phase 3: October 31, 2026
+
+- Implemented `DynamoDbRepository.queryProjection` and `queryActivity` with public keys/
+  mappers and core's shared async query-preparation/cursor helpers. Each read makes at most
+  one bounded Query; empty pages retain the exact service continuation sort key. Known
+  partitions are reconstructed, not accepted from callers. Invalid/backwards service keys
+  fail closed; transport failures are not converted into empty success.
+- Preserved half-open projection ranges by selecting the near key condition and trimming/
+  terminating at the far boundary. Kept legacy array APIs and application filter budgets
+  unchanged. Switched shared SHA-256 hashing to native Web Crypto to avoid a Node-crypto
+  browser externalization warning, with explicit version-1 cursor compatibility tests.
+- Added fourteen shared query contract cases per adapter, SDK boundary cases, public helper
+  coverage, and bounded batch-fixture tests. Current suites have 111 core tests, 76 AWS
+  runtime tests, and 45 consumer tests.
+- The extended live gate passed on the same pinned ARM64/Hobby-attested lab: 260 large
+  projection records, a service-shortened 123-item page from a 200-item request, empty
+  filtered-page continuation, eight range/direction cases, seventeen activities over six
+  pages, transactional sort/partition movement, and deleted-boundary continuation all
+  matched memory. The prior S3/Scheduler/DLQ, sentinel reset, and reprovision proofs passed
+  again. Full results and run identifiers are in [LocalStack Evidence](localstack-evidence.md).
+- `pnpm verify:release` passed: formatting, workspace typecheck, all 281 unit tests, lint,
+  builds, pkg-guard (zero findings), isolated generated-app install/typecheck/tests/build/
+  AWS bundle/synth/doctor, and six package dry runs. Local Markdown links and
+  `git diff --check` passed. Final teardown left no owned containers or Docker network.
+- No dependencies, package versions, workflows, real AWS resources, release, or commit
+  were changed/created. Phase 4 has not started.
 
 For later phases, append the date, meaningful behavior delivered, commands/results,
 not-run checks, design changes, and remaining limitations. Do not replace observed

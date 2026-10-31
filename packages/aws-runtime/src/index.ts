@@ -16,6 +16,7 @@ import { PutEventsCommand, type PutEventsCommandOutput } from "@aws-sdk/client-e
 import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
 import type {
   ActivityRecord,
+  ActivityQuery,
   ApiSuccess,
   AuthContext,
   AuthProvider,
@@ -29,6 +30,10 @@ import type {
   LocalHttpReadableRepository,
   ManifestAuth,
   ProjectionRecord,
+  ProjectionQuery,
+  QueryRepository,
+  Page,
+  PreparedQuery,
   ProjectionWrite,
   ResourceDefinition,
   ResourceRegistry,
@@ -36,7 +41,13 @@ import type {
   RuntimeErrorCode,
   IdGenerator,
 } from "@jawstack/core";
-import { createManifest, executeCommand, JawStackRuntimeError } from "@jawstack/core";
+import {
+  createManifest,
+  executeCommand,
+  JawStackRuntimeError,
+  prepareProjectionQuery,
+  prepareActivityQuery,
+} from "@jawstack/core";
 
 export const packageName = "@jawstack/aws-runtime";
 
@@ -375,7 +386,7 @@ const DEFAULT_OUTBOX_SWEEP_BATCH_LIMIT = 10;
 const DEFAULT_OUTBOX_STALE_AFTER_MS = 2 * 60 * 1000;
 const DEFAULT_WORK_REQUEST_STALE_AFTER_MS = 24 * 60 * 60 * 1000;
 
-export class DynamoDbRepository implements LocalHttpReadableRepository {
+export class DynamoDbRepository implements LocalHttpReadableRepository, QueryRepository {
   private readonly client: DynamoDbClientLike;
   private readonly tableName: string;
   private readonly consistentRead: boolean;
@@ -446,6 +457,107 @@ export class DynamoDbRepository implements LocalHttpReadableRepository {
     );
 
     return (output.Items ?? []).map((item) => fromActivityItem(item));
+  }
+
+  async queryProjection(query: ProjectionQuery): Promise<Page<ProjectionRecord>> {
+    const prepared = await prepareProjectionQuery(query);
+    const { projectionName, limit, descending, sortFrom, sortBefore } = prepared.query;
+    if (sortBefore === "" || (sortFrom !== undefined && sortFrom === sortBefore))
+      return { items: [] };
+    const resourceType = resourceTypeFromProjectionName(projectionName);
+    const partition = projectionPartitionKey(resourceType, projectionName);
+    // Start at the near bound; stop at the far bound locally. DynamoDB permits only one
+    // sort-key comparison, and BETWEEN cannot express an exclusive upper bound.
+    const lower = sortFrom ? { operator: ">=", value: sortFrom } : undefined;
+    const upper = sortBefore === undefined ? undefined : { operator: "<", value: sortBefore };
+    const bound = descending ? (upper ?? lower) : (lower ?? upper);
+    const output = await sendDynamoDb<QueryCommandOutput>(
+      this.client,
+      new QueryCommand({
+        TableName: this.tableName,
+        KeyConditionExpression: `PK = :pk${bound ? ` AND SK ${bound.operator} :bound` : ""}`,
+        FilterExpression: "#kind = :kind",
+        ExpressionAttributeNames: { "#kind": "itemKind" },
+        ExpressionAttributeValues: marshallItem({
+          ":pk": partition,
+          ":kind": "PROJECTION_ITEM",
+          ...(bound ? { ":bound": bound.value } : {}),
+        }),
+        ConsistentRead: this.consistentRead,
+        ScanIndexForward: !descending,
+        Limit: limit,
+        ...(prepared.after === undefined
+          ? {}
+          : { ExclusiveStartKey: marshallItem({ PK: partition, SK: prepared.after }) }),
+      }),
+    );
+    const beyondRange = (key: string) =>
+      descending
+        ? sortFrom !== undefined && compareReadKeys(key, sortFrom) < 0
+        : sortBefore !== undefined && compareReadKeys(key, sortBefore) >= 0;
+    return readQueryPage(output, partition, prepared, descending, beyondRange, (item) => {
+      const record = fromProjectionItem(item);
+      const expected = projectionKey(record);
+      if (
+        record.itemKind !== "PROJECTION_ITEM" ||
+        record.projectionName !== projectionName ||
+        record.PK !== expected.PK ||
+        record.SK !== expected.SK
+      )
+        throw invalidQueryResponse();
+      return {
+        projectionName: record.projectionName,
+        itemId: record.itemId,
+        sort: record.sort,
+        data: record.data,
+      };
+    });
+  }
+
+  async queryActivity(query: ActivityQuery): Promise<Page<ActivityRecord>> {
+    const prepared = await prepareActivityQuery(query);
+    const { resourceType, resourceId, limit } = prepared.query;
+    const partition = resourceStateKey(resourceType, resourceId).PK;
+    const output = await sendDynamoDb<QueryCommandOutput>(
+      this.client,
+      new QueryCommand({
+        TableName: this.tableName,
+        KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
+        FilterExpression: "#kind = :kind",
+        ExpressionAttributeNames: { "#kind": "itemKind" },
+        ExpressionAttributeValues: marshallItem({
+          ":pk": partition,
+          ":prefix": "ACT#",
+          ":kind": "ACTIVITY",
+        }),
+        ConsistentRead: this.consistentRead,
+        ScanIndexForward: true,
+        Limit: limit,
+        ...(prepared.after === undefined
+          ? {}
+          : { ExclusiveStartKey: marshallItem({ PK: partition, SK: prepared.after }) }),
+      }),
+    );
+    return readQueryPage(
+      output,
+      partition,
+      prepared,
+      false,
+      () => false,
+      (item) => {
+        const record = fromActivityItem(item);
+        const expected = activityKey(record);
+        if (
+          item.itemKind?.S !== "ACTIVITY" ||
+          record.resourceType !== resourceType ||
+          record.resourceId !== resourceId ||
+          item.PK?.S !== expected.PK ||
+          item.SK?.S !== expected.SK
+        )
+          throw invalidQueryResponse();
+        return record;
+      },
+    );
   }
 
   async getIdempotency<TResponse = unknown>(
@@ -1504,6 +1616,72 @@ function buildPut(
       ...(conditionExpression === undefined ? {} : { ConditionExpression: conditionExpression }),
       ...overrides,
     },
+  };
+}
+
+function compareReadKeys(left: string, right: string): number {
+  return Buffer.compare(Buffer.from(left), Buffer.from(right));
+}
+
+function invalidQueryResponse(): JawStackRuntimeError {
+  return new JawStackRuntimeError("runtime.internal", "DynamoDB returned an invalid query page.");
+}
+
+function readQueryPage<T>(
+  output: QueryCommandOutput,
+  partition: string,
+  prepared: PreparedQuery<Readonly<{ limit: number }>>,
+  descending: boolean,
+  beyondRange: (key: string) => boolean,
+  map: (item: DynamoDbItem) => T,
+): Page<T> {
+  const direction = descending ? -1 : 1;
+  const readKey = (item: DynamoDbItem) => {
+    const key = item.SK?.S;
+    if (
+      item.PK?.S !== partition ||
+      typeof key !== "string" ||
+      key.length === 0 ||
+      Buffer.byteLength(key) > 1024 ||
+      Buffer.from(key).toString("utf8") !== key ||
+      (!prepared.containsKey(key) && !beyondRange(key))
+    )
+      throw invalidQueryResponse();
+    return key;
+  };
+  const items: T[] = [];
+  let previous = prepared.after;
+  if ((output.Items?.length ?? 0) > prepared.query.limit) throw invalidQueryResponse();
+  for (const item of output.Items ?? []) {
+    const key = readKey(item);
+    if (previous !== undefined && compareReadKeys(key, previous) * direction <= 0)
+      throw invalidQueryResponse();
+    previous = key;
+    if (prepared.containsKey(key)) {
+      try {
+        items.push(map(item));
+      } catch {
+        throw invalidQueryResponse();
+      }
+    }
+  }
+  const continuation = output.LastEvaluatedKey;
+  if (continuation === undefined || Object.keys(continuation).length === 0) return { items };
+  if (
+    Object.keys(continuation).length !== 2 ||
+    Object.keys(continuation.PK ?? {}).join() !== "S" ||
+    Object.keys(continuation.SK ?? {}).join() !== "S"
+  )
+    throw invalidQueryResponse();
+  const key = readKey(continuation);
+  if (
+    (prepared.after !== undefined && compareReadKeys(key, prepared.after) * direction <= 0) ||
+    (previous !== undefined && compareReadKeys(key, previous) * direction < 0)
+  )
+    throw invalidQueryResponse();
+  return {
+    items,
+    ...(beyondRange(key) ? {} : { nextCursor: prepared.cursorAfter(key) }),
   };
 }
 
