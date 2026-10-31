@@ -10,6 +10,7 @@ import {
 import { createContentOperationsResources } from "../domain/resources";
 import { captureScope, keyComponentSchema, type PersistenceFactory } from "./persistence";
 import { contentEventSource } from "../shared/events";
+import { validateClaimResponse } from "./publication-claim";
 
 export function createContentDispatch(options: {
   persistence: PersistenceFactory;
@@ -62,7 +63,12 @@ export function createContentDispatch(options: {
         result.error.code,
       )
     )
-      return result;
+      return validateClaimResponse(
+        captured,
+        result,
+        scoped?.repository,
+        options.clock ?? (() => new Date()),
+      );
 
     // A winner may commit after our first lookup, even before our decision. Re-enter only
     // the core's fingerprint check with a pinned record: never retry a stale user mutation.
@@ -74,7 +80,7 @@ export function createContentDispatch(options: {
         if (winner) break;
       }
       if (!winner) return result;
-      return executeCommand(captured, {
+      const replay = await executeCommand(captured, {
         ...executor,
         repository: {
           getIdempotency: async () => winner,
@@ -88,6 +94,12 @@ export function createContentDispatch(options: {
           },
         },
       });
+      return validateClaimResponse(
+        captured,
+        replay,
+        scoped.repository,
+        options.clock ?? (() => new Date()),
+      );
     } catch {
       return result;
     }

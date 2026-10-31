@@ -294,6 +294,11 @@ or automatic deletion is claimed.
 
 ## Current Coverage and Exclusions
 
+Phase 10 adds credential-free memory/SDK contracts for schedules, publication intent,
+fenced claims/retries, and atomic attempt history. No artifact writer or live publisher was
+run in this phase; Phase 11 owns that execution evidence. The Phase 8 gate remains the most
+recent live integration run, not proof of the newer publication protocol.
+
 | Capability                                      | Status                                                                                                                                                                |
 | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | S3 conditional artifact storage                 | Passed in Phase 1.                                                                                                                                                    |

@@ -1,7 +1,7 @@
 # Iteration 2 Implementation Plan: Content Operations
 
-Status: reviewed. Phases 0-9 are complete. Shared materializers, atomic local notification
-delivery, the explicit memory flow, and workspace regressions passed. Phase 10 has not started.
+Status: reviewed. Phases 0-10 are complete. Scheduling/publication domain transitions,
+fenced claims, atomic attempt history, and workspace regressions passed. Phase 11 has not started.
 
 ## Purpose
 
@@ -92,7 +92,7 @@ work may proceed only after an explicit sequencing decision, without claiming th
 | 7     | Consumer persistence       | Scoped dispatch, atomic operation records and projections | Complete |
 | 8     | Consumer services          | Attachment lifecycle and verified object storage          | Complete |
 | 9     | Consumer workers           | Materializers, notification sink and memory event pump    | Complete |
-| 10    | Consumer domain            | Publication intent, claims and generation transitions     | Planned  |
+| 10    | Consumer domain            | Publication intent, claims and generation transitions     | Complete |
 | 11    | Consumer workers           | Recoverable publication execution                         | Planned  |
 | 12    | Consumer jobs              | Due work, reminders, time zones and cleanup               | Planned  |
 | 13    | Consumer operations        | Failure collection and bounded recovery                   | Planned  |
@@ -993,6 +993,53 @@ integration gate, documentation walkthrough, local links, and `git diff --check`
 - No framework implementation, dependency, package version, workflow, real AWS resource,
   release, or commit was changed/created. Live consumer transports, publication, automatic
   HTTP pumping/UI, and durable failure collection/replay remain later work. Phase 10 is next.
+
+### Phase 10: October 31, 2026
+
+- Added strict editor schedule/reschedule/cancel, publish-now and explicit retry commands,
+  plus dedicated due-worker and publisher request/claim/complete/fail primitives. Every
+  mutation uses expected resource version and current approval/revision, schedule generation,
+  or publication/generation/fence references. Timestamp input requires explicit millisecond
+  offsets, normalizes to UTC, and validates future time/IANA zone; Temporal local-time/DST
+  conversion and automatic due jobs remain Phase 12. Old calendar/due keys move/delete in
+  the authoritative transaction; cancel/reopen/reschedule/due races have one winner.
+- Publication freezes one ID, submitted snapshot/approval, optional original schedule, and
+  request timestamp. Retry changes only execution generation and cannot burn a new cycle
+  using an older generation's failure. All queued/running/failed/stalled publication keeps
+  the content publishing lock; lease expiry/failure never authorizes edits/removal/reopen/
+  archive. Published state may archive while retaining its frozen intent/artifact reference.
+- Added caller-fresh attempt UUIDs, server fencing UUIDs and exactly 90-second leases.
+  Outcomes require every active reference and time within the lease. Claims are limited to
+  three attempts per cycle and four generations (initial plus three editor retries).
+  Allowlisted unavailable/interrupted failures retry within budget; mismatch/invalid-snapshot
+  codes terminate immediately. No raw exception strings enter state/events/history.
+- Added app-only claim-response post-validation after normal and idempotent/concurrent
+  execution. A once-successful response cannot grant an expired, completed, replaced,
+  not-yet-started, or timestamp-mismatched lease. Different input at the same key still
+  conflicts normally; actual new attempts require new UUIDs/keys. Core was not changed.
+- Composed typed immutable attempt-stage rows and all/per-content history projections with
+  the existing public transaction builders and primary state/activity/outbox/idempotency/
+  receipt writes. Generation is metadata, not part of claim-history uniqueness, so past
+  attempt UUIDs cannot recur in later generations. Successor claims/retries close expired
+  predecessors in the same commit. Query rows keep stable start/attempt order and update
+  stage data; no unbounded aggregate history or after-success second write is used. Both
+  adapters preserve primary/idempotency conditions, exact-key deduplication and 60-action cap.
+- Added 42 publication tests (303 consumer/588 workspace tests total): memory and SDK domain
+  parity, opposite-order scheduling races, due-generation staleness, exact lease boundaries,
+  concurrent equivalent claim replay, all fencing fields, regressed clocks, stale timestamp
+  grants, cross-generation attempt reuse, transient/terminal failures, exhausted/expired
+  attempt budgets, manual retry limits, typed-operation rollback, 60/61 actions, malformed
+  state/metadata/roles/IDs, fixed artifact identity, redacted token history, and absence of an
+  unfinished publisher. Existing editorial transition tests now use actual schedule/publish/
+  claim/complete commands instead of fabricated reserved states; no artifact I/O is claimed.
+- `pnpm verify:release` passed: format/typecheck/tests/lint/build, pkg-guard with zero
+  findings, isolated generated-app install/typecheck/tests/build/AWS bundle/synth/doctor,
+  and six package dry runs. Local Markdown links and `git diff --check` passed. No LocalStack
+  run was required/performed; Phase 8 remains the last observed live integration evidence.
+- No framework implementation, dependencies, versions, workflows, real AWS resources,
+  release, or commit was changed/created. No actual artifact serializer/writer/verifier or
+  `publishContent` subscription is presented as implemented; that protocol is Phase 11.
+  Internal completion currently accepts trusted metadata with fixed key/size/digest shape.
 
 For later phases, append the date, meaningful behavior delivered, commands/results,
 not-run checks, design changes, and remaining limitations. Do not replace observed

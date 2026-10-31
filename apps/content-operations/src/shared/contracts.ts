@@ -1,6 +1,12 @@
 import { z } from "zod";
 import { editorIds, fixtureIds } from "./identities";
-import { activeAsset, assetSlotSchema, readyAttachmentSchema, readyAttachments } from "./assets";
+import {
+  activeAsset,
+  assetSlotSchema,
+  digestSchema,
+  readyAttachmentSchema,
+  readyAttachments,
+} from "./assets";
 import {
   idSchema,
   instantSchema,
@@ -8,6 +14,7 @@ import {
   limits,
   validUnicode,
   versionSchema,
+  timeZoneSchema,
 } from "./validation";
 export { idSchema, instantSchema, jsonBytes, limits, versionSchema } from "./validation";
 const titleInputSchema = z
@@ -110,6 +117,188 @@ export const reviewTaskStateSchema = z
   .refine((value) => jsonBytes(value) <= limits.eventBytes, "Review fact exceeds 80 KiB.")
   .readonly();
 
+export const approvalSchema = z
+  .strictObject({
+    reviewId: idSchema,
+    revisionId: idSchema,
+    approvedBy: z.enum(editorIds),
+    approvedAt: instantSchema,
+  })
+  .readonly();
+export const scheduleSchema = z
+  .strictObject({
+    scheduledAt: instantSchema,
+    generation: idSchema,
+    revisionId: idSchema,
+    timeZone: timeZoneSchema,
+  })
+  .readonly();
+export const publicationGenerationSchema = z
+  .number()
+  .int()
+  .min(1)
+  .max(limits.publicationGenerations);
+export const publicationFailureCodes = [
+  "storage.unavailable",
+  "execution.interrupted",
+  "artifact.mismatch",
+  "snapshot.invalid",
+] as const;
+export const publicationClaimSchema = z
+  .strictObject({
+    attemptId: idSchema,
+    fencingToken: idSchema,
+    startedAt: instantSchema,
+    leaseUntil: instantSchema,
+  })
+  .refine(
+    (value) =>
+      value.attemptId !== value.fencingToken &&
+      Date.parse(value.leaseUntil) - Date.parse(value.startedAt) === limits.publicationLeaseMs,
+  )
+  .readonly();
+export const publicationAttemptSchema = z
+  .strictObject({
+    generation: publicationGenerationSchema,
+    claim: publicationClaimSchema,
+    status: z.enum(["claimed", "succeeded", "failed", "expired"]),
+    finishedAt: instantSchema.nullable(),
+    failureCode: z.enum(publicationFailureCodes).nullable(),
+    sourceEventId: z
+      .string()
+      .min(1)
+      .max(128)
+      .refine((value) => !/[^A-Za-z0-9_.:-]/.test(value)),
+    correlationId: z
+      .string()
+      .min(1)
+      .max(128)
+      .refine((value) => !/[^A-Za-z0-9_.:-]/.test(value)),
+  })
+  .superRefine((value, ctx) => {
+    if (
+      (value.status === "claimed") !== (value.finishedAt === null) ||
+      (value.status === "failed") !== (value.failureCode !== null)
+    )
+      ctx.addIssue({ code: "custom", message: "Attempt outcome metadata mismatch." });
+    if (
+      value.finishedAt &&
+      (Date.parse(value.finishedAt) < Date.parse(value.claim.startedAt) ||
+        (value.status === "expired"
+          ? Date.parse(value.finishedAt) < Date.parse(value.claim.leaseUntil)
+          : Date.parse(value.finishedAt) >= Date.parse(value.claim.leaseUntil)))
+    )
+      ctx.addIssue({ code: "custom", message: "Attempt outcome is outside its lease." });
+  })
+  .readonly();
+export const publicationIntentSchema = z
+  .strictObject({
+    publicationId: idSchema,
+    contentId: idSchema,
+    requestedAt: instantSchema,
+    snapshot: submittedSnapshotSchema,
+    approval: approvalSchema,
+    schedule: scheduleSchema.nullable(),
+  })
+  .refine(
+    (value) =>
+      value.contentId === value.snapshot.contentId &&
+      value.approval.revisionId === value.snapshot.revisionId &&
+      Date.parse(value.approval.approvedAt) >= Date.parse(value.snapshot.submittedAt) &&
+      Date.parse(value.requestedAt) >= Date.parse(value.approval.approvedAt) &&
+      (!value.schedule || value.schedule.revisionId === value.snapshot.revisionId),
+    "Publication intent does not match approval.",
+  )
+  .readonly();
+export function publicationObjectKey(contentId: string, publicationId: string) {
+  idSchema.parse(contentId);
+  idSchema.parse(publicationId);
+  return `publications/${contentId}/${publicationId}/snapshot.json`;
+}
+export const publicationArtifactSchema = z
+  .strictObject({
+    objectKey: z.string().max(160),
+    sha256: digestSchema,
+    size: z.number().int().min(1).max(limits.publicationArtifactBytes),
+    completedAt: instantSchema,
+  })
+  .readonly();
+export const publicationStateSchema = z
+  .strictObject({
+    intent: publicationIntentSchema,
+    generation: publicationGenerationSchema,
+    phase: z.enum(["queued", "running", "failed", "succeeded"]),
+    attemptsInGeneration: z.number().int().min(0).max(limits.publicationAttempts),
+    claim: publicationClaimSchema.nullable(),
+    lastAttempt: publicationAttemptSchema.nullable(),
+    artifact: publicationArtifactSchema.nullable(),
+  })
+  .superRefine((value, ctx) => {
+    if (
+      (value.phase === "running") !== (value.claim !== null) ||
+      (value.phase === "succeeded") !== (value.artifact !== null)
+    )
+      ctx.addIssue({ code: "custom", message: "Publication phase/claim/artifact mismatch." });
+    if (
+      (value.phase !== "queued" && value.attemptsInGeneration === 0) ||
+      (value.phase === "queued" &&
+        value.attemptsInGeneration > 0 &&
+        value.lastAttempt?.status !== "failed") ||
+      (value.lastAttempt &&
+        Date.parse(value.lastAttempt.claim.startedAt) < Date.parse(value.intent.requestedAt))
+    )
+      ctx.addIssue({ code: "custom", message: "Publication attempt lifecycle is inconsistent." });
+    if (
+      value.lastAttempt &&
+      (value.lastAttempt.generation > value.generation ||
+        (value.lastAttempt.generation === value.generation && value.attemptsInGeneration === 0))
+    )
+      ctx.addIssue({ code: "custom", message: "Attempt generation/count mismatch." });
+    if (
+      value.attemptsInGeneration > 0 &&
+      (!value.lastAttempt || value.lastAttempt.generation !== value.generation)
+    )
+      ctx.addIssue({ code: "custom", message: "Missing current attempt." });
+    if (
+      value.claim &&
+      (!value.lastAttempt ||
+        value.lastAttempt.status !== "claimed" ||
+        JSON.stringify(value.claim) !== JSON.stringify(value.lastAttempt.claim))
+    )
+      ctx.addIssue({ code: "custom", message: "Claim does not match current attempt." });
+    if (!value.claim && value.lastAttempt?.status === "claimed")
+      ctx.addIssue({ code: "custom", message: "Unfinished attempt has no claim." });
+    if (value.phase === "failed" && value.lastAttempt?.status !== "failed")
+      ctx.addIssue({ code: "custom", message: "Failed publication requires a failed attempt." });
+    if (
+      value.lastAttempt?.status === "failed" &&
+      value.lastAttempt.generation === value.generation
+    ) {
+      const terminal =
+        ["artifact.mismatch", "snapshot.invalid"].includes(value.lastAttempt.failureCode!) ||
+        value.attemptsInGeneration >= limits.publicationAttempts;
+      if ((value.phase === "failed") !== terminal)
+        ctx.addIssue({
+          code: "custom",
+          message: "Publication failure classification is inconsistent.",
+        });
+    }
+    if (
+      value.artifact &&
+      (value.lastAttempt?.status !== "succeeded" ||
+        value.artifact.completedAt !== value.lastAttempt.finishedAt ||
+        value.artifact.objectKey !==
+          publicationObjectKey(value.intent.contentId, value.intent.publicationId))
+    )
+      ctx.addIssue({
+        code: "custom",
+        message: "Published artifact does not match intent/attempt.",
+      });
+  })
+  .readonly();
+export type PublicationIntent = z.infer<typeof publicationIntentSchema>;
+export type PublicationAttempt = z.infer<typeof publicationAttemptSchema>;
+export type PublicationState = z.infer<typeof publicationStateSchema>;
 export const contentStateSchema = z
   .strictObject({
     contentId: idSchema,
@@ -120,23 +309,9 @@ export const contentStateSchema = z
     status: z.enum(contentStatuses),
     attachments: z.array(assetSlotSchema).max(limits.retainedAssets).readonly(),
     review: reviewTaskStateSchema.nullable(),
-    approval: z
-      .strictObject({
-        reviewId: idSchema,
-        revisionId: idSchema,
-        approvedBy: z.enum(editorIds),
-        approvedAt: instantSchema,
-      })
-      .readonly()
-      .nullable(),
-    schedule: z
-      .strictObject({
-        scheduledAt: instantSchema,
-        generation: idSchema,
-        timeZone: z.string().min(1).max(100),
-      })
-      .readonly()
-      .nullable(),
+    approval: approvalSchema.nullable(),
+    schedule: scheduleSchema.nullable(),
+    publication: publicationStateSchema.nullable(),
   })
   .superRefine((value, ctx) => {
     if (
@@ -157,7 +332,7 @@ export const contentStateSchema = z
       ctx.addIssue({ code: "custom", message: "Approved lifecycle state requires signoff." });
     if ((value.status === "draft" || value.status === "inReview") && value.approval)
       ctx.addIssue({ code: "custom", message: "Unapproved content cannot retain approval." });
-    if (value.status === "inReview" || approved) {
+    if (value.status === "inReview" || approved || value.publication) {
       if (
         !review ||
         review.submitted.revisionId !== value.revisionId ||
@@ -187,6 +362,27 @@ export const contentStateSchema = z
       ctx.addIssue({ code: "custom", message: "Approval does not match the recorded review." });
     if ((value.status === "scheduled") !== (value.schedule !== null))
       ctx.addIssue({ code: "custom", message: "Schedule/status mismatch." });
+    if (value.schedule && value.schedule.revisionId !== value.revisionId)
+      ctx.addIssue({ code: "custom", message: "Schedule revision is obsolete." });
+    const publication = value.publication;
+    if (["publishing", "published"].includes(value.status) && !publication)
+      ctx.addIssue({ code: "custom", message: "Publication lifecycle requires an intent." });
+    if (
+      publication &&
+      (!value.approval ||
+        !value.review ||
+        !["publishing", "published", "archived"].includes(value.status) ||
+        publication.intent.contentId !== value.contentId ||
+        JSON.stringify(publication.intent.snapshot) !== JSON.stringify(value.review.submitted) ||
+        JSON.stringify(publication.intent.approval) !== JSON.stringify(value.approval) ||
+        (value.status === "publishing"
+          ? publication.phase === "succeeded"
+          : publication.phase !== "succeeded"))
+    )
+      ctx.addIssue({
+        code: "custom",
+        message: "Publication differs from authoritative approval/lifecycle.",
+      });
   })
   .refine((value) => jsonBytes(value) <= limits.stateBytes, "Content state exceeds 160 KiB.")
   .readonly();
@@ -227,6 +423,101 @@ const lifecycleFactSchema = z
     sourceVersion: versionSchema,
   })
   .refine((value) => jsonBytes(value) <= limits.eventBytes, "Event exceeds 80 KiB.");
+const scheduleFactSchema = z
+  .strictObject({
+    contentId: idSchema,
+    revisionId: idSchema,
+    sourceVersion: versionSchema,
+    status: z.enum(["scheduled", "approved"]),
+    schedule: scheduleSchema.nullable(),
+  })
+  .refine(
+    (value) =>
+      (value.status === "scheduled") === (value.schedule !== null) &&
+      (!value.schedule || value.schedule.revisionId === value.revisionId),
+  );
+export const publicationRequestSchema = z
+  .strictObject({
+    contentId: idSchema,
+    publicationId: idSchema,
+    generation: publicationGenerationSchema,
+    sourceVersion: versionSchema,
+    intent: publicationIntentSchema,
+  })
+  .refine(
+    (value) =>
+      value.contentId === value.intent.contentId &&
+      value.publicationId === value.intent.publicationId &&
+      jsonBytes(value) <= limits.eventBytes,
+  );
+export const publicationAttemptViewSchema = z
+  .strictObject({
+    generation: publicationGenerationSchema,
+    claim: z
+      .strictObject({ attemptId: idSchema, startedAt: instantSchema, leaseUntil: instantSchema })
+      .refine(
+        (value) =>
+          Date.parse(value.leaseUntil) - Date.parse(value.startedAt) === limits.publicationLeaseMs,
+      ),
+    status: z.enum(["claimed", "succeeded", "failed", "expired"]),
+    finishedAt: instantSchema.nullable(),
+    failureCode: z.enum(publicationFailureCodes).nullable(),
+    sourceEventId: z
+      .string()
+      .min(1)
+      .max(128)
+      .refine((value) => !/[^A-Za-z0-9_.:-]/.test(value)),
+    correlationId: z
+      .string()
+      .min(1)
+      .max(128)
+      .refine((value) => !/[^A-Za-z0-9_.:-]/.test(value)),
+  })
+  .refine(
+    (value) =>
+      (value.status === "claimed") === (value.finishedAt === null) &&
+      (value.status === "failed") === (value.failureCode !== null) &&
+      (!value.finishedAt ||
+        (Date.parse(value.finishedAt) >= Date.parse(value.claim.startedAt) &&
+          (value.status === "expired"
+            ? Date.parse(value.finishedAt) >= Date.parse(value.claim.leaseUntil)
+            : Date.parse(value.finishedAt) < Date.parse(value.claim.leaseUntil)))),
+  );
+export function publicationAttemptView(attempt: PublicationAttempt) {
+  return publicationAttemptViewSchema.parse({
+    ...attempt,
+    claim: {
+      attemptId: attempt.claim.attemptId,
+      startedAt: attempt.claim.startedAt,
+      leaseUntil: attempt.claim.leaseUntil,
+    },
+  });
+}
+export const publicationAttemptFactSchema = z.strictObject({
+  contentId: idSchema,
+  publicationId: idSchema,
+  sourceVersion: versionSchema,
+  attempt: publicationAttemptViewSchema,
+});
+const publicationOutcomeSchema = z
+  .strictObject({
+    contentId: idSchema,
+    publicationId: idSchema,
+    generation: publicationGenerationSchema,
+    sourceVersion: versionSchema,
+    revisionId: idSchema,
+    authorId: z.enum(fixtureIds),
+    title: titleSchema,
+    outcome: z.enum(["published", "failed"]),
+    artifact: publicationArtifactSchema.nullable(),
+    failureCode: z.enum(publicationFailureCodes).nullable(),
+  })
+  .refine((value) =>
+    value.outcome === "published"
+      ? value.artifact?.objectKey === publicationObjectKey(value.contentId, value.publicationId) &&
+        value.failureCode === null
+      : value.artifact === null && value.failureCode !== null,
+  );
 export const contentEventSchemas = {
   "contentItem.created": lifecycleFactSchema.refine((value) => value.status === "draft"),
   "contentItem.draftEdited": lifecycleFactSchema.refine((value) => value.status === "draft"),
@@ -247,5 +538,34 @@ export const contentEventSchemas = {
   "contentItem.assetRemoved": assetSlotSchema.refine((value) => value.status === "removed"),
   "contentItem.assetExpired": assetSlotSchema.refine((value) => value.status === "expired"),
   "asset.snapshotApplied": assetSlotSchema,
+  "contentItem.scheduled": scheduleFactSchema.refine((value) => value.status === "scheduled"),
+  "contentItem.rescheduled": scheduleFactSchema.refine((value) => value.status === "scheduled"),
+  "contentItem.scheduleCancelled": scheduleFactSchema.refine(
+    (value) => value.status === "approved",
+  ),
+  "contentItem.publicationRequested": publicationRequestSchema.refine(
+    (value) => value.generation === 1,
+  ),
+  "contentItem.publicationRetried": publicationRequestSchema.refine(
+    (value) => value.generation > 1,
+  ),
+  "contentItem.publicationClaimed": publicationAttemptFactSchema.refine(
+    (value) => value.attempt.status === "claimed",
+  ),
+  "contentItem.publicationAttemptSucceeded": publicationAttemptFactSchema.refine(
+    (value) => value.attempt.status === "succeeded",
+  ),
+  "contentItem.publicationAttemptFailed": publicationAttemptFactSchema.refine(
+    (value) => value.attempt.status === "failed",
+  ),
+  "contentItem.publicationLeaseExpired": publicationAttemptFactSchema.refine(
+    (value) => value.attempt.status === "expired",
+  ),
+  "contentItem.publicationFailed": publicationOutcomeSchema.refine(
+    (value) => value.outcome === "failed",
+  ),
+  "contentItem.published": publicationOutcomeSchema.refine(
+    (value) => value.outcome === "published",
+  ),
 } as const;
 export type ContentEventType = keyof typeof contentEventSchemas;

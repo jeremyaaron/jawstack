@@ -1,7 +1,7 @@
 # Iteration 2: Content Operations
 
-Status: Phases 0-9 complete. Shared materializers, atomic notification delivery, headless
-memory flow, and workspace regressions passed. Phase 10 has not started.
+Status: Phases 0-10 complete. Scheduling/publication domain, fenced claims, atomic attempt
+history, and workspace regressions passed. Actual publication execution begins in Phase 11.
 
 ## Documents
 
@@ -28,7 +28,7 @@ ownership-safe reset/reprovisioning; production-parity exclusions are recorded e
 The [consumer README](../../../apps/content-operations/README.md) describes the current
 harness and headless editorial domain. Shared handlers and an explicit memory pump now
 materialize related resources and deliver notifications; HTTP, live consumer transport
-orchestration, publication, and editorial screens remain unimplemented.
+orchestration, publication-object execution, and editorial screens remain unimplemented.
 Angular components now accept browser-safe presentation definitions and the fetch client
 exposes structured API errors; these contracts do not implement the editorial screens.
 Named CDK worker/scheduler bindings now support application-owned grants and DLQ collectors
@@ -42,3 +42,9 @@ internal materialization primitives. Phase 9 adds their shared source-version-aw
 durable local notification sink, and deterministic bounded memory outbox pump. Notification
 atomicity has memory/SDK contracts, not a live consumer deployment. HTTP upload/download
 routes, automatic cleanup, and durable failure recovery remain later work.
+
+Phase 10 adds schedule generations, frozen publication intent, 90-second fenced claims,
+bounded attempts/retry generations, and atomic redacted attempt history in memory/DynamoDB.
+Publication remains locked through failure/lease expiry, and stale claim-response replay
+does not grant a usable lease. These are domain/SDK contracts, not proof of writing a
+publication artifact. No publisher subscription is advertised until Phase 11 implements it.

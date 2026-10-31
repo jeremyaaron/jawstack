@@ -13,10 +13,8 @@ import {
   createContentOperationsResources,
   reviewProjectorIdentity,
 } from "../../src/domain/resources";
-import { contentProjectionPlan } from "../../src/domain/projections";
 import {
   contentEventSchemas,
-  contentStateSchema,
   contentStatuses,
   jsonBytes,
   limits,
@@ -26,6 +24,8 @@ import {
 } from "../../src/shared/contracts";
 import { fixtureAuth, fixtureIdentities, type FixtureId } from "../../src/shared/identities";
 import { contentUi, reviewUi } from "../../src/shared/presentation";
+import { publisherIdentity } from "../../src/domain/publication-commands";
+import { publicationObjectKey } from "../../src/shared/contracts";
 
 const uuid = (value: number) => `00000000-0000-4000-8000-${String(value).padStart(12, "0")}`;
 const contentId = uuid(1);
@@ -139,29 +139,83 @@ function harness(newId?: () => string) {
         (await run("archive", { expectedVersion: (await current()).version }, "editor_1")).ok,
       ).toBe(true);
     }
-    if (["scheduled", "publishing", "published"].includes(status)) {
+    if (status === "scheduled") {
       const previous = await current();
-      const state = contentStateSchema.parse({
-        ...previous.state,
-        status,
-        schedule:
-          status === "scheduled"
-            ? { scheduledAt: dueAt, generation: uuid(900), timeZone: "UTC" }
-            : null,
-      });
-      await memory.unitOfWork.commit({
-        resource: {
-          resourceType: "contentItem",
-          resourceId: contentId,
-          create: false,
-          expectedVersion: previous.version,
-          next: { ...previous, version: previous.version + 1, state },
-        },
-        activity: [],
-        outbox: [],
-        projections: contentProjectionPlan(previous, state, now),
-        response: {},
-      });
+      expect(
+        (
+          await run(
+            "schedule",
+            {
+              expectedVersion: previous.version,
+              reviewId: previous.state.approval!.reviewId,
+              revisionId: previous.state.revisionId,
+              scheduledAt: dueAt,
+              timeZone: "UTC",
+            },
+            "editor_1",
+          )
+        ).ok,
+      ).toBe(true);
+    }
+    if (["publishing", "published"].includes(status)) {
+      const previous = await current();
+      expect(
+        (
+          await run(
+            "publishNow",
+            {
+              expectedVersion: previous.version,
+              reviewId: previous.state.approval!.reviewId,
+              revisionId: previous.state.revisionId,
+            },
+            "editor_1",
+          )
+        ).ok,
+      ).toBe(true);
+      if (status === "published") {
+        const publisher: AuthContext = {
+          subject: publisherIdentity.subject,
+          roles: [publisherIdentity.role],
+          claims: {},
+          mode: "test",
+        };
+        const publication = (await current()).state.publication!;
+        expect(
+          (
+            await run(
+              "claimPublication",
+              {
+                expectedVersion: (await current()).version,
+                publicationId: publication.intent.publicationId,
+                generation: publication.generation,
+                attemptId: uuid(950),
+              },
+              publisher,
+            )
+          ).ok,
+        ).toBe(true);
+        const active = (await current()).state.publication!;
+        expect(
+          (
+            await run(
+              "completePublication",
+              {
+                expectedVersion: (await current()).version,
+                publicationId: active.intent.publicationId,
+                generation: active.generation,
+                attemptId: active.claim!.attemptId,
+                fencingToken: active.claim!.fencingToken,
+                artifact: {
+                  objectKey: publicationObjectKey(contentId, active.intent.publicationId),
+                  sha256: "0".repeat(64),
+                  size: 100,
+                },
+              },
+              publisher,
+            )
+          ).ok,
+        ).toBe(true);
+      }
     }
     return current();
   };
@@ -260,7 +314,7 @@ describe("editorial content aggregate", () => {
   };
   for (const status of contentStatuses) {
     it.each(["editDraft", "submit", "approve", "requestChanges", "reopenDraft", "archive"])(
-      `enforces ${status} -> %s (reserved execution states are fixture-seeded)`,
+      `enforces ${status} -> %s through real domain transitions (no artifact I/O)`,
       async (command) => {
         const h = harness();
         const previous = await h.seedStatus(status);

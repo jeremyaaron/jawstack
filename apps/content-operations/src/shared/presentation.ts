@@ -1,6 +1,13 @@
 import type { ResourceUiDefinition } from "@jawstack/angular";
 import { assetVersionInput, registerAssetInput, assetStatuses } from "./assets";
 import {
+  approvalReferenceInput,
+  publicationReferenceInput,
+  rescheduleInput,
+  scheduleInput,
+  scheduleReferenceInput,
+} from "./publication-inputs";
+import {
   contentStatuses,
   createContentInput,
   editDraftInput,
@@ -75,6 +82,26 @@ export const contentUi = {
       create: false,
     },
     archive: { title: "Archive", input: versionInput, roles: ["editor"], create: false },
+    schedule: { title: "Schedule", input: scheduleInput, roles: ["editor"], create: false },
+    reschedule: { title: "Reschedule", input: rescheduleInput, roles: ["editor"], create: false },
+    cancelSchedule: {
+      title: "Cancel schedule",
+      input: scheduleReferenceInput,
+      roles: ["editor"],
+      create: false,
+    },
+    publishNow: {
+      title: "Publish now",
+      input: approvalReferenceInput,
+      roles: ["editor"],
+      create: false,
+    },
+    retryPublication: {
+      title: "Retry publication",
+      input: publicationReferenceInput,
+      roles: ["editor"],
+      create: false,
+    },
   },
 } satisfies ResourceUiDefinition;
 

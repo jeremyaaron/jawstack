@@ -8,6 +8,12 @@ import {
 } from "@jawstack/core";
 import { buildCommandTransactWriteItems, projectionKey } from "@jawstack/aws-runtime";
 import { marshall } from "@aws-sdk/util-dynamodb";
+import {
+  publicationOperationKey,
+  publicationOperationProjections,
+  publicationOperations,
+  type PublicationOperation,
+} from "./publication-operations";
 
 export const idempotencyTtlSeconds = 7 * 24 * 60 * 60;
 export const transactionActionLimit = 60;
@@ -42,8 +48,7 @@ const receiptSchema = z.strictObject({
   version: z.number().int().positive().safe(),
   committedAt: z.iso.datetime({ precision: 3 }),
 });
-// Subsequent worker phases can add explicit attempt/delivery variants here, not raw SDK actions.
-export type OperationRecord = z.infer<typeof receiptSchema>;
+export type OperationRecord = z.infer<typeof receiptSchema> | PublicationOperation;
 
 export function captureScope(scope: CommandScope): CommandScope {
   const parsed = scopeSchema.safeParse(scope);
@@ -52,6 +57,7 @@ export function captureScope(scope: CommandScope): CommandScope {
 }
 
 export function operationKey(record: OperationRecord) {
+  if (record.kind === "publicationAttempt") return publicationOperationKey(record);
   return {
     PK: `OPS#${record.kind}`,
     SK: `${record.resourceType}#${record.resourceId}#${record.version}`,
@@ -73,8 +79,9 @@ export function prepareTransaction(
       "runtime.internal",
       "Commit does not match its invocation scope.",
     );
+  const attempts = publicationOperations(input, scope.commandName);
   const projections = new Map<string, (typeof input.projections)[number]>();
-  for (const row of input.projections) {
+  for (const row of [...input.projections, ...publicationOperationProjections(attempts)]) {
     const physical = projectionKey({ ...row, resourceType: scope.resourceType });
     const key = JSON.stringify(physical);
     const normalized = { ...row, sort: physical.SK };
@@ -106,13 +113,15 @@ export function prepareTransaction(
   const idempotencyPut = items[idempotencyIndex]!.Put!;
   idempotencyPut.ConditionExpression = "attribute_not_exists(PK) OR expiresAt <= :now";
   idempotencyPut.ExpressionAttributeValues = marshall({ ":now": Math.floor(now.getTime() / 1000) });
-  items.push({
-    Put: {
-      TableName: tableName,
-      Item: marshall({ ...operationKey(operation), itemKind: "APP_OPERATION", ...operation }),
-      ConditionExpression: "attribute_not_exists(PK)",
-    },
-  });
+  const operations: OperationRecord[] = [operation, ...attempts];
+  for (const record of operations)
+    items.push({
+      Put: {
+        TableName: tableName,
+        Item: marshall({ ...operationKey(record), itemKind: "APP_OPERATION", ...record }),
+        ConditionExpression: "attribute_not_exists(PK)",
+      },
+    });
   const keys = new Set<string>();
   for (const item of items) {
     const write = item.Put ?? item.Delete;
@@ -129,5 +138,5 @@ export function prepareTransaction(
       "command.rejected",
       "Application transaction exceeds 60 actions.",
     );
-  return { commit, operation, items, idempotencyIndex, expiresAt };
+  return { commit, operation, operations, items, idempotencyIndex, expiresAt };
 }

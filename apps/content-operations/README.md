@@ -7,8 +7,9 @@ Phase 6 adds a headless content/review domain, strict schemas, fixture identitie
 browser-safe presentation metadata. Phase 7 adds scoped dispatch and atomic memory/DynamoDB
 persistence. Phase 8 adds content-owned attachment slots, an asset read-model primitive,
 immutable memory/local-S3 objects, and a bounded upload service. Phase 9 adds shared review/
-asset handlers, a local notification destination, and an explicit memory pump. Publication,
-consumer Lambda/queue wiring, HTTP, and Angular UI remain later work; the live lab still
+asset handlers, a local notification destination, and an explicit memory pump. Phase 10
+adds scheduling/publication intent, fenced execution state, and atomic attempt history.
+Actual publication-object execution, consumer Lambda/queue wiring, HTTP, and Angular UI remain later work; the live lab still
 exercises the separate event spine, direct transactions, and attachment protocol.
 
 ## Credential-Free Checks
@@ -124,11 +125,12 @@ Factories generate separate revision/review UUIDs lazily, with injectable `newId
 
 ### Staged Capabilities
 
-Scheduling commands, publication execution, and the publication artifact-writing protocol
-are not implemented here. The schedule metadata shape supports invalidation;
-scheduling/time-zone semantics and full publication execution state remain
-Phases 10-12. Scheduled/publishing/published transition tests use trusted seeded editorial
-states, not an executed publication workflow.
+Scheduling and publication domain commands are implemented, but the publication-object
+writer is not. `publishNow` or a due request currently freezes an intent and queues a fact;
+draining the memory pump does not publish it. Phase 11 supplies actual serialization,
+conditional object writes/readback, and the publisher handler. Automatic due jobs and
+Temporal local-time/DST conversion remain Phase 12. Domain completion tests use trusted
+artifact metadata without claiming an object was created.
 
 Core requires commands and separates create from update, so the review resource has two
 internal primitives. They require `review_projector`/`reviewProjector`, preserve submitted
@@ -137,7 +139,7 @@ can arrive before its older requested fact without restoring pending state. Shar
 now validate envelopes/sources, ignore older/equivalent snapshots, and reload on conflicts.
 The asset primitives apply the same dedicated-projector, increasing-source-version, and
 immutable-metadata rules, including terminal tombstones. Public ingress must reject snapshot
-commands, `completeUpload`, and `expireAsset` regardless of headers, and fixture
+commands, `completeUpload`, `expireAsset`, and internal due/publication commands regardless of headers, and fixture
 selectors must never offer service identities. No HTTP ingress is exposed yet.
 
 Tests execute public commands against memory and SDK contract persistence without Work
@@ -249,6 +251,56 @@ Automatic managed pumping belongs to later HTTP composition. Durable failure col
 manual recovery and live consumer queues are not implemented by this phase. Tests exercise
 the complete headless draft/upload/review/notification flow and SDK notification atomicity;
 the live LocalStack harness below has not been extended to deploy these consumer handlers.
+
+## Scheduling and Publication State
+
+- Editors can `schedule`, `reschedule`, `cancelSchedule`, `publishNow`, and `retryPublication`.
+  Inputs require expected resource version and current approval/revision or publication/
+  generation references. Schedule changes use server-generated generation UUIDs; cancel,
+  reopen, archive, and publish remove old calendar/due keys in the same transaction.
+- Schedule inputs require millisecond ISO timestamps with explicit offsets and valid IANA
+  zones (or `UTC`). Store normalized UTC instants plus display-zone metadata. Times must be
+  future at command time. This accepts absolute instants, not ambiguous local wall times;
+  local-time conversion/disambiguation still belongs to Phase 12.
+- `requestDuePublication` requires the dedicated `due_worker`/`dueWorker` identity, current
+  schedule generation/revision, and a due instant. `publishNow` can override an approved
+  schedule immediately. Competing cancel/reopen/reschedule/due transitions have one versioned
+  winner; an obsolete due generation cannot publish a reopened or rescheduled revision.
+- Publication freezes the submitted/approved snapshot, approval, original schedule if any,
+  one publication UUID, and `requestedAt`. Artifact identity is always
+  `publications/<contentId>/<publicationId>/snapshot.json`; explicit retries preserve this
+  intent/key/timestamp and change only the execution generation.
+- Only `content_publisher`/`contentPublisher` can claim/complete/fail. Each claim needs a fresh
+  attempt UUID and new idempotency key; only retries of that exact claim request reuse its
+  key. The server issues a distinct fencing UUID and 90-second lease. A live competing
+  claim conflicts. Both outcome commands require matching publication, generation, attempt,
+  token, and an unexpired lease. Fences remain internal, not in event/query/history payloads.
+- Dispatch rechecks successful claim responses against the current authoritative claim and
+  server clock, including idempotent/competing-response replays. An expired, completed,
+  replaced, or not-yet-started claim is not returned as a usable grant. New payloads at an
+  old key still produce the ordinary idempotency conflict.
+- Content stays `publishing` through queued/running/failed/stalled execution. Expired leases
+  and terminal failures never unlock editing, attachment mutation, reopen, or archive.
+  A failed or expired current cycle can be explicitly retried only without a live claim;
+  an already-queued retry cannot burn another generation based on an older failure.
+- There are three attempts per generation and at most four generations (initial plus three
+  editor retries). Storage-unavailable/interrupted attempts release the claim for another
+  attempt; the third failure becomes terminal. Artifact mismatch/invalid snapshot fails
+  the cycle immediately. Failures accept only an enum, not raw exception messages/stacks.
+  A third expired lease remains stalled/locked until explicit retry or later reconciliation.
+- Claimed/succeeded/failed/expired attempt facts produce typed immutable operation rows and
+  all/per-content attempt projections in the primary transaction. Attempt UUIDs cannot be
+  reused even in another generation. Reclaim/retry closes an expired attempt in the same
+  commit as the successor state. Query rows retain stable start-time/attempt ordering and
+  show the latest stage; immutable history has no growing root array or second write.
+- Completion verifies role/fence/reference/size/digest shape, marks `published`, and emits
+  an outcome. Its byte metadata is trusted internal input until Phase 11 adds the actual
+  object verifier. Metadata cannot choose a different key or exceed 80 KiB. Published content
+  can be archived without deleting its artifact reference or approved history.
+
+No `publishContent` subscription is registered yet, and publication notifications are not
+advertised as operational. Tests cover decisions and memory/SDK transaction contracts, not
+artifact existence, a deployed publisher, an automatic due evaluator, or production auth.
 
 ## LocalStack Prerequisites
 

@@ -211,10 +211,11 @@ generated lazily inside decisions with an injectable test generator. Identity po
 intersects fixture roles with resolved auth roles and rejects unknown/external fixture
 identities. Browser metadata imports Angular/core types only, not server factories or SDKs.
 
-Current state validates the editorial lifecycle, latest bounded review, approval, and schedule
-invalidation metadata. Phase 8 adds bounded attachment slots and frozen verified references;
-full operational publication state and scheduling/time-zone semantics remain Phases 10-12. Tests seed the
-reserved scheduled/publishing/published editorial states to verify guards, not execution.
+Current state validates editorial lifecycle, bounded review/attachment snapshots, approval,
+and Phase 10 scheduling/publication execution state. Publication-object execution and automatic
+due work/local-time conversion remain Phases 11-12. Editorial guard tests now enter scheduled/
+publishing/published through real domain commands; completion metadata is trusted test input,
+not evidence of artifact creation.
 Input titles are trimmed; stored titles must already be canonical. Body whitespace is
 preserved, Unicode is validated, and serialized snapshot/state/event byte bounds apply in
 addition to the raw UTF-8 body limit. An unchanged save advances resource version without
@@ -544,6 +545,69 @@ claim request; a later delivery after lease expiry needs a new attempt UUID and 
 key. Completion/failure keys include publication ID, generation, attempt ID, and action.
 Otherwise command idempotency could replay an expired claim forever instead of allowing
 recovery. A successful claim alone is not a processed-worker marker.
+
+### Phase 10 Domain Decisions
+
+Schedule commands require current expected version, approval review/revision IDs, and (for
+reschedule/cancel/due evaluation) the visible schedule generation. The server generates a
+fresh schedule UUID and stores the revision with the UTC instant/IANA zone. Commands accept
+explicit-offset millisecond timestamps, normalize to UTC, and validate future time and zone
+identity; Temporal local-wall-time conversion/DST rejection remains Phase 12. A UTC input
+with a non-UTC display zone is valid: offsets identify an instant, not a wall-time parser.
+`publishNow` may immediately override a scheduled item, retaining the schedule only as
+frozen intent provenance. Only the dedicated due worker may request a due publication.
+
+`publication` is a required nullable content field. Once requested, its immutable intent
+holds the publication ID, content ID, `requestedAt`, complete submitted snapshot, approval,
+and optional original schedule. Operational state contains execution generation, phase,
+attempt count, at most one claim/latest attempt, and eventual artifact metadata. No growing
+attempt array lives in the aggregate. Archived published state must still match its frozen
+snapshot, approval, and artifact; archive does not remove historical references.
+
+Use three attempts per generation and four generations maximum (initial plus three editor
+retries). A claim gets a caller-generated fresh attempt UUID, server-generated fencing UUID,
+and exactly 90 seconds. Completion/failure requires the active publication/generation/
+attempt/token and server time within the claim interval. Queued/running/failed/stalled
+publication all retain the content `publishing` lock. The third expired lease stays stalled
+until explicit retry or later reconciliation; it does not silently reset the attempt budget.
+
+`storage.unavailable` and `execution.interrupted` failures release claims for another attempt
+until the third failure; `artifact.mismatch` and `snapshot.invalid` terminate the cycle on
+the first failure. The input is an allowlisted code, never an arbitrary error string. Editor
+retry requires failure in the current generation or an expired active claim, cannot displace
+an unexpired claim, and preserves intent/key/request time. Already-queued new generations
+cannot retry again using an older generation's failure. Terminal corruption is never
+automatically repaired/overwritten; explicit retry preserves the same bytes after operator
+intervention rather than authorizing a new draft or different artifact.
+
+The dispatcher post-validates successful `claimPublication` responses with a strong current
+state read and fresh server clock. This includes core idempotent/concurrent-response replay:
+a once-successful response is now a conflict if its claim expired, completed, was replaced,
+or has not started under a regressed clock. This app-only check avoids modifying core or
+returning an old fencing grant indefinitely. Same-payload retries within a live claim retain
+the original response; a genuinely new attempt must use a new UUID/key. Different payloads
+at the same key still fail the ordinary fingerprint check.
+
+Claim/outcome/lease-expiry facts carry a redacted attempt view, without fencing tokens.
+The app planner derives at most two typed attempt operation records per command plus
+all/per-content history projections, sharing the primary state/activity/outbox/idempotency/
+receipt transaction. Immutable keys are `OPS#publicationAttempt` /
+`<contentId>#<publicationId>#<attemptId>#<stage>`; generation is metadata, not part of the
+uniqueness key, so old attempt UUIDs cannot be reused across generations. Claim replacement
+or retry closes an expired predecessor in the same commit. The query projections are
+`contentItem.publicationAttempts` and `contentItem.publicationAttempts.<contentId>`, with
+immutable start-time/attempt sort keys and current stage data. Both adapters stage all
+records atomically; auxiliary collision rolls everything back. The 60-action budget and
+physical-key deduplication still cover the composed transaction.
+
+The stage facts are `publicationClaimed`, `publicationAttemptSucceeded`,
+`publicationAttemptFailed`, and `publicationLeaseExpired`. Requested/retried facts carry
+the complete frozen intent; published/terminal-failure facts carry bounded outcome metadata.
+All are version 1 and use the existing envelope/correlation/causation path. Internal publisher
+and due-worker roles are not exposed as UI commands or fixture choices. No `publishContent`
+handler/subscription is registered until Phase 11 can actually write/verify objects. Phase 10
+completion accepts trusted internal metadata (fixed key, SHA-256 shape, at most 80 KiB) but
+does not claim object existence, serialization/digest equality, or cloud execution.
 
 ## Asset Protocol
 

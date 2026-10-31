@@ -36,6 +36,11 @@ import {
 import { limits } from "../shared/validation";
 import { createAssetResource } from "./asset-resource";
 import { contentWorkers } from "./subscriptions";
+import {
+  createPublicationCommands,
+  dueWorkerIdentity,
+  publisherIdentity,
+} from "./publication-commands";
 
 type ResourceOptions = Readonly<{ newId?: () => string }>;
 type ContentResponse = Readonly<{
@@ -45,6 +50,9 @@ type ContentResponse = Readonly<{
   status: ContentState["status"];
   reviewId?: string;
   assetId?: string;
+  publicationId?: string;
+  generation?: number;
+  claim?: NonNullable<ContentState["publication"]>["claim"];
 }>;
 const fail = (
   code: ConstructorParameters<typeof JawStackRuntimeError>[0],
@@ -90,13 +98,28 @@ function actor(auth: AuthContext) {
 function storedContent(
   context: CommandContext,
   expectedVersion: number,
-  policy: "ownerOrEditor" | "editor" | "uploadVerifier" | "assetJanitor",
+  policy:
+    | "ownerOrEditor"
+    | "editor"
+    | "uploadVerifier"
+    | "assetJanitor"
+    | "publisher"
+    | "dueWorker",
 ): ResourceState<ContentState> {
   const identity =
-    policy === "uploadVerifier" || policy === "assetJanitor"
+    policy === "uploadVerifier" ||
+    policy === "assetJanitor" ||
+    policy === "publisher" ||
+    policy === "dueWorker"
       ? (serviceActor(
           context.auth,
-          policy === "uploadVerifier" ? uploadVerifierIdentity : assetJanitorIdentity,
+          policy === "uploadVerifier"
+            ? uploadVerifierIdentity
+            : policy === "assetJanitor"
+              ? assetJanitorIdentity
+              : policy === "publisher"
+                ? publisherIdentity
+                : dueWorkerIdentity,
         ),
         undefined)
       : actor(context.auth);
@@ -144,6 +167,7 @@ function finish(
   title: string,
   reviews: readonly EventDraft[] = [],
   asset?: AssetSlot,
+  payloadOverride?: unknown,
 ): CommandDecision<ContentState, ContentResponse> {
   const parsed = contentStateSchema.safeParse(candidate);
   if (!parsed.success)
@@ -157,6 +181,7 @@ function finish(
   if (!versionSchema.safeParse(version).success)
     return fail("resource.invalid_state", "Content version is exhausted.");
   const payload =
+    payloadOverride ??
     asset ??
     (["contentItem.reviewRequested", "contentItem.reviewDecided"].includes(eventType)
       ? next.review
@@ -189,6 +214,13 @@ function finish(
       status: next.status,
       ...(next.review ? { reviewId: next.review.reviewId } : {}),
       ...(asset ? { assetId: asset.assetId } : {}),
+      ...(next.publication
+        ? {
+            publicationId: next.publication.intent.publicationId,
+            generation: next.publication.generation,
+          }
+        : {}),
+      ...(eventType === "contentItem.publicationClaimed" ? { claim: next.publication!.claim } : {}),
     },
   };
 }
@@ -210,7 +242,17 @@ export function createContentItemResource(options: ResourceOptions = {}) {
     const value = (options.newId ?? (() => globalThis.crypto.randomUUID()))();
     if (
       !idSchema.safeParse(value).success ||
-      [context.resourceId, previous?.revisionId, previous?.review?.reviewId].includes(value) ||
+      [
+        context.resourceId,
+        previous?.revisionId,
+        previous?.review?.reviewId,
+        previous?.schedule?.generation,
+        previous?.publication?.intent.publicationId,
+        previous?.publication?.claim?.attemptId,
+        previous?.publication?.claim?.fencingToken,
+        previous?.publication?.lastAttempt?.claim.attemptId,
+        previous?.publication?.lastAttempt?.claim.fencingToken,
+      ].includes(value) ||
       previous?.attachments.some((slot) => slot.assetId === value)
     )
       return fail("runtime.internal", "ID generator did not produce a fresh UUID.");
@@ -223,6 +265,13 @@ export function createContentItemResource(options: ResourceOptions = {}) {
     state: contentUi.state,
     views: contentUi.views,
     commands: {
+      ...createPublicationCommands({
+        load: storedContent,
+        newId,
+        fact,
+        finish: (context, previous, next, event, title, payload, extra = []) =>
+          finish(context, previous, next, event, title, extra, undefined, payload),
+      }),
       create: defineCommand({
         ...contentUi.commands.create,
         emits: [{ eventType: "contentItem.created", schemaVersion: 1 }],
@@ -244,6 +293,7 @@ export function createContentItemResource(options: ResourceOptions = {}) {
               review: null,
               approval: null,
               schedule: null,
+              publication: null,
             },
             "contentItem.created",
             "Created draft",

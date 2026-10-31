@@ -48,8 +48,10 @@ export function createMemoryPersistence() {
                 "idempotency.conflict",
                 "Idempotency key was already committed.",
               );
-            const opKey = JSON.stringify(operationKey(plan.operation));
-            if (operations.has(opKey))
+            const operationEntries = plan.operations.map(
+              (record) => [JSON.stringify(operationKey(record)), record] as const,
+            );
+            if (operationEntries.some(([key]) => operations.has(key)))
               throw new JawStackRuntimeError(
                 "resource.conflict",
                 "Operation receipt already exists.",
@@ -77,7 +79,7 @@ export function createMemoryPersistence() {
             store.outbox.push(...staged.outbox);
             store.projections.clear();
             for (const [k, v] of projections) store.projections.set(k, v);
-            operations.set(opKey, plan.operation);
+            for (const [key, record] of operationEntries) operations.set(key, record);
             idempotency.set(key(plan.commit.idempotency!.key), {
               ...plan.commit.idempotency!,
               expiresAt: plan.expiresAt,

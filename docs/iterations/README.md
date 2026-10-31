@@ -6,10 +6,10 @@ release the framework.
 
 ## Index
 
-| Iteration                                                   | Status            | Outcome                                                                                                    |
-| ----------------------------------------------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------- |
-| [001: Foundation](001-foundation/README.md)                 | Archived baseline | Merged and tagged `v0.0.1` in Git; npm publication and `0.1.0` deferred.                                   |
-| [002: Content Operations](002-content-operations/README.md) | Phase 9 complete  | Headless memory workflow, shared materializers and atomic notification sink verified; publication is next. |
+| Iteration                                                   | Status            | Outcome                                                                                               |
+| ----------------------------------------------------------- | ----------------- | ----------------------------------------------------------------------------------------------------- |
+| [001: Foundation](001-foundation/README.md)                 | Archived baseline | Merged and tagged `v0.0.1` in Git; npm publication and `0.1.0` deferred.                              |
+| [002: Content Operations](002-content-operations/README.md) | Phase 10 complete | Scheduling/fenced publication domain and atomic attempt history verified; artifact execution is next. |
 
 ## Planning Flow
 
