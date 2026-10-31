@@ -1,8 +1,12 @@
 # JawStack Implementation Plan
 
+> Historical plan for [Iteration 1: Foundation](README.md). The merged baseline is tagged
+> `v0.0.1`; the `0.1.0` release-candidate phase remains deferred. The acceptance criteria
+> below record intended verification, not evidence that every optional AWS check was run.
+
 ## Purpose
 
-This plan breaks the PRD and technical design into implementation phases sized for one normal code-review-commit cycle. Each phase should leave the repository in a working state with tests passing and a coherent diff.
+This plan breaks the [PRD](prd.md) and [technical design](technical-design.md) into implementation phases sized for one normal code-review-commit cycle. Each phase should leave the repository in a working state with tests passing and a coherent diff.
 
 The phases are intentionally smaller than product milestones. The PRD describes the v0.1 product, the technical design describes the architecture, and this plan describes the practical build order.
 
@@ -335,7 +339,7 @@ Out of scope:
 
 Acceptance criteria:
 
-- All key formats match `docs/technical-design.md`.
+- All key formats match the [technical design](technical-design.md).
 - Item mappers round-trip representative Work Request state, activity, outbox, idempotency, and projection records.
 - Transaction builder produces the expected put/update/delete operations for create and update commands.
 

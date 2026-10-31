@@ -1,0 +1,708 @@
+# Iteration 2 Implementation Plan: Content Operations
+
+Status: reviewed. Phase 0 is complete, including live proof and workspace regression
+checks. Phase 1 and subsequent phases have not started.
+
+## Purpose
+
+Implement the [PRD](prd.md) and [technical design](technical-design.md) as focused phases,
+each sized for one code -> user review -> user commit cycle. The agent implements and
+verifies; the user reviews and commits. Do not automatically commit, push, merge, tag,
+publish packages, or bump versions.
+
+The deliverable is a useful content-operations consumer with verified local AWS integration
+and narrowly motivated framework improvements. It is not a mandatory `v0.0.2` release.
+
+This plan has 25 phases, numbered 0-24. Their number reflects review boundaries, not
+product milestones or elapsed-time estimates. Split a phase before implementation if its
+diff cannot be reviewed coherently; do not turn a phase into several unreviewed cycles.
+
+## Execution Rules
+
+- Read the current code and prior phase evidence before starting. Work with existing changes.
+- Keep each phase buildable and testable. Add tests with the behavior they exercise; do not
+  merge knowingly failing tests for features assigned to later phases.
+- Implement consumer policy in `apps/content-operations`, reusable contracts in the owning
+  packages, and lab/verification tooling at the narrowest useful ownership boundary.
+- Consume public package exports. Do not copy Work Request logic, deep-import internals,
+  use array positions for CDK grants, or introduce speculative modules.
+- Preserve the generated Work Requests starter and existing public APIs unless an explicit
+  reviewed contract change is necessary. Document compatibility and regression coverage.
+- Default tests, builds, typechecks, imports, and configuration loading must not start Docker,
+  need secrets, use cloud credentials, or issue AWS requests.
+- Never add a no-op handler or success-shaped placeholder to claim a workflow is complete.
+  Do not expose a UI control or HTTP route until its behavior is implemented and tested.
+- Update phase status and record actual commands/results as work progresses. Distinguish
+  passed, failed, and not-run checks; do not mark a whole group complete at the end.
+- Keep documentation current within each phase. The final documentation phase consolidates
+  and audits it; it does not postpone instructions required to run earlier work.
+
+Commands and application paths below are implementation targets. Most app scripts do not
+exist yet. Introduce them in their owning phases, not as empty placeholders in this docs change.
+
+## Verification Levels
+
+Every code phase runs focused tests plus relevant typecheck/lint/build checks and
+`git diff --check`. Use the repository's `.nvmrc` and pinned pnpm. Documentation changes
+also pass `pnpm format:check` and local Markdown link checks.
+
+Framework phases run the affected package tests and relevant dependent-consumer tests.
+After changing public contracts, run workspace typecheck/test/build, package guard, isolated
+generated-app verification, and package dry runs. A passing workspace alias is not proof
+that an installed package works.
+
+Consumer phases run the app's credential-free suite and workspace regression tests. Run
+LocalStack scenarios when they exercise a changed AWS boundary; make the particular
+scenario and runtime explicit. Never substitute a mocked SDK test for integration evidence.
+
+Browser phases run Playwright against real local servers and inspect desktop/mobile
+screenshots. Final verification includes `pnpm verify:release`, the complete memory browser
+suite, and the full local integration gate. These are separate gates: the existing release
+script alone does not establish Iteration 2 acceptance.
+
+## Feasibility Gate
+
+Phases 0-1 are the two-phase LocalStack spike required by the design. Before running them,
+verify a suitable container runtime, a user-provided LocalStack token, Hobby entitlement,
+and acceptable local machine resources. Do not print the token, search credential stores
+for one, activate a paid trial, or use a real AWS account as a fallback.
+
+Documentation preparation does not execute the spike. During implementation, normal
+explicit local commands may start the dedicated lab, but real-AWS deployment is outside
+this plan and requires a separate decision.
+
+Select and pin the actual emulator image during the spike and record its digest. Evidence
+must identify the entitlement, host/container architecture, tested operations, exclusions,
+durations, and cleanup result. A tokenless run is not a pass. Do not proceed to dependent
+integration work without a passing gate; if a required service path fails, propose a scoped
+design/PRD revision rather than silently emulating or bypassing it. Unrelated memory-only
+work may proceed only after an explicit sequencing decision, without claiming the gate passed.
+
+## Phase Index
+
+| Phase | Primary Owner              | Deliverable                                               | Status   |
+| ----- | -------------------------- | --------------------------------------------------------- | -------- |
+| 0     | Consumer tooling           | Isolated lab and transactional event spine                | Complete |
+| 1     | Consumer tooling           | S3, Scheduler, DLQ, teardown proof and gate decision      | Planned  |
+| 2     | Core                       | Paged query contracts and memory implementation           | Planned  |
+| 3     | AWS runtime                | DynamoDB paged query implementation                       | Planned  |
+| 4     | Angular                    | Browser-safe presentation contract and structured errors  | Planned  |
+| 5     | AWS CDK                    | Named worker/scheduler bindings                           | Planned  |
+| 6     | Consumer domain            | Draft and review aggregate                                | Planned  |
+| 7     | Consumer persistence       | Scoped dispatch, atomic operation records and projections | Planned  |
+| 8     | Consumer services          | Attachment lifecycle and verified object storage          | Planned  |
+| 9     | Consumer workers           | Materializers, notification sink and memory event pump    | Planned  |
+| 10    | Consumer domain            | Publication intent, claims and generation transitions     | Planned  |
+| 11    | Consumer workers           | Recoverable publication execution                         | Planned  |
+| 12    | Consumer jobs              | Due work, reminders, time zones and cleanup               | Planned  |
+| 13    | Consumer operations        | Failure collection and bounded recovery                   | Planned  |
+| 14    | Consumer API               | Loopback HTTP, bounded queries and typed routes           | Planned  |
+| 15    | Consumer UI                | Workbench, drafting and browser boundary                  | Planned  |
+| 16    | Consumer UI                | Review queue, frozen snapshots and activity               | Planned  |
+| 17    | Consumer UI                | Attachments and publication preview                       | Planned  |
+| 18    | Consumer UI                | Scheduling, calendar and agenda                           | Planned  |
+| 19    | Consumer UI                | Operations, outcomes and retry controls                   | Planned  |
+| 20    | Consumer AWS               | Actual app bundles and LocalStack runtime wiring          | Planned  |
+| 21    | Consumer infrastructure    | CDK composition and topology assertions                   | Planned  |
+| 22    | Integration verification   | Full local workflow, failure and isolation evidence       | Planned  |
+| 23    | Browser/CI verification    | Complete browser acceptance and PR/manual gates           | Planned  |
+| 24    | Documentation/verification | Acceptance audit and merge readiness                      | Planned  |
+
+Follow this order by default. Later phases may reuse earlier services but must not depend
+on unimplemented later UI, infrastructure, or tests. Keep implementation discoveries in
+the design and phase log rather than quietly changing the acceptance criteria.
+
+## Phase 0: Isolated Lab and Transactional Event Spine
+
+Goal: prove a minimal real service path using existing public JawStack adapters.
+
+Scope:
+
+- Introduce the private `content-operations` workspace package with working typecheck,
+  test, lint, and build scripts for the harness; no Angular shell or editorial model yet.
+- Keep live scenarios outside default unit-test discovery from the outset, using explicit
+  integration configuration/scripts rather than token-dependent `*.test.ts` files.
+- Add strict runtime selection, dummy-credential SDK factories, host/container endpoint
+  checks, outgoing transport guards, and credential-free negative tests.
+- Add dedicated Compose startup/readiness and exact ownership manifests/cleanup for the
+  resources created in this phase. Do not leave cleanup until the application is finished.
+- Provision a table/stream, event bus, SQS queue, required policies/roles, bundled outbox
+  dispatcher, and a minimal observable worker through SDK calls and direct ZIP uploads.
+- Execute a small test resource command through scoped DynamoDB persistence, then observe
+  its real stream -> dispatcher -> EventBridge -> SQS -> Lambda outcome.
+
+Out of scope: new framework APIs, editorial features, paid CDK asset deployment, and AWS deploys.
+
+Acceptance:
+
+- Negative configurations fail before a transport request; imports/default tests need no Docker/token.
+- A command atomically stores state/activity/projection/idempotency/outbox and reaches the
+  bundled worker without a direct worker call or manually published replacement event.
+- Startup/readiness, image pin, topology, result, and cleanup are recorded in a nonempty
+  `localstack-evidence.md`; missing prerequisites or failed paths are reported accurately.
+
+Verification: harness unit/transport tests, workspace checks, explicit spine scenario,
+and a teardown/restart of the owned lab. Status remains incomplete if the live proof cannot run.
+
+## Phase 1: Storage, Scheduling, DLQ, and Gate Decision
+
+Depends on: Phase 0.
+
+Scope:
+
+- Extend the same harness with private S3 conditional creation/readback and duplicate handling.
+- Provision a Scheduler target and observe at least one automatic rate-triggered invocation.
+- Inject a worker failure, observe actual queue redrive to a DLQ, and persist its outcome
+  through a minimal failure collector before acknowledging the DLQ message.
+- Verify host/Lambda networking, SQS URL validation, bounded retries/timeouts, and ownership-safe
+  reset/teardown, including spawned Lambda containers and an unrelated-resource sentinel.
+- Record Hobby entitlement, exact image/architecture, CDK/API Gateway and Scheduler fidelity
+  exclusions, complete pass/fail/not-run results, and the go/no-go decision.
+
+Out of scope: the finished publication protocol, application UI, and a generic provisioner.
+
+Acceptance:
+
+- All six feasibility checks in the technical design have observed results on the pinned image.
+- Duplicate S3 writes converge, the automatic scheduler outcome is distinct from a manual trigger,
+  failed messages are retained durably, and cleanup leaves the unrelated sentinel untouched.
+- A failed critical check stops dependent work for explicit design review; a passing harness
+  becomes the foundation of later app verification rather than a disconnected throwaway demo.
+
+Verification: full harness scenarios, negative/cleanup tests, and reviewed evidence. This
+phase's live gate cannot be replaced by unit tests or a successful paid trial.
+
+## Phase 2: Core Paged Queries
+
+Depends on: passing feasibility gate, unless sequencing is explicitly revised.
+
+Scope:
+
+- Add public `Page`, `ProjectionQuery`, `ActivityQuery`, and query-repository contracts.
+- Implement memory projection/activity paging with the designed ordering, range bounds,
+  page limits, direction, and continuation semantics.
+- Validate versioned cursor structure and query scope without exposing a raw database API.
+- Keep existing array-returning methods and command/resource contracts compatible.
+
+Acceptance:
+
+- Tests cover tied timestamps, empty pages, invalid/reused cursors, deleted continuation
+  items, ascending/descending reads, and exact range boundaries without gaps or duplicates.
+- Existing core and Work Requests tests pass; types are available from public exports.
+
+Verification: core tests, typecheck/build, dependent tests, and the public-contract regression gate.
+
+## Phase 3: DynamoDB Paged Queries
+
+Depends on: Phase 2.
+
+Scope:
+
+- Implement `queryProjection` and `queryActivity` using public keys/mappers and DynamoDB Query.
+- Preserve `LastEvaluatedKey` and validate partition/range/direction on continuation.
+- Share query contract cases with memory; keep filtering budgets in the consumer layer.
+- Extend the live harness with a multi-page dataset and projection-sort movement checks.
+
+Acceptance:
+
+- SDK contract tests and LocalStack reads agree with memory on ordering and continuation.
+- No method silently truncates the new paged contract or reads an arbitrary caller-supplied key.
+- Existing adapters, generated app, and package verification remain working.
+
+Verification: AWS runtime tests, shared contract cases, live paging scenario, and public-contract gate.
+
+## Phase 4: Angular Presentation Metadata and Errors
+
+Depends on: Phase 3; no consumer UI prerequisite.
+
+Scope:
+
+- Export `ResourceUiDefinition` with presentation fields and command schemas but no executor.
+- Narrow component/config inputs to that structural contract while retaining assignment
+  compatibility with existing full resource definitions.
+- Export `JawStackApiError` carrying code/status/details/correlation ID and use it in the
+  default fetch client without breaking normal `Error` handling.
+- Add presentation-only component tests and regression tests for existing definitions/errors.
+
+Acceptance:
+
+- Components accept metadata without fake `decide` functions or server imports.
+- HTTP conflict/permission errors are distinguishable without parsing English messages.
+- Existing Angular tests, demo build, and isolated generated-app build still pass.
+
+Verification: Angular component tests, library build, consumer builds, and public-contract gate.
+
+## Phase 5: Named CDK Bindings
+
+Depends on: Phase 4.
+
+Scope:
+
+- Expose `workerBindingsByName` and `schedulerFunctionsByName` as readonly records.
+- Include worker function, queue, and DLQ in each worker binding; reject duplicate names.
+- Preserve existing props, arrays, logical IDs, and baseline topology.
+- Test adding application-owned grants/collectors through public bindings, not tree inspection.
+
+Acceptance:
+
+- Bindings resolve the correct declared names and missing/duplicate cases fail clearly.
+- Synth assertions demonstrate targeted S3 grants and scheduler write grants without AWS requests.
+- Existing CDK and generated-app synthesis tests pass unchanged in behavior.
+
+Verification: CDK tests/synth and public-contract gate. No deployment is performed.
+
+## Phase 6: Draft and Review Aggregate
+
+Depends on: Phases 2-5.
+
+Scope:
+
+- Define complete Zod state/input/event schemas, fixture identities, payload bounds,
+  presentation metadata, and pure resource factories for content and review tasks.
+- Implement create/edit, submit, approve, request changes, reopen, and eligible archive decisions.
+- Make content authoritative; distinguish resource version, revision ID, and review ID.
+- Emit complete immutable review snapshots and projection plans for later materialization.
+- Test decisions through `executeCommand` with memory persistence; keep config/imports side-effect free.
+
+Out of scope: asset bytes, publication execution, HTTP, and UI.
+
+Acceptance:
+
+- Ownership, editor-only actions, invalid transitions, expected-version conflicts, stale
+  approvals, payload limits, and frozen snapshots have executable tests.
+- Review resources cannot independently authorize an editorial decision, and no Work Request helper is used.
+
+Verification: consumer domain tests, app typecheck/lint/build, and workspace regression tests.
+
+## Phase 7: Scoped Dispatch and Atomic Persistence
+
+Depends on: Phase 6.
+
+Scope:
+
+- Implement invocation-scoped memory/DynamoDB repositories and dispatch/unit-of-work factories.
+- Add logical idempotency expiry, matching command/subject scope, and concurrent replay handling.
+- Compose public transaction builders with bounded app operation records and equivalent atomic
+  memory behavior; preserve primary version/idempotency checks.
+- Implement old-key deletion/new-key insertion for projection moves, action deduplication,
+  and the 60-action application transaction budget.
+
+Acceptance:
+
+- Tests prove rollback, concurrent equivalent replay returning the stored response, conflicting
+  reuse rejection, distinct subject/command scopes, expiry, and no shared mutable request scope.
+- Projection moves behave identically across adapters and do not retain stale rows or issue
+  two transaction actions on the same physical key.
+
+Verification: memory/SDK contract tests, scoped live transaction scenario, and workspace regressions.
+
+## Phase 8: Attachment Lifecycle and Object Store
+
+Depends on: Phase 7.
+
+Scope:
+
+- Implement bounded content-owned attachment slots and asset snapshot schemas/resource factory.
+- Add registration, internal verified completion, removal/expiry, revision invalidation,
+  and ready-only submission rules.
+- Implement memory and guarded S3 object-store adapters with generated keys, conditional
+  creation, digest/readback, limits, and PNG/JPEG/PDF signature detection.
+- Add a transport-independent bounded upload service; HTTP routing follows in Phase 14.
+
+Acceptance:
+
+- Interrupt/retry, duplicate/different bytes, oversize/wrong type, malicious filenames,
+  cross-content IDs, and removal/completion/submission races are tested.
+- Only trusted verification can mark a slot ready; approved object references cannot be overwritten/deleted.
+
+Verification: upload/domain adapter contracts, focused live S3 scenario, and app/workspace checks.
+
+## Phase 9: Materializers, Notification Sink, and Memory Pump
+
+Depends on: Phase 8.
+
+Scope:
+
+- Implement review/asset snapshot application with source-version checks, tombstones,
+  optimistic retries, and complete out-of-order upserts.
+- Implement the durable local notification sink with stable delivery IDs and atomic query records.
+- Add the explicit memory outbox pump, shared event handlers, bounded processing/retry state,
+  and deterministic clock/drain hooks without emulating AWS infrastructure.
+- Register only implemented subscriptions; retain correlation/causation and validate source/payloads.
+
+Acceptance:
+
+- A completed review arriving before its opening event cannot become pending again; a removed
+  asset cannot be resurrected by late events.
+- Concurrent/late duplicate notification events produce one visible sink delivery, including
+  after transport-marker expiry; materializer outputs do not create event loops.
+- A memory draft/review/attachment workflow has observable related resources and notifications.
+
+Verification: worker and memory-flow tests, notification atomicity tests, and workspace regressions.
+
+## Phase 10: Publication Intent and Execution State
+
+Depends on: Phase 9.
+
+Scope:
+
+- Implement schedule/reschedule/cancel, publish-now/due-request, claim, completion/failure,
+  and explicit retry decisions with strict actor/internal-command rules.
+- Freeze approved publication identity/snapshot/timestamp; separate generations and attempt IDs.
+- Add lease/fencing state, atomic operation history, and publishing locks against editorial mutation.
+- Test state transitions with an injected clock before adding external writes.
+
+Acceptance:
+
+- Schedule/reopen/cancel races have one authoritative winner; stale generations cannot publish.
+- Lease expiry does not unlock editing, and stale attempts cannot complete/fail a newer claim.
+- Retry keys do not replay an expired claim indefinitely; explicit retry preserves artifact identity.
+
+Verification: domain/concurrency/lease tests and app/workspace checks. No publication handler is
+exposed as complete until Phase 11 supplies actual object execution.
+
+## Phase 11: Recoverable Publication Worker
+
+Depends on: Phase 10.
+
+Scope:
+
+- Implement stable schema-versioned JSON serialization/digest and the claim -> conditional
+  write/verify -> completion protocol using both object-store adapters.
+- Register the shared publisher in the memory pump and a bundled SQS entrypoint using the
+  framework adapter; mark processing complete only after the domain commit.
+- Persist attempt outcomes and emit success/terminal-outcome facts without direct provider calls.
+- Add exact-operation failure injection for tests, not a user-accessible failure endpoint.
+
+Acceptance:
+
+- Concurrent duplicates and a crash after object creation recover to one logical publication.
+- Existing matching artifacts recover; mismatched digests fail visibly without overwrite.
+- In-progress competing claims retry rather than acknowledging the event as successfully processed.
+
+Verification: worker crash/lease/marker-gap tests, memory publish flow, and focused live artifact scenario.
+
+## Phase 12: Due Work, Reminders, Time Zones, and Cleanup
+
+Depends on: Phase 11.
+
+Scope:
+
+- Implement recurring due-publication/review jobs with authoritative rereads, generation checks,
+  fixed-cutoff checkpoint cursors, short job leases, and per-tick work/time budgets.
+- Add one-reminder-per-review-per-UTC-day policy and notification emission in the same commit.
+- Add explicit-offset UTC input validation and Temporal local-time conversion/disambiguation.
+- Implement bounded slot expiry and old-orphan cleanup using authoritative state, preserving
+  approved/published objects and tombstones until safe removal.
+
+Acceptance:
+
+- Repeated/overlapping ticks do not duplicate publication or reminders, and a failing old
+  item cannot starve later work across checkpointed passes.
+- DST gaps/folds, stale schedules, stopped/restarted clocks, upload expiry, and safe orphan
+  deletion have tests; cleanup never trusts an asset read model alone.
+
+Verification: fake-clock/domain/job tests, object cleanup contracts, and workspace regressions.
+
+## Phase 13: Failure Collection and Bounded Recovery
+
+Depends on: Phase 12.
+
+Scope:
+
+- Implement durable failed-delivery records and the shared DLQ collector, including safe
+  repeated collection and live/stale publication-claim reconciliation.
+- Implement editor publication retry and `jobs:inspect` / `jobs:replay` for allowlisted failures.
+- Persist recovery state plus outbox atomically, enforce three manual cycles, and preserve
+  original event/business identity while assigning a fresh transport ID.
+- Implement memory failure/recovery behavior with the same policies and bounded retention.
+
+Acceptance:
+
+- No DLQ message is acknowledged before durable collection and applicable state reconciliation.
+- Late failures cannot replace a newer success; a collector retry completes partially
+  recorded work rather than skipping necessary reconciliation.
+- Crash/replay and marker-expiry tests preserve one logical artifact/delivery; arbitrary payloads,
+  queue URLs, consumers, and exhausted recovery cycles are rejected.
+
+Verification: collector/recovery tests, memory terminal-failure walkthrough, and app/workspace checks.
+
+## Phase 14: Loopback HTTP and Bounded Application Queries
+
+Depends on: Phase 13.
+
+Scope:
+
+- Implement the app Node router, fixed fixture resolution, command allowlist, internal-command
+  exclusion, scoped dispatch, envelope/error mapping, Host/Origin checks, and size limits.
+- Add typed content/review/calendar/operations queries, safe cursor/filter composition,
+  paging budgets, and paged resource/activity reads.
+- Wire upload/download and committed publication preview routes to actual services.
+- Add `dev:api`, explicit runtime entrypoints, deterministic `seed`, health/manifest/fixtures,
+  and API documentation; no Angular screens in this phase.
+
+Acceptance:
+
+- An HTTP-only memory walkthrough creates, uploads, reviews, schedules/publishes, and inspects results.
+- Forged role/subject headers and internal command names fail; stale edits return structured
+  conflicts; private downloads validate authoritative references and never expose raw storage configuration.
+- Empty filtered pages retain continuation, filters cannot choose partitions, and query/JSON/upload limits hold.
+
+Verification: loopback API integration tests with managed server shutdown, query budget tests,
+config side-effect tests, app build, and workspace regressions.
+
+## Phase 15: Workbench and Draft Editor
+
+Depends on: Phase 14 and Angular contract from Phase 4.
+
+Scope:
+
+- Add the Angular/Vite shell, safe presentation metadata, typed application client,
+  fixture selector, and same-origin API proxy on the designated loopback ports.
+- Implement the real content board/list, create/detail/draft editing, URL filters and paging,
+  version-aware submission, unsaved-edit handling, and meaningful loading/error/empty states.
+- Introduce isolated Playwright setup and module-graph/browser-boundary verification;
+  exclude browser specs from unit discovery immediately, not at the final CI phase.
+- Add navigation destinations only as their screens become functional in later phases.
+
+Acceptance:
+
+- Author fixtures can create/edit their own draft; unauthorized/stale edits do not silently overwrite data.
+- Client builds need no Node HTTP shim, server resource factories, AWS SDK, or CDK imports.
+- Browser tests exercise real API-backed state at desktop/mobile widths and leave no test servers running.
+
+Verification: component/client tests, memory browser smoke/screenshots, bundle boundary check,
+app build, and workspace checks. Start the local dev servers and report their URLs for review.
+
+## Phase 16: Review Queue, Snapshots, and Activity
+
+Depends on: Phase 15.
+
+Scope:
+
+- Implement submission/editor selection, review queue assignment/overdue filters, and linked detail navigation.
+- Show immutable submitted snapshots and editor approve/request-change forms with decision notes.
+- Add the paged activity view, materialization-pending state, and permission/conflict feedback.
+- Keep decisions routed to content authority, not directly to review read-model mutation.
+
+Acceptance:
+
+- Browser tests complete author -> editor -> changes requested -> resubmission -> approval.
+- A stale review page cannot approve a reopened/new revision; history remains accessible and paginated.
+- Keyboard focus and narrow-screen layouts are verified with actual workflow data.
+
+Verification: component tests, expanded Playwright flow/screenshots, app build, and workspace checks.
+
+## Phase 17: Attachment UI and Publication Preview
+
+Depends on: Phase 16.
+
+Scope:
+
+- Add upload registration/progress/retry/removal controls and real image thumbnails/PDF downloads.
+- Show authoritative pending/ready/error states without treating an eventual asset row as permission.
+- Add publish-now outcome and committed snapshot preview/download using actual stored artifacts.
+- Test accessible file controls, malicious names, interrupted transfer feedback, and conflict preservation.
+
+Acceptance:
+
+- The browser uploads a valid fixture, previews/downloads it, and publishes approved content with usable references.
+- Invalid/oversize files fail clearly; failed uploads are never presented as ready; published assets remain read-only.
+- No fabricated thumbnail, static publication result, or executable inline document substitutes for real behavior.
+
+Verification: upload/preview component and browser tests, desktop/mobile checks, and app/workspace builds.
+
+## Phase 18: Scheduling, Calendar, and Agenda
+
+Depends on: Phase 17.
+
+Scope:
+
+- Add schedule/reschedule/cancel/reopen controls with explicit time-zone and future-time validation.
+- Implement month-grid/agenda views, URL date/zone state, bounded-range queries, and detail navigation.
+- Surface publishing locks, pending outcomes, and invalid/stale schedule conflicts.
+- Use the implemented due jobs; do not put a separate publication timer in the browser.
+
+Acceptance:
+
+- Browser tests schedule an item and observe publication, then prove cancel/reschedule invalidates old work.
+- DST-ambiguous input is rejected rather than silently shifted; calendar/agenda agree on displayed instants.
+- All actions work by ordinary keyboard-accessible controls without mandatory drag/drop.
+
+Verification: time/form/component tests, calendar browser scenarios/screenshots, and app/workspace checks.
+
+## Phase 19: Operations and Recovery UI
+
+Depends on: Phase 18.
+
+Scope:
+
+- Implement paged publication attempts, notification deliveries, and failure views with correlation detail.
+- Add eligible editor publication retry controls, stalled/live-lease distinctions, and clear recovery limits.
+- Implement the designed visibility-aware polling/backoff and preserve idempotency on network retries.
+- Link operational outcomes back to content/review history; keep development-only replay in its CLI.
+
+Acceptance:
+
+- Browser tests show queued/running/success/failure/stalled states from real memory runtime data.
+- A terminally failed publication can be explicitly retried without duplicating the artifact;
+  forbidden/ineligible actions remain rejected by the server even when invoked outside the UI.
+- Polling stops when hidden/settled and does not leak timers after navigation.
+
+Verification: polling/client/component tests, recovery browser walkthrough, screenshots, and app/workspace checks.
+
+## Phase 20: Actual Application AWS Runtime
+
+Depends on: Phase 19 and the passing feasibility harness.
+
+Scope:
+
+- Bind the app's scoped persistence, operations, objects, internal identities, shared handlers,
+  outbox adapters, Scheduler targets, workers, and collectors to guarded AWS clients.
+- Build the actual app Lambda bundles and extend the existing SDK provisioner to their declared topology.
+- Replace minimal harness payloads with real application scenarios while retaining the proven spine assertions.
+- Add `dev:api:local`, update `local:provision`/seed/reset/down ownership behavior, and document runtime differences.
+
+Acceptance:
+
+- The same app HTTP/UI can target LocalStack without domain/UI code changes or an AWS endpoint fallback.
+- Register all declared handlers, grants/policies, queues, schedules, S3 references, and log retention;
+  no missing handler becomes a no-op or a direct host-side replacement for a Lambda.
+- A real content command materializes related resources and reaches the actual publisher/notification consumers.
+
+Verification: bundle/import tests, live app happy path plus cleanup, negative transport tests,
+app build, and workspace regressions. Do not call CDK deployment or authorize real AWS mode.
+
+## Phase 21: Application CDK Composition
+
+Depends on: Phase 20 and named bindings from Phase 5.
+
+Scope:
+
+- Compose `JawStackResourceWorkflowApp`, private S3 storage, named worker grants, due-job
+  write grants, collectors, and the synthesis-only JSON ingress wrapper.
+- Use one infrastructure profile to compare supported lab topology/configuration with synth.
+- Keep fixture auth visibly `dev`, reject non-local execution, and make configuration/synth side-effect free.
+- Document explicit differences: local HTTP ingress, SDK provisioning, batching/architecture where
+  applicable, absent IAM enforcement proof, and no real CloudFormation deployment.
+
+Acceptance:
+
+- Synth assertions demonstrate expected events/queues/DLQs/schedules, targeted object grants,
+  explicit bounds, and no construct-tree or array-index dependencies.
+- Baseline construct IDs/behavior and the generated Work Requests path remain intact.
+- No app deploy command or misleading production-auth claim is introduced.
+
+Verification: app/CDK synth tests, public-contract regression gate, and topology comparison.
+
+## Phase 22: Full Local Integration and Failure Evidence
+
+Depends on: Phases 20-21.
+
+Scope:
+
+- Complete `verify:local` against the real app workflow, uploaded object, review materialization,
+  scheduled publication, notification sink, and paged operational queries.
+- Add duplicate/out-of-order delivery, transient failure, terminal DLQ/collector failure,
+  explicit recovery, object-write crash, lease expiry, and obsolete-generation scenarios.
+- Prove unsafe endpoints/credential inheritance yield zero AWS requests, and verify missing-service errors.
+- Repeat ownership-safe reset/teardown and update image/entitlement/architecture evidence with final results.
+
+Acceptance:
+
+- Verify authoritative state plus artifact/delivery counts, not just successful HTTP/PutEvents responses.
+- Observe at least one automatic Scheduler tick; report manually triggered diagnostic tests separately.
+- The final service path uses real streams/bus/queues/bundled Lambdas; it does not depend on
+  paid plan features, direct substitute calls, or fabricated cloud evidence.
+- All required scenarios have bounded deadlines, useful redacted diagnostics, and verified cleanup.
+
+Verification: full local integration gate with recorded results. If the token/runtime is
+unavailable, leave the gate not run and do not declare the iteration complete.
+
+## Phase 23: Browser Acceptance and CI Gates
+
+Depends on: Phase 22.
+
+Scope:
+
+- Consolidate Playwright acceptance across all five views, distinct fixtures, normal and failure workflows.
+- Verify desktop/mobile screenshots, keyboard/focus behavior, preserved navigation state,
+  no text overlap, and real image/artifact rendering.
+- Add the credential-free memory browser gate to PR verification and an isolated manual or
+  explicitly enabled trusted-PR LocalStack job with bounded artifacts/timeouts.
+- Exclude integration/browser files from default unit discovery and prevent secret use in untrusted fork code.
+
+Acceptance:
+
+- Memory browser checks run without Docker/tokens; the browser scenario can also target the verified local lab.
+- CI has PR/manual triggers only, no `push` trigger or unsafe `pull_request_target` execution.
+- Missing integration credentials are reported as not run, never as a successful integration gate.
+- Unit tests and browser runs terminate their managed processes and produce bounded failure diagnostics.
+
+Verification: browser suite/boundary checks, workflow configuration review, default workspace
+tests without secrets, and explicit integration-job evidence when configured.
+
+## Phase 24: Documentation and Merge Readiness
+
+Depends on: Phase 23 and successful local integration evidence.
+
+Scope:
+
+- Finalize app README, architecture/mode guide, setup/fixtures/walkthrough, service matrix,
+  safety controls, limits, cleanup, troubleshooting, and recovery instructions.
+- Update product/package docs for implemented public contracts without rewriting foundation history.
+- Create an iteration outcome summary mapping every acceptance criterion to commands/tests/evidence,
+  listing delivered consumer behavior, framework changes, gaps, and unperformed AWS checks.
+- Run the complete verification gates from a clean install/build context; address release-blocking
+  regressions before handing the diff to the user.
+- Assess whether a future framework release is justified, without preparing one implicitly.
+
+Acceptance:
+
+- A developer can follow the documented memory workflow and the separately provisioned Hobby workflow.
+- `pnpm verify:release`, the memory browser suite/bundle boundary check, and final
+  `verify:local` evidence pass; links/format/diff checks pass and known exclusions are explicit.
+- No versions, tags, npm publication, or real-AWS deployment are added merely to finish the iteration.
+- Work is left uncommitted for user review; the summary does not confuse merge readiness with release authorization.
+
+Verification: full workspace/generated-app/package checks, browser checks, recorded live
+integration gate, documentation walkthrough, local links, and `git diff --check`.
+
+## Acceptance Coverage
+
+| PRD Criterion | Primary Implementation Phases | Final Evidence                                                                         |
+| ------------- | ----------------------------- | -------------------------------------------------------------------------------------- |
+| AC-01         | 6-19                          | Seeded memory browser walkthrough and app README.                                      |
+| AC-02         | 6-9, 14, 20                   | Three public-resource read/command paths, typed queries, and related-resource results. |
+| AC-03         | 6-10, 14, 16                  | Ownership/version/review races, atomic commit contracts, and stale-page browser tests. |
+| AC-04         | 8-12, 17-20                   | Uploaded asset, approved snapshot, due job, actual artifact, and notification.         |
+| AC-05         | 10-12, 18, 22                 | Reopen/cancel/reschedule and delayed-generation tests across adapters.                 |
+| AC-06         | 0-1, 20-22                    | Hobby evidence for real transaction/stream/bus/SQS/Lambda/S3/Scheduler behavior.       |
+| AC-07         | 9-13, 19, 22                  | Duplicate/crash/failure/DLQ/replay outcomes and artifact/delivery counts.              |
+| AC-08         | 0-1, 8, 12, 20-22             | Zero-request negative transport tests and ownership-safe cleanup/sentinel evidence.    |
+| AC-09         | 14-19, 23                     | Five working views, keyboard states, paging, and desktop/mobile screenshots.           |
+| AC-10         | 2-5, throughout, 21, 24       | Existing consumer, public API, generated-app, and package regression gates.            |
+| AC-11         | Throughout, 22, 24            | Current docs, explicit service exclusions, recorded results, and iteration outcome.    |
+
+## Phase Evidence Log
+
+### Phase 0: October 31, 2026
+
+- Implemented the private consumer harness, pure proof resource, guarded SDK clients,
+  pinned Compose lab, explicit SDK provisioning, scoped command dispatch, receipt worker,
+  ownership-preflight reset, and teardown/restart commands.
+- App typecheck, lint, build, and 31 credential-free tests passed. The real transactional
+  stream -> EventBridge -> SQS -> Lambda proof passed, including command replay and
+  strongly checked records. Reset/reprovision and full teardown/restart proofs passed.
+- Recorded observed image, architecture, user-attested Hobby tier, timings, topology,
+  safety checks, and exclusions in [LocalStack Evidence](localstack-evidence.md).
+- `pnpm verify:release` passed: formatting, workspace typecheck, all 149 unit tests, lint,
+  builds, pkg-guard (zero findings), isolated generated-app verification, and six package
+  dry runs. Local Markdown links and `git diff --check` passed. Final owned containers and
+  network were confirmed absent after teardown.
+- Phase 1 S3/Scheduler/DLQ and live sentinel checks remain not run. No real AWS, package
+  release/version change, or automatic commit was performed.
+
+For later phases, append the date, meaningful behavior delivered, commands/results,
+not-run checks, design changes, and remaining limitations. Do not replace observed
+results with the phase's intended acceptance criteria.

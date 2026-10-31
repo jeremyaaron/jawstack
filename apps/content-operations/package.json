@@ -1,0 +1,36 @@
+{
+  "name": "content-operations",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit -p tsconfig.json && tsx scripts/build-lab.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --config vitest.config.ts",
+    "lint": "eslint src scripts test vitest.config.ts",
+    "local:up": "tsx scripts/lab.ts up",
+    "local:provision": "tsx scripts/lab.ts provision",
+    "local:reset": "tsx scripts/lab.ts reset",
+    "local:down": "tsx scripts/lab.ts down",
+    "verify:local": "tsx scripts/lab.ts verify"
+  },
+  "dependencies": {
+    "@aws-sdk/client-cloudwatch-logs": "3.1075.0",
+    "@aws-sdk/client-dynamodb": "3.1075.0",
+    "@aws-sdk/client-eventbridge": "3.1075.0",
+    "@aws-sdk/client-iam": "3.1075.0",
+    "@aws-sdk/client-lambda": "3.1075.0",
+    "@aws-sdk/client-sqs": "3.1075.0",
+    "@aws-sdk/util-dynamodb": "^3.996.5",
+    "@jawstack/aws-runtime": "workspace:*",
+    "@jawstack/core": "workspace:*",
+    "@smithy/node-http-handler": "4.8.2",
+    "fflate": "^0.8.2",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.1",
+    "tsx": "^4.20.6",
+    "vitest": "^3.0.0"
+  }
+}

@@ -2,6 +2,7 @@ node_modules/
 dist/
 cdk.out/
 coverage/
+**/.localstack/
 pnpm-lock.yaml
 docs/vision.md
 docs/vision-2.md

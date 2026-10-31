@@ -8,7 +8,7 @@ The MVP starter is intentionally narrow: it ships a Work Requests workflow that 
 
 ## Status
 
-JawStack is pre-release. The repository is ready for a `v0.0.1` dogfood tag, generated-app verification, package dry-run checks, and opt-in AWS dev deploy smoke testing. Package publication and npm release automation are still on the roadmap.
+JawStack is pre-release. The first foundation iteration is merged and tagged `v0.0.1` in Git. The repository includes generated-app verification, package dry-run checks, and opt-in AWS dev deploy smoke tooling. Packages are not published to npm. Iteration 2 has begun with a [LocalStack event-spine harness](apps/content-operations/README.md); the content-operations application remains planned. This does not imply a `v0.0.2` release.
 
 ## Quickstart
 
@@ -181,11 +181,11 @@ See [Cost Profile](docs/cost-profile.md).
 
 Start with [docs/README.md](docs/README.md).
 
-Planning documents are still available for contributors:
+Development planning is organized by iteration:
 
-- [PRD](docs/prd.md)
-- [Technical Design](docs/technical-design.md)
-- [Implementation Plan](docs/implementation-plan.md)
+- [Iteration Process and Index](docs/iterations/README.md)
+- [Iteration 1: Foundation](docs/iterations/001-foundation/README.md)
+- [Iteration 2: Content Operations](docs/iterations/002-content-operations/README.md)
 - [Release Checklist](docs/release-checklist.md)
 
 Early vision drafts are archived under `docs/internal/`.
@@ -194,8 +194,9 @@ Early vision drafts are archived under `docs/internal/`.
 
 Near-term:
 
-- Make the generated app meaningfully customizable beyond Work Requests
-- Generalize smoke tests beyond the Work Requests resource
+- Prove a bounded LocalStack integration path without requiring real AWS credentials
+- Build a content-operations reference application beyond Work Requests
+- Improve framework customization and verification where consumer requirements expose gaps
 - Add Changesets and npm publish workflow when packages are worth publishing
 
 Post-MVP directions:

@@ -1,10 +1,14 @@
 # JawStack Technical Design
 
+> Historical design for [Iteration 1: Foundation](README.md). This records the original
+> architectural intent, including proposals that differ from the `v0.0.1` implementation.
+> See the [current architecture overview](../../architecture-overview.md) for product behavior.
+
 ## Overview
 
 JawStack v0.1 is a TypeScript monorepo that produces a generated Angular and AWS resource workflow application.
 
-The product contract is defined in `docs/prd.md`. This technical design describes the concrete implementation choices for the MVP:
+The product contract is defined in the [foundation PRD](prd.md). This technical design describes the concrete implementation choices for the MVP:
 
 - Resource definitions are executable TypeScript metadata.
 - Command input validation is Zod-backed in v0.1.
