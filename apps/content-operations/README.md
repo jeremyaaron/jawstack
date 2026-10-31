@@ -10,9 +10,10 @@ immutable memory/local-S3 objects, and a bounded upload service. Phase 9 adds sh
 asset handlers, a local notification destination, and an explicit memory pump. Phase 10
 adds scheduling/publication intent, fenced execution state, and atomic attempt history.
 Phase 11 adds stable JSON artifacts, recoverable publication execution, outcome notifications,
-and a bundled SQS publisher entrypoint. Consumer Lambda/queue deployment, HTTP, automatic due
-jobs, and Angular UI remain later work. The live lab exercises the separate event spine,
-direct consumer transactions, attachments, and the shared publisher against real local S3/DynamoDB.
+and a bundled SQS publisher entrypoint. Phase 12 adds checkpointed due/reminder/asset jobs,
+strict local-time conversion, and conditional orphan cleanup. Consumer Lambda/queue/Scheduler
+deployment, HTTP, and Angular UI remain later work. The live lab exercises the separate event
+spine, direct consumer transactions, attachments, publication, and jobs on real local S3/DynamoDB.
 
 ## Credential-Free Checks
 
@@ -29,7 +30,7 @@ pnpm --filter content-operations run build
 ```
 
 These commands do not start Docker, load the token file, resolve AWS credentials, or
-connect to any AWS service. The build creates bundled Node 22 `spine.zip` and `publication.zip`
+connect to any AWS service. The build creates bundled Node 22 `spine.zip`, `publication.zip`, and `jobs.zip`
 Lambda archives under `dist/`; only the spine is provisioned by the current lab.
 Build the workspace once so the harness can bundle installed public package entrypoints.
 Unit tests are explicitly restricted to `test/unit/**/*.test.ts`; live integration is a
@@ -131,8 +132,9 @@ Factories generate separate revision/review UUIDs lazily, with injectable `newId
 Scheduling and publication commands and the publication-object writer are implemented.
 `publishNow` or an internal due request freezes an intent and queues a fact; draining the
 memory pump claims it, writes/verifies its immutable JSON artifact, completes the content,
-and delivers the outcome notification. Automatic due jobs and Temporal local-time/DST
-conversion remain Phase 12. Domain-only completion tests still use trusted metadata;
+and delivers the outcome notification. Recurring job handlers and Temporal local-time/DST
+conversion are implemented; their deployed consumer Scheduler wiring remains Phase 20.
+Domain-only completion tests still use trusted metadata;
 publisher tests additionally assert actual artifact bytes and digest.
 
 Core requires commands and separates create from update, so the review resource has two
@@ -157,7 +159,7 @@ below includes consumer transactions, not deployed editorial workers or an HTTP 
   full tombstone and change the draft revision; verified completion does not change membership.
 - There are at most 10 active slots and 32 total retained slots, including tombstones.
   The latter is a deliberate development bound: registration stops at capacity instead of
-  forgetting an object reference. Automatic expiry/orphan cleanup remains Phase 12. Verified
+  forgetting an object reference. Explicit maintenance ticks expire uploads/clean old unverified orphans; verified
   objects, including removed ones, are conservatively retained until explicit local reset.
 - PNG, JPEG, and PDF bytes are limited to 10 MiB per file; declared size/type must match
   actual bytes and an allowed leading signature. Filenames are display-only Unicode text
@@ -172,7 +174,8 @@ below includes consumer transactions, not deployed editorial workers or an HTTP 
   without overwrite. Memory defaults to 128 objects/128 MiB (configurable within bounded
   limits). S3 permits only the owned local bucket/region and declared local endpoints,
   dummy credentials, final transport checks, finite SDK retries/timeouts, and at most three
-  conditional 409 attempts. Neither adapter exposes deletion or an overwrite operation.
+  conditional 409 attempts. There is no overwrite or arbitrary-key deletion API; the internal
+  cleanup interface permits conditional deletion only at generated asset-original keys.
 - Only the internal upload verifier can run `completeUpload`. The service rereads and
   rechecks on at most three optimistic completion attempts; it never reapplies a stale
   decision after removal, expiry, or submission. A ready retry verifies the same bytes and
@@ -194,10 +197,10 @@ sanitization, antivirus scanning, or permission to embed PDFs as active document
 
 `src/domain/subscriptions.ts` advertises four implemented workers on `contentItem`:
 
-- `materializeReview`: requested, decided, and superseded review facts.
+- `materializeReview`: requested, decided, superseded, and reminder-recorded review facts.
 - `materializeAsset`: registered, ready, removed, and expired asset facts.
 - `publishContent`: publication requests/retries through the recoverable artifact protocol.
-- `deliverNotification`: review requests to the assigned editor; review decisions and
+- `deliverNotification`: review requests/reminders to the assigned editor; review decisions and
   publication success/terminal failure to the author.
 
 `src/application/workers.ts` supplies the shared transport-independent handlers. They validate
@@ -211,7 +214,7 @@ equal-version rewrites, and try at most three optimistic upserts. They use only 
 snapshot commands, preserve correlation, and use the incoming event ID as command request ID
 and downstream causation. Full closed/tombstone snapshots can arrive first. Neither
 `reviewTask.snapshotApplied` nor `asset.snapshotApplied` has subscribers; there is no loop.
-Reminder subscriptions remain unimplemented.
+Reminder facts carry their original business instant, preserving replay identity and ordering.
 
 The local notification sink is the delivery destination, not an email/Slack stub. Stable
 SHA-256 delivery IDs derive from original event ID, fixture recipient, and versioned template.
@@ -266,7 +269,7 @@ the live LocalStack harness below has not been extended to deploy these consumer
 - Schedule inputs require millisecond ISO timestamps with explicit offsets and valid IANA
   zones (or `UTC`). Store normalized UTC instants plus display-zone metadata. Times must be
   future at command time. This accepts absolute instants, not ambiguous local wall times;
-  local-time conversion/disambiguation still belongs to Phase 12.
+  `localTimeToUtc` supplies strict local-time conversion/disambiguation for future UI forms.
 - `requestDuePublication` requires the dedicated `due_worker`/`dueWorker` identity, current
   schedule generation/revision, and a due instant. `publishNow` can override an approved
   schedule immediately. Competing cancel/reopen/reschedule/due transitions have one versioned
@@ -331,6 +334,64 @@ creation. Redelivery after a marker gap or physical marker expiry uses domain de
 `publication.zip` exports `publisher` as the Lambda handler; deploying its route/mapping is
 Phase 20, not part of the current four-function feasibility lab. Lambda S3 construction
 requires the exact owned publisher context and fixed worker endpoint with dummy credentials.
+
+## Due Work and Maintenance
+
+`createContentJobs` exposes four named jobs, without starting timers or running work on import:
+`duePublication`, `dueReview`, `expireUploads`, and `cleanupOrphans`. Memory use is explicit:
+
+```ts
+await app.jobs.tick("duePublication");
+await app.jobs.tick("dueReview");
+await app.jobs.tick("expireUploads");
+await app.jobs.tick("cleanupOrphans");
+await app.drainUntilIdle();
+```
+
+Use the fixture clock to make work due; ticking never advances it or waits for future work.
+A tick queries at most 50 one-candidate pages and stops admitting work after 20 monotonic
+seconds (smaller bounded `maxItems`/`maxMs` overrides are available). A current SDK operation
+and checkpoint cleanup can finish afterward; all SDK requests retain finite retry/timeouts.
+Result fields expose `busy`/`yielded`/`completed`, examined/succeeded/ignored counts, and
+bounded sanitized item failures. Item failures advance the cursor so later work is not
+starved; the next completed pass restarts from the oldest due item. A time-exhausted candidate
+that has not attempted its effect keeps its old position.
+
+The memory/DynamoDB `JobStore` keeps one permanent checkpoint per name with a 30-second
+UUID-fenced lease, revision, fixed pass cutoff, and opaque public query cursor. Save progress
+after each candidate/empty service page; release on normal exit. Overlapping ticks return
+`busy`; a crashed owner expires, and a successor resumes its saved position. Conditional
+checkpoint writes reject stale owners even with an old clock. A changed clock never changes
+an ongoing pass's query bound; newly due items enter the next pass. Deleted cursor boundary
+items do not prevent continuation. These records are application-owned, not core item kinds.
+
+Jobs strongly reread content, not secondary resources. Publication checks current schedule/
+revision/generation and due instant before the internal command. Review reminders use the
+current pending review/revision and server UTC day. `recordReviewReminder` commits increasing
+`lastReminderDay`, source version, and the reminder fact atomically, without changing the
+draft revision or snapshot. A repeated or regressed day cannot send again. Closed/superseded
+reviews are not eligible; the reminder notification goes through the ordinary outbox/sink.
+
+Expiry targets pending draft slots at their logical deadline. Cleanup considers only retired,
+never-verified slots and requires both retirement and object age to be at least 24 hours.
+It checks strong content authority twice, refuses current review/publication references,
+and never uses `asset` materialization as deletion authority. S3 rechecks metadata, rejects
+versioned/suspended buckets, and deletes with the observed ETag; changed/young/missing objects
+do not count as deletions. Clock rollback cannot relax age checks. Verified historical
+objects, publication JSON, archived content, missing/corrupt authority, and every tombstone
+are retained. Even after deletion, tombstones are not reclaimed in this phase: this preserves
+identity against late writers and keeps the 32-retained-slot bound explicit.
+
+`src/shared/time.ts` imports pinned `@js-temporal/polyfill` without patching globals. Local
+date/time plus a valid IANA zone converts with `disambiguation: "reject"`; DST gaps/folds
+(including half-hour transitions) require correction. Review/schedule command inputs require
+millisecond ISO times with explicit offsets and normalize to UTC; server decisions still
+validate future times. Explicit offsets can identify either side of a fold without guessing.
+
+`jobs.zip` exports `scheduled`, composing the real jobs with DynamoDB checkpoints and guarded
+S3 behind the public Scheduler target adapter. The exact owned jobs Lambda context is allowed
+alongside the publisher's context. This bundle does not provision schedules: app Scheduler
+targets/routing/grants remain Phase 20/21. The current feasibility lab still has four functions.
 
 Published/terminal-failure facts include `outcomeAt` from the completed attempt. Versioned
 local notification templates use this business instant and original event ID, so replay
@@ -422,6 +483,12 @@ logical artifact plus expired/succeeded attempt history. A duplicate does not mu
 state. A second exact-key corrupt object causes terminal failure without overwrite. This
 proves the consumer object/transaction boundary, not its deployed SQS route; the separate
 spine continues to prove actual stream/bus/queue/Lambda delivery without direct invocation.
+
+The jobs proof uses real DynamoDB checkpoints and S3 conditional deletion with an injected
+clock. It checks overlapping publication ticks, review checkpoint restart and daily dedup,
+slot expiry, young-object retention, old-orphan deletion with tombstone retention, and
+expired-lease takeover/stale-writer rejection. This is a direct shared-service proof, not
+consumer Scheduler deployment. The separate automatic feasibility schedule is still tested.
 
 `--confirm-reset` is required because the full gate then deletes the owned proof dataset,
 checks that a separately owned sentinel table and its nonce survived, and reprovisions

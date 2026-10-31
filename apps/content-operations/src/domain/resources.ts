@@ -17,6 +17,7 @@ import {
   idSchema,
   instantSchema,
   reviewTaskStateSchema,
+  recordReviewReminderInput,
   versionSchema,
   type ContentEventType,
   type ContentState,
@@ -343,6 +344,7 @@ export function createContentItemResource(options: ResourceOptions = {}) {
             status: "pending",
             sourceVersion: previous.version + 1,
             decision: null,
+            lastReminderDay: null,
             submitted: {
               contentId: context.resourceId,
               authorId: previous.state.authorId,
@@ -365,6 +367,43 @@ export function createContentItemResource(options: ResourceOptions = {}) {
             { ...previous.state, status: "inReview", review: review.data },
             "contentItem.reviewRequested",
             "Submitted for review",
+          );
+        },
+      }),
+      recordReviewReminder: defineCommand({
+        title: "Record due review reminder",
+        roles: [dueWorkerIdentity.role],
+        input: recordReviewReminderInput,
+        emits: [{ eventType: "contentItem.reviewReminderRecorded", schemaVersion: 1 }],
+        decide: (context) => {
+          const previous = storedContent(context, context.input.expectedVersion, "dueWorker");
+          const current = previous.state.review;
+          requireThat(
+            previous.state.status === "inReview" && current?.status === "pending",
+            "Review is no longer pending.",
+          );
+          if (
+            current!.reviewId !== context.input.reviewId ||
+            previous.state.revisionId !== context.input.revisionId
+          )
+            return fail("resource.conflict", "Review or revision is no longer current.");
+          const remindedAt = context.now.toISOString();
+          const day = remindedAt.slice(0, 10);
+          requireThat(
+            current!.dueAt <= remindedAt &&
+              (!current!.lastReminderDay || current!.lastReminderDay < day),
+            "Review is not due or already reminded on this UTC day.",
+          );
+          const review = { ...current!, lastReminderDay: day, sourceVersion: previous.version + 1 };
+          return finish(
+            context,
+            previous,
+            { ...previous.state, review },
+            "contentItem.reviewReminderRecorded",
+            "Recorded due review reminder",
+            [],
+            undefined,
+            { contentId: context.resourceId, reviewId: review.reviewId, review, remindedAt },
           );
         },
       }),
@@ -685,9 +724,16 @@ export function createReviewTaskResource() {
         "A submitted review cannot be rewritten.",
       );
       requireThat(
+        !previous.lastReminderDay ||
+          (snapshot.lastReminderDay !== null &&
+            snapshot.lastReminderDay >= previous.lastReminderDay),
+        "Reminder history cannot regress.",
+      );
+      requireThat(
         previous.status === "pending" ||
           (previous.status === snapshot.status &&
-            isDeepStrictEqual(previous.decision, snapshot.decision)),
+            isDeepStrictEqual(previous.decision, snapshot.decision) &&
+            previous.lastReminderDay === snapshot.lastReminderDay),
         "Closed review outcomes cannot be changed.",
       );
     }

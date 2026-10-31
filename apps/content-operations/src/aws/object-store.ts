@@ -1,7 +1,20 @@
-import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import {
+  GetObjectCommand,
+  PutObjectCommand,
+  S3Client,
+  HeadObjectCommand,
+  DeleteObjectCommand,
+  GetBucketVersioningCommand,
+} from "@aws-sdk/client-s3";
 import { JawStackRuntimeError } from "@jawstack/core";
 import { objectReferenceSchema } from "../shared/assets";
 import type { PublicationIntent } from "../shared/contracts";
+import {
+  cleanupObjectKey,
+  objectObservationSchema,
+  type AssetCleanupStore,
+} from "../application/asset-cleanup";
+import { instantSchema } from "../shared/validation";
 import {
   inspectAsset,
   readBoundedBytes,
@@ -27,7 +40,7 @@ import {
 export function createLocalS3ObjectStore(
   config: Readonly<{ instanceId: string; endpoint: string; region: string; bucket: string }>,
   options: { execution?: "host" | "lambda" } = {},
-): AssetObjectStore & PublicationObjectStore & { close(): void } {
+): AssetObjectStore & PublicationObjectStore & AssetCleanupStore & { close(): void } {
   if ((options.execution ?? "host") === "host") {
     assertCleanAwsEnvironment(process.env);
     if (config.endpoint !== hostEndpoint)
@@ -35,9 +48,14 @@ export function createLocalS3ObjectStore(
   } else if (
     config.endpoint !== workerEndpoint ||
     process.env.CONTENT_OPS_LAB_ID !== config.instanceId ||
-    process.env.AWS_LAMBDA_FUNCTION_NAME !== `jawstack-content-ops-${config.instanceId}-publisher`
+    ![
+      `jawstack-content-ops-${config.instanceId}-publisher`,
+      `jawstack-content-ops-${config.instanceId}-jobs`,
+    ].includes(process.env.AWS_LAMBDA_FUNCTION_NAME ?? "")
   ) {
-    throw new LabError("Lambda object store requires the owned local publisher context.");
+    throw new LabError(
+      "Lambda object store requires the owned local publisher context or jobs context.",
+    );
   }
   validateEndpoint(config.endpoint);
   const expected = createLabConfig(config.instanceId);
@@ -88,6 +106,20 @@ export function createLocalS3ObjectStore(
       throw new JawStackRuntimeError("runtime.unavailable", "Asset readback failed.");
     }
   };
+  const inspectAssetObject: AssetCleanupStore["inspectAssetObject"] = async (target) => {
+    const Key = cleanupObjectKey(target);
+    try {
+      const result = await client.send(new HeadObjectCommand({ Bucket: config.bucket, Key }));
+      return objectObservationSchema.parse({
+        lastModified: result.LastModified?.toISOString(),
+        etag: result.ETag,
+      });
+    } catch (error) {
+      if (error instanceof Error && ["NotFound", "NoSuchKey"].includes(error.name))
+        return undefined;
+      throw new JawStackRuntimeError("runtime.unavailable", "Asset cleanup inspection failed.");
+    }
+  };
   const readPublication = async (intent: PublicationIntent) => {
     const expected = serializePublication(intent);
     try {
@@ -121,6 +153,39 @@ export function createLocalS3ObjectStore(
     }
   };
   return {
+    inspectAssetObject,
+    deleteAssetObject: async (target, observed, olderThan) => {
+      const Key = cleanupObjectKey(target);
+      objectObservationSchema.parse(observed);
+      instantSchema.parse(olderThan);
+      if (observed.lastModified > olderThan) return false;
+      const current = await inspectAssetObject(target);
+      if (
+        !current ||
+        current.etag !== observed.etag ||
+        current.lastModified !== observed.lastModified ||
+        current.lastModified > olderThan
+      )
+        return false;
+      try {
+        const versioning = await client.send(
+          new GetBucketVersioningCommand({ Bucket: config.bucket }),
+        );
+        if (versioning.Status)
+          throw new JawStackRuntimeError(
+            "command.rejected",
+            "Cleanup requires the owned unversioned bucket.",
+          );
+        await client.send(
+          new DeleteObjectCommand({ Bucket: config.bucket, Key, IfMatch: observed.etag }),
+        );
+        return true;
+      } catch (error) {
+        if (error instanceof Error && error.name === "PreconditionFailed") return false;
+        if (error instanceof JawStackRuntimeError) throw error;
+        throw new JawStackRuntimeError("runtime.unavailable", "Conditional asset cleanup failed.");
+      }
+    },
     createPublication: async (intent) => {
       const expected = serializePublication(intent);
       try {

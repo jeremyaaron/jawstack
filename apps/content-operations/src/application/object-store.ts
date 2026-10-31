@@ -8,7 +8,8 @@ import {
   type AssetSlot,
   type ObjectReference,
 } from "../shared/assets";
-import { idSchema, limits } from "../shared/validation";
+import { idSchema, limits, instantSchema } from "../shared/validation";
+import { cleanupObjectKey, objectObservationSchema, type AssetCleanupStore } from "./asset-cleanup";
 import {
   PublicationExecutionError,
   serializePublication,
@@ -107,8 +108,8 @@ export async function readBoundedBytes(source: ByteSource, maximum: number, sign
 }
 
 export function createMemoryObjectStore(
-  options: { maxBytes?: number; maxObjects?: number } = {},
-): AssetObjectStore & PublicationObjectStore {
+  options: { maxBytes?: number; maxObjects?: number; clock?: () => Date } = {},
+): AssetObjectStore & PublicationObjectStore & AssetCleanupStore {
   const maxBytes = options.maxBytes ?? 128 * 1024 * 1024;
   const maxObjects = options.maxObjects ?? 128;
   if (
@@ -121,6 +122,7 @@ export function createMemoryObjectStore(
   )
     throw new Error("Invalid memory object-store capacity.");
   const objects = new Map<string, Uint8Array>();
+  const observations = new Map<string, { lastModified: string; etag: string }>();
   let storedBytes = 0;
   const read = async (reference: ObjectReference) => {
     const ref = objectReferenceSchema.parse(reference);
@@ -130,6 +132,27 @@ export function createMemoryObjectStore(
     return Uint8Array.from(bytes);
   };
   return {
+    inspectAssetObject: async (target) => {
+      const observed = observations.get(cleanupObjectKey(target));
+      return observed && structuredClone(observed);
+    },
+    deleteAssetObject: async (target, observed, olderThan) => {
+      objectObservationSchema.parse(observed);
+      instantSchema.parse(olderThan);
+      const key = cleanupObjectKey(target);
+      const current = observations.get(key);
+      if (
+        !current ||
+        current.etag !== observed.etag ||
+        current.lastModified !== observed.lastModified ||
+        current.lastModified > olderThan
+      )
+        return false;
+      storedBytes -= objects.get(key)!.byteLength;
+      objects.delete(key);
+      observations.delete(key);
+      return true;
+    },
     readPublication: async (intent) => {
       const expected = serializePublication(intent);
       const bytes = objects.get(expected.reference.objectKey);
@@ -157,7 +180,9 @@ export function createMemoryObjectStore(
             "runtime.unavailable",
             "Memory object-store capacity reached.",
           );
+        const lastModified = (options.clock ?? (() => new Date()))().toISOString();
         objects.set(ref.objectKey, Uint8Array.from(bytes));
+        observations.set(ref.objectKey, { lastModified, etag: ref.sha256 });
         storedBytes += bytes.byteLength;
       }
       await read(ref);

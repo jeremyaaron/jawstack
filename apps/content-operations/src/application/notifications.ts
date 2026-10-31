@@ -13,7 +13,11 @@ import { projectionKey } from "@jawstack/aws-runtime";
 import { eventIdentitySchema, type ContentEvent } from "../shared/events";
 import { fixtureIds, type FixtureId } from "../shared/identities";
 import { idSchema, instantSchema, jsonBytes } from "../shared/validation";
-import { reviewTaskStateSchema, publicationOutcomeSchema } from "../shared/contracts";
+import {
+  reviewTaskStateSchema,
+  publicationOutcomeSchema,
+  reviewReminderFactSchema,
+} from "../shared/contracts";
 
 export const notificationSchema = z
   .strictObject({
@@ -24,6 +28,7 @@ export const notificationSchema = z
     sourceEventId: eventIdentitySchema,
     transportEventId: eventIdentitySchema,
     eventType: z.enum([
+      "contentItem.reviewReminderRecorded",
       "contentItem.reviewRequested",
       "contentItem.reviewDecided",
       "contentItem.published",
@@ -34,6 +39,7 @@ export const notificationSchema = z
     publicationId: idSchema.optional(),
     recipientId: z.enum(fixtureIds),
     template: z.enum([
+      "review-reminder.v1",
       "review-requested.v1",
       "review-approved.v1",
       "review-changes-requested.v1",
@@ -67,7 +73,9 @@ export const notificationSchema = z
               : "publication-failed.v1")
         : value.reviewId !== null &&
           value.publicationId === undefined &&
-          !value.template.startsWith("publication-")),
+          !value.template.startsWith("publication-") &&
+          (value.eventType === "contentItem.reviewReminderRecorded") ===
+            (value.template === "review-reminder.v1")),
   );
 export type NotificationDelivery = z.infer<typeof notificationSchema>;
 export type NotificationQuery = Readonly<{
@@ -128,17 +136,24 @@ export function renderNotification(event: ContentEvent, now: Date): Notification
   }
   if (
     event.eventType !== "contentItem.reviewRequested" &&
-    event.eventType !== "contentItem.reviewDecided"
+    event.eventType !== "contentItem.reviewDecided" &&
+    event.eventType !== "contentItem.reviewReminderRecorded"
   )
     throw new JawStackRuntimeError("command.rejected", "No notification template for this fact.");
-  const review = reviewTaskStateSchema.parse(event.payload);
+  const reminder =
+    event.eventType === "contentItem.reviewReminderRecorded"
+      ? reviewReminderFactSchema.parse(event.payload)
+      : undefined;
+  const review = reminder?.review ?? reviewTaskStateSchema.parse(event.payload);
   const requested = event.eventType === "contentItem.reviewRequested";
-  const template = requested
-    ? "review-requested.v1"
-    : review.status === "approved"
-      ? "review-approved.v1"
-      : "review-changes-requested.v1";
-  const recipientId = requested ? review.assignedEditorId : review.submitted.authorId;
+  const template = reminder
+    ? "review-reminder.v1"
+    : requested
+      ? "review-requested.v1"
+      : review.status === "approved"
+        ? "review-approved.v1"
+        : "review-changes-requested.v1";
+  const recipientId = requested || reminder ? review.assignedEditorId : review.submitted.authorId;
   return notificationSchema.parse({
     deliveryId: notificationId(event.originalEventId, recipientId, template),
     sourceEventId: event.originalEventId,
@@ -150,10 +165,12 @@ export function renderNotification(event: ContentEvent, now: Date): Notification
     template,
     channel: "local",
     status: "succeeded",
-    subject: `${requested ? "Review requested" : review.status === "approved" ? "Review approved" : "Changes requested"}: ${review.submitted.title}`,
-    message: requested
-      ? `Review ${review.reviewId} is due ${review.dueAt}.`
-      : `Review ${review.reviewId} was ${review.status === "approved" ? "approved" : "returned for changes"}.`,
+    subject: `${reminder ? "Review overdue" : requested ? "Review requested" : review.status === "approved" ? "Review approved" : "Changes requested"}: ${review.submitted.title}`,
+    message: reminder
+      ? `Review ${review.reviewId} was due ${review.dueAt}.`
+      : requested
+        ? `Review ${review.reviewId} is due ${review.dueAt}.`
+        : `Review ${review.reviewId} was ${review.status === "approved" ? "approved" : "returned for changes"}.`,
     payloadHash: createHash("sha256")
       .update(
         JSON.stringify([
@@ -165,7 +182,11 @@ export function renderNotification(event: ContentEvent, now: Date): Notification
         ]),
       )
       .digest("hex"),
-    occurredAt: requested ? review.submitted.submittedAt : review.decision!.at,
+    occurredAt: reminder
+      ? reminder.remindedAt
+      : requested
+        ? review.submitted.submittedAt
+        : review.decision!.at,
     deliveredAt: now.toISOString(),
     correlationId: event.correlationId,
     causationId: event.eventId,

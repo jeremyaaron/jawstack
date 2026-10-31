@@ -71,6 +71,9 @@ importers:
       '@jawstack/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@js-temporal/polyfill':
+        specifier: 0.5.1
+        version: 0.5.1
       '@smithy/node-http-handler':
         specifier: 4.8.2
         version: 4.8.2
@@ -1127,6 +1130,10 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
+
+  '@js-temporal/polyfill@0.5.1':
+    resolution: {integrity: sha512-hloP58zRVCRSpgDxmqCWJNlizAlUgJFqG2ypq79DCvyv9tHjRYMDOcPFjzfl/A1/YxDvRCZz8wvZvmapQnKwFQ==}
+    engines: {node: '>=12'}
 
   '@lmdb/lmdb-darwin-arm64@3.5.1':
     resolution: {integrity: sha512-tpfN4kKrrMpQ+If1l8bhmoNkECJi0iOu6AEdrTJvWVC+32sLxTARX5Rsu579mPImRP9YFWfWgeRQ5oav7zApQQ==}
@@ -2366,6 +2373,7 @@ packages:
   eslint@9.39.4:
     resolution: {integrity: sha512-XoMjdBOwe/esVgEvLmNsD3IRHkm7fbKIUGvrleloJXUZgDHig2IPWNniv+GwjyJXzuNqVjlr5+4yVUZjycJwfQ==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+    deprecated: This version is no longer supported. Please see https://eslint.org/version-support for other options.
     hasBin: true
     peerDependencies:
       jiti: '*'
@@ -2580,6 +2588,9 @@ packages:
   js-yaml@4.2.0:
     resolution: {integrity: sha512-ePWsvanv0DWuDRsW8dnt+R4jQ31SCRCQ7hhNcPXZPsoBZiemuZNYGf7adZdqX2D86j6rvKp3RpCxVTSb8WQlOw==}
     hasBin: true
+
+  jsbi@4.3.2:
+    resolution: {integrity: sha512-9fqMSQbhJykSeii05nxKl4m6Eqn2P6rOlYiS+C5Dr/HPIU/7yZxu5qzbs40tgaFORiw2Amd0mirjxatXYMkIew==}
 
   jsdom@26.1.0:
     resolution: {integrity: sha512-Cvc9WUhxSMEo4McES3P7oK3QaXldCfNWp7pl2NNeiIFlCoLr3kfq9kb1fxftiwk1FLV7CvpvDfonxtzUDeSOPg==}
@@ -4560,6 +4571,10 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
+  '@js-temporal/polyfill@0.5.1':
+    dependencies:
+      jsbi: 4.3.2
+
   '@lmdb/lmdb-darwin-arm64@3.5.1':
     optional: true
 
@@ -5817,6 +5832,8 @@ snapshots:
   js-yaml@4.2.0:
     dependencies:
       argparse: 2.0.1
+
+  jsbi@4.3.2: {}
 
   jsdom@26.1.0:
     dependencies:

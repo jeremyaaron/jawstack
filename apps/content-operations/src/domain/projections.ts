@@ -39,6 +39,25 @@ function contentRows(
   if (state.schedule)
     for (const name of ["contentItem.calendar", "contentItem.duePublication"])
       rows.push(row(name, `${state.schedule.scheduledAt}#${state.contentId}`, state.schedule));
+  for (const slot of state.attachments) {
+    const data = { assetId: slot.assetId, contentId: state.contentId };
+    if (state.status === "draft" && slot.status === "pending")
+      rows.push(
+        row(
+          "contentItem.expiringUploads",
+          `${slot.uploadExpiresAt}#${state.contentId}#${slot.assetId}`,
+          data,
+        ),
+      );
+    if (["removed", "expired"].includes(slot.status) && slot.verified === null)
+      rows.push(
+        row(
+          "contentItem.orphanAssets",
+          `${slot.retiredAt}#${state.contentId}#${slot.assetId}`,
+          data,
+        ),
+      );
+  }
   return rows;
 }
 

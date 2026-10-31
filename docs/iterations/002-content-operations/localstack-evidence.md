@@ -330,12 +330,50 @@ contracts. `pnpm verify:release` passed with zero pkg-guard findings, isolated g
 verification, and six package dry runs. No dependencies, public package versions, or
 framework implementations changed.
 
+## Phase 12: Due Jobs, Reminders, and Orphan Cleanup
+
+Observed on October 31, 2026, with the same pinned LocalStack `2026.10.0` image/digest,
+ARM64 runtime, guarded local-only clients, and user-attested Hobby tier. The complete
+`feasibility-paging-transactions-assets-publication-and-jobs` gate started
+`2026-10-31T21:23:57.378Z` and completed `2026-10-31T21:27:33.732Z` in 216.354 seconds,
+with `decision: go`.
+
+Jobs run ID: `4ab59d5c-fb6c-480e-bef0-2ec6b9a2d2b8`.
+
+| Check                  | Observed Result                                                                                                                                                                                                                                      |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Publication overlap    | Two concurrent ticks used conditional DynamoDB checkpoint leases; one returned busy and only one requested publication. Strong content state became publishing.                                                                                      |
+| Review continuation    | A one-candidate tick persisted its cutoff/cursor. A freshly composed job/store resumed the second review, and another pass emitted no same-UTC-day reminder. Both roots retained the authoritative reminder day.                                     |
+| Abandoned slot expiry  | A pending draft slot with an actual S3 object expired through the internal content command at its logical one-hour deadline.                                                                                                                         |
+| Retention and deletion | Immediate cleanup retained the young orphan. After advancing the injected clock another 24 hours, the exact old object was conditionally deleted; head returned absent and the expired slot tombstone remained.                                      |
+| Lease takeover         | A live lease refused a second acquisition. At exactly 30 seconds, a successor acquired a different token. A stale owner using its original time could not overwrite/release the successor checkpoint.                                                |
+| Earlier gates          | Actual stream/bus/queue/Lambda, paging, scoped transaction/rollback, attachments, publication recovery/corruption, automatic Scheduler, actual receives 1/2/3 and durable DLQ collection, sentinel-safe reset, and reprovisioned spine passed again. |
+| Cleanup                | Owned reset preserved the independently owned sentinel and its nonce, and left zero owned Lambda containers. Final `local:down` removed the emulator/network; filtered Docker inventories were empty.                                                |
+
+This is direct shared-job execution against real DynamoDB/S3, with logical clock advancement
+instead of waiting one hour/day. It does not deploy the consumer Scheduler targets or prove
+their IAM/grants. The existing separate rate schedule still fired automatically; no direct
+Lambda trigger was substituted for that transport proof. `jobs.zip` uses the public Scheduler
+adapter but remains a bundled, credential-free contract until Phase 20/21 provisioning.
+Live retention used the never-verified orphan path. Tests additionally cover verified/history
+retention, corrupt/missing authority, young late writers, clock rollback, changed ETags, and
+versioned/suspended-bucket refusal; those are not separate live corruption/contended-delete
+claims. Tombstone/capacity reclamation and archive cleanup are intentionally not implemented.
+
+Credential-free verification added 44 tests (375 consumer/660 workspace total), including
+job work/time bounds, failed-oldest fairness, restart/deleted-boundary continuation, stale
+resumed tick fencing, stopped/regressed clocks, atomic reminder rollback/concurrent dedup,
+Temporal gaps/folds and explicit offsets, browser-safe conversion bundling, and exact-key
+cleanup adapter contracts. `pnpm verify:release` passed, including zero pkg-guard findings,
+isolated generated-app verification, and six package dry runs. Only the private app gained
+the pinned Temporal polyfill dependency; no public implementation/version or workflow changed.
+No real AWS resource was created or contacted.
+
 ## Current Coverage and Exclusions
 
-Phase 10 supplied scheduling/publication domain and memory/SDK contracts. Phase 11 now adds
-actual artifact execution and the live recovery evidence above. The live consumer protocol
-and separate transport spine have both passed, but consumer SQS/Lambda deployment is not
-claimed by combining these independent checks.
+Phases 11/12 add actual publication and due/maintenance execution with the live recovery
+evidence above. The live shared consumer protocols and separate transport spine have passed,
+but consumer SQS/Lambda/Scheduler deployment is not claimed by combining independent checks.
 
 | Capability                                      | Status                                                                                                                                                                                    |
 | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -346,8 +384,9 @@ claimed by combining these independent checks.
 | Paged DynamoDB projection/activity queries      | Passed in Phase 3, including live memory parity, service continuation, and transactional projection moves.                                                                                |
 | Scoped consumer transactions                    | Passed in Phase 7: concurrent original-response replay, logical expiry, conditional rollback, and exact-key projection moves across memory/live DynamoDB.                                 |
 | Attachment lifecycle/object storage             | Passed in Phase 8: real immutable S3 readback, interrupted completion recovery, frozen review references, removal retention, and logical expiry with no object write.                     |
-| Materializers/notification sink/memory pump     | Phase 9 memory-flow and SDK transaction contracts passed; consumer handlers were not deployed to LocalStack queues/Lambdas. No additional live gate was run.                              |
+| Materializers/notification sink/memory pump     | Phase 9 contracts plus Phases 11/12 publication/reminder memory flows passed; consumer handlers were not deployed to LocalStack queues/Lambdas.                                           |
 | Publication execution                           | Phase 11 live DynamoDB/S3 crash/lease recovery, one logical artifact, completed duplicate, and corrupt-object rejection passed. Bundled SQS marker ordering is unit-tested, not deployed. |
+| Due/reminder/expiry/orphan jobs                 | Phase 12 direct live DynamoDB/S3 checkpoint/lease, daily reminder, expiry and conditional deletion passed; consumer Scheduler targets remain undeployed.                                  |
 | Full editorial workflow and recovery            | Not implemented; later phases.                                                                                                                                                            |
 | API Gateway/CloudFormation/CDK asset deployment | Excluded from this Hobby lab; SDK provisioning is not deployment-parity evidence.                                                                                                         |
 | IAM enforcement, production auth, real AWS      | Not verified; no real-AWS deployment performed.                                                                                                                                           |

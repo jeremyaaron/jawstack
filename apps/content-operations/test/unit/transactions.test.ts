@@ -18,6 +18,8 @@ import {
 } from "../../src/application/persistence";
 import { createDynamoPersistence } from "../../src/aws/persistence";
 import { fixtureAuth } from "../../src/shared/identities";
+import type { ContentState } from "../../src/shared/contracts";
+import { dueWorkerIdentity } from "../../src/domain/publication-commands";
 
 const instant = "2026-10-31T12:00:00.000Z";
 const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -160,6 +162,88 @@ function harness(adapter: "memory" | "dynamo") {
 }
 
 describe.each(["memory", "dynamo"] as const)("scoped %s persistence", (adapter) => {
+  it("rolls reminder state/fact back on auxiliary collision and deduplicates concurrent UTC-day commands", async () => {
+    const h = harness(adapter);
+    expect((await h.run("create", { title: "Remind me", body: "Body" })).ok).toBe(true);
+    expect(
+      (
+        await h.run("submit", {
+          expectedVersion: 1,
+          assignedEditorId: "editor_1",
+          dueAt: "2026-10-31T13:00:00.000Z",
+        })
+      ).ok,
+    ).toBe(true);
+    h.advance(3600);
+    const row = (await h.repository.getState<ContentState>("contentItem", uuid(1)))!;
+    const request = {
+      resourceType: "contentItem",
+      resourceId: uuid(1),
+      commandName: "recordReviewReminder",
+      input: {
+        expectedVersion: row.version,
+        reviewId: row.state.review!.reviewId,
+        revisionId: row.state.revisionId,
+      },
+      idempotencyKey: "reminder",
+      requestContext: {},
+    };
+    const identity = {
+      subject: dueWorkerIdentity.subject,
+      roles: [dueWorkerIdentity.role],
+      mode: "test" as const,
+      claims: {},
+    };
+    expect(await h.dispatch(request, fixtureAuth("editor_1"))).toMatchObject({
+      ok: false,
+      error: { code: "auth.forbidden" },
+    });
+    const collision: OperationRecord = {
+      kind: "commandReceipt",
+      resourceType: "contentItem",
+      resourceId: uuid(1),
+      commandName: "recordReviewReminder",
+      subject: identity.subject,
+      version: row.version + 1,
+      committedAt: "2026-10-31T13:00:00.000Z",
+    };
+    h.seedOperation(collision);
+    const before = h.snapshot();
+    expect((await h.dispatch(request, identity)).ok).toBe(false);
+    expect(h.snapshot()).toEqual(before);
+    if (adapter === "memory") h.memory.operations.delete(JSON.stringify(operationKey(collision)));
+    else h.client.items.delete(keyOf(marshall(operationKey(collision))));
+    const results = await Promise.all(
+      Array.from({ length: 4 }, () => h.dispatch(request, identity)),
+    );
+    expect(results[0]!.ok).toBe(true);
+    for (const result of results) expect(result).toEqual(results[0]);
+    const latest = (await h.repository.getState<ContentState>("contentItem", uuid(1)))!;
+    expect(latest.state).toMatchObject({
+      revisionId: row.state.revisionId,
+      review: { lastReminderDay: "2026-10-31", sourceVersion: latest.version },
+    });
+    expect(
+      await h.dispatch(
+        {
+          ...request,
+          input: { ...request.input, expectedVersion: latest.version },
+          idempotencyKey: "same-day-different-key",
+        },
+        identity,
+      ),
+    ).toMatchObject({ ok: false, error: { code: "command.rejected" } });
+    expect(
+      await h.dispatch(
+        {
+          ...request,
+          input: { ...request.input, expectedVersion: latest.version, reviewId: uuid(999) },
+          idempotencyKey: "stale-review",
+        },
+        identity,
+      ),
+    ).toMatchObject({ ok: false, error: { code: "resource.conflict" } });
+  });
   it("replays the original response concurrently without duplicating any effects", async () => {
     const h = harness(adapter);
     const results = await Promise.all(

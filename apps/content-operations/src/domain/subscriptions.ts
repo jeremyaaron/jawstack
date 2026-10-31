@@ -5,6 +5,7 @@ export const contentWorkers = [
   defineWorker({
     name: "materializeReview",
     eventTypes: [
+      "contentItem.reviewReminderRecorded",
       "contentItem.reviewRequested",
       "contentItem.reviewDecided",
       "contentItem.reviewSuperseded",
@@ -24,6 +25,7 @@ export const contentWorkers = [
   defineWorker({
     name: "deliverNotification",
     eventTypes: [
+      "contentItem.reviewReminderRecorded",
       "contentItem.reviewRequested",
       "contentItem.reviewDecided",
       "contentItem.published",

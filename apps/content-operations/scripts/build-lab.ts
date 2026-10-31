@@ -6,7 +6,7 @@ import { zipSync } from "fflate";
 export async function buildLab(): Promise<void> {
   const root = fileURLToPath(new URL("../", import.meta.url));
   await mkdir(`${root}/dist`, { recursive: true });
-  for (const entry of ["spine", "publication"]) {
+  for (const entry of ["spine", "publication", "jobs"]) {
     const result = await build({
       absWorkingDir: root,
       entryPoints: [`src/aws/${entry}.ts`],

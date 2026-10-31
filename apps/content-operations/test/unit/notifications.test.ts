@@ -32,6 +32,7 @@ const fact = (n = 1): JawStackEvent => ({
     contentId: uuid(1),
     assignedEditorId: "editor_1",
     dueAt: "2026-11-01T12:00:00.000Z",
+    lastReminderDay: null,
     status: "pending",
     sourceVersion: 2,
     decision: null,

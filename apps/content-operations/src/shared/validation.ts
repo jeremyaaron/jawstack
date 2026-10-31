@@ -16,12 +16,16 @@ export const limits = Object.freeze({
   publicationAttempts: 3,
   publicationGenerations: 4,
   publicationArtifactBytes: 80 * 1024,
+  orphanAgeMs: 24 * 60 * 60 * 1000,
 });
 export const jsonBytes = (value: unknown) =>
   new TextEncoder().encode(JSON.stringify(value)).byteLength;
 export const idSchema = z.uuid();
 export const versionSchema = z.number().int().min(1).max(Number.MAX_SAFE_INTEGER);
 export const instantSchema = z.iso.datetime({ precision: 3 });
+export const offsetInstantSchema = z.iso
+  .datetime({ offset: true, precision: 3 })
+  .transform((value) => new Date(value).toISOString());
 export const timeZoneSchema = z
   .string()
   .min(1)

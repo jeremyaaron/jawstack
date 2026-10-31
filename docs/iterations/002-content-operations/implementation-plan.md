@@ -1,7 +1,7 @@
 # Iteration 2 Implementation Plan: Content Operations
 
-Status: reviewed. Phases 0-11 are complete. Recoverable publication artifacts, memory workflow,
-bundled SQS contracts, live DynamoDB/S3 recovery, and workspace regressions passed. Phase 12 is next.
+Status: reviewed. Phases 0-12 are complete. Checkpointed due/reminder/cleanup jobs, strict time
+conversion, live DynamoDB/S3 job protocols, and workspace regressions passed. Phase 13 is next.
 
 ## Purpose
 
@@ -94,7 +94,7 @@ work may proceed only after an explicit sequencing decision, without claiming th
 | 9     | Consumer workers           | Materializers, notification sink and memory event pump    | Complete |
 | 10    | Consumer domain            | Publication intent, claims and generation transitions     | Complete |
 | 11    | Consumer workers           | Recoverable publication execution                         | Complete |
-| 12    | Consumer jobs              | Due work, reminders, time zones and cleanup               | Planned  |
+| 12    | Consumer jobs              | Due work, reminders, time zones and cleanup               | Complete |
 | 13    | Consumer operations        | Failure collection and bounded recovery                   | Planned  |
 | 14    | Consumer API               | Loopback HTTP, bounded queries and typed routes           | Planned  |
 | 15    | Consumer UI                | Workbench, drafting and browser boundary                  | Planned  |
@@ -1082,6 +1082,57 @@ integration gate, documentation walkthrough, local links, and `git diff --check`
 - No public framework implementation, dependencies, versions, workflows, real AWS resources,
   release, or commit was changed/created. Automatic due/reminder/cleanup jobs, full consumer
   AWS wiring, HTTP, UI, and operational recovery remain later phases.
+
+### Phase 12: October 31, 2026
+
+- Added four real shared jobs (`duePublication`, `dueReview`, `expireUploads`,
+  `cleanupOrphans`) with explicit memory ticks and a bundled framework Scheduler entrypoint.
+  They query content-owned projections, reread authority strongly, and fence due work against
+  current schedules/reviews/revisions. Imports/construction do not start timers/services.
+- Implemented memory/DynamoDB job stores with four permanent application checkpoint rows,
+  30-second UUID-fenced leases, conditional revision/token/clock checks, fixed pass cutoffs,
+  and public opaque query cursors. Failed items advance so later work cannot starve; crashed
+  owners resume after expiry. Deleted boundaries and changed clocks keep valid query scope.
+  Ticks admit at most 50 one-candidate pages or 20 monotonic seconds; a time-exhausted
+  unattempted candidate keeps its position. Current bounded SDK/checkpoint calls may finish
+  after the admission deadline. Smaller overrides remain within these maxima.
+- Added internal `recordReviewReminder`: current pending/due review/revision, server UTC-day
+  monotonic `lastReminderDay`, and its full reminder fact commit atomically with ordinary
+  state/activity/projection/receipt/idempotency writes. It preserves submitted content/revision.
+  Reminder materialization and `review-reminder.v1` use the existing outbox/sink path, not a
+  direct provider. Same-day/regressed clocks cannot duplicate a reminder.
+- Pinned private-app `@js-temporal/polyfill@0.5.1` and shared explicit-offset UTC normalization.
+  Browser-safe local conversion rejects overflow and DST gaps/folds, including half-hour
+  changes, with no global patching. Server future-time checks remain authoritative.
+- Added authoritative expiry/orphan candidate projections and exact generated-key cleanup
+  operations. Delete only never-verified retired slots absent from current frozen references,
+  with retirement and object age at least 24 hours. Recheck content twice and object identity;
+  S3 requires an unversioned owned bucket and observed ETag. Clock rollback cannot relax age.
+  Verified historical assets/publication objects/archived content are retained; all tombstones
+  remain, even after deletion, to protect identity/late writers. No capacity reclamation yet.
+- Added 44 tests (375 consumer/660 workspace total): due/memory publication flow, overlapping
+  and stale resumed ticks, checkpoint restarts/deleted boundaries/failing oldest fairness,
+  fixed cutoffs, empty service pages, work/time bounds, regressed/stopped clocks, atomic
+  reminder rollback/concurrent dedup, UTC-day notifications, DST input/browser bundling,
+  exact-key conditional deletion, young late-created orphans, missing/corrupt authority,
+  versioned bucket refusal, observation mismatch, and stale checkpoint fencing. Existing
+  bundle coverage now also verifies `jobs.zip` exports the actual Scheduler handler.
+- `local:up`, `local:provision`, and `verify:local --confirm-reset` passed the full live gate
+  in 216.354 seconds. Direct shared jobs on real DynamoDB/S3 proved overlapping publication
+  once, review checkpoint restart/daily dedup, expiry, young-object retention, old conditional
+  deletion/tombstone retention, and expired-lease takeover with stale-writer rejection. All
+  earlier transport/Scheduler/redrive/reset/reprovision checks passed again. See
+  [recorded evidence](localstack-evidence.md) for the run ID and scope.
+- `local:down` removed the owned lab; no owned containers/network remained. Logical clock
+  advancement avoids waiting 24 hours; this is not deployed consumer Scheduler evidence.
+  `jobs.zip` is ready for Phase 20/21 composition, but the existing four-function feasibility
+  topology was not broadened or presented as the consumer deployment.
+- `pnpm verify:release` passed: format/typecheck/tests/lint/build, zero pkg-guard findings,
+  isolated generated-app install/typecheck/tests/build/AWS bundle/synth/doctor, and six package
+  dry runs. Local Markdown links and `git diff --check` passed.
+- No public framework/template implementation, package versions, workflows, real AWS
+  resources, release, or commit changed. Durable failure collection/recovery is Phase 13;
+  HTTP/UI, consumer cloud wiring, and production authentication remain later work.
 
 For later phases, append the date, meaningful behavior delivered, commands/results,
 not-run checks, design changes, and remaining limitations. Do not replace observed

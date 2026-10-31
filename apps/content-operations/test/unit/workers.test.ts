@@ -374,10 +374,12 @@ describe("shared application workers", () => {
       contentWorkers.map((w) => w.name),
     );
     expect(
-      contentWorkers
-        .flatMap((w) => w.eventTypes)
-        .some((type) => /reminder|snapshotApplied/.test(type)),
+      contentWorkers.flatMap((w) => w.eventTypes).some((type) => /snapshotApplied/.test(type)),
     ).toBe(false);
+    expect(app.workers.subscribers("contentItem.reviewReminderRecorded")).toEqual([
+      "materializeReview",
+      "deliverNotification",
+    ]);
   });
 });
 

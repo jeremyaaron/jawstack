@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { idSchema, publicationFailureCodes, publicationGenerationSchema } from "./contracts";
 import { digestSchema } from "./assets";
-import { limits, timeZoneSchema, versionSchema } from "./validation";
+import { limits, timeZoneSchema, versionSchema, offsetInstantSchema } from "./validation";
 
 export const approvalReferenceInput = z.strictObject({
   expectedVersion: versionSchema,
@@ -9,9 +9,7 @@ export const approvalReferenceInput = z.strictObject({
   revisionId: idSchema,
 });
 export const scheduleInput = approvalReferenceInput.extend({
-  scheduledAt: z.iso
-    .datetime({ offset: true, precision: 3 })
-    .transform((value) => new Date(value).toISOString()),
+  scheduledAt: offsetInstantSchema,
   timeZone: timeZoneSchema,
 });
 export const rescheduleInput = scheduleInput.extend({ scheduleGeneration: idSchema });

@@ -33,7 +33,11 @@ export function createContentWorkers(options: {
     const review = name === "materializeReview";
     const resourceType = review ? "reviewTask" : "asset";
     const schema = review ? reviewTaskStateSchema : assetSlotSchema;
-    const snapshot = schema.parse(event.payload);
+    const snapshot = schema.parse(
+      event.eventType === "contentItem.reviewReminderRecorded"
+        ? (event.payload as { review: unknown }).review
+        : event.payload,
+    );
     const targetId = "reviewId" in snapshot ? snapshot.reviewId : snapshot.assetId;
     const identity = review ? reviewProjectorIdentity : assetProjectorIdentity;
     for (let attempt = 0; attempt < 3; attempt++) {

@@ -26,6 +26,7 @@
     "@aws-sdk/util-dynamodb": "^3.996.5",
     "@jawstack/aws-runtime": "workspace:*",
     "@jawstack/core": "workspace:*",
+    "@js-temporal/polyfill": "0.5.1",
     "@smithy/node-http-handler": "4.8.2",
     "fflate": "^0.8.2",
     "zod": "^4.4.3"

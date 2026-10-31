@@ -264,11 +264,14 @@ describe("recoverable publication", () => {
 });
 
 describe("publication transport markers", () => {
-  it("builds a self-contained Lambda archive exporting the publisher", async () => {
+  it("builds self-contained Lambda archives exporting the publisher and recurring jobs", async () => {
     await buildLab();
     const files = unzipSync(await readFile(new URL("../../dist/publication.zip", import.meta.url)));
     expect(Object.keys(files)).toEqual(["index.mjs"]);
     expect(strFromU8(files["index.mjs"]!)).toMatch(/export\s*\{[^}]*\bpublisher\b/s);
+    const jobs = unzipSync(await readFile(new URL("../../dist/jobs.zip", import.meta.url)));
+    expect(Object.keys(jobs)).toEqual(["index.mjs"]);
+    expect(strFromU8(jobs["index.mjs"]!)).toMatch(/export\s*\{[^}]*\bscheduled\b/s);
   });
   async function setup() {
     const h = await publicationHarness();

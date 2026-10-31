@@ -1,7 +1,7 @@
 # Iteration 2: Content Operations
 
-Status: Phases 0-11 complete. Recoverable publication artifacts, memory workflow, bundled
-SQS contracts, live DynamoDB/S3 recovery, and workspace regressions passed. Phase 12 is next.
+Status: Phases 0-12 complete. Checkpointed due/reminder/cleanup jobs, strict time conversion,
+live DynamoDB/S3 job protocols, and workspace regressions passed. Phase 13 is next.
 
 ## Documents
 
@@ -41,7 +41,7 @@ attachment slots and freezes verified references for review; the asset read mode
 internal materialization primitives. Phase 9 adds their shared source-version-aware handlers,
 durable local notification sink, and deterministic bounded memory outbox pump. Notification
 atomicity has memory/SDK contracts, not a live consumer deployment. HTTP upload/download
-routes, automatic cleanup, and durable failure recovery remain later work.
+routes, deployed consumer Scheduler targets, and durable failure recovery remain later work.
 
 Phase 10 adds schedule generations, frozen publication intent, 90-second fenced claims,
 bounded attempts/retry generations, and atomic redacted attempt history in memory/DynamoDB.
@@ -52,4 +52,9 @@ and the real publisher in the memory pump. Crash/lease/marker-gap tests and a fo
 DynamoDB/S3 scenario pass. A separate SQS publisher bundle uses the framework adapter and
 marks only after domain completion; deploying consumer queue/mapping wiring remains Phase 20.
 The latest full live gate also reran earlier transport, scheduling, DLQ, reset, and reprovision
-checks, then stopped the owned lab. Automatic due jobs/reminders/cleanup remain Phase 12.
+checks, then stopped the owned lab. Phase 12 adds bounded recurring job handlers with fixed
+cutoffs, persisted leases/cursors, UTC-day reminder facts/notifications, Temporal gap/fold
+rejection, upload expiry, and safe conditional orphan deletion. Explicit memory ticks and
+bundled Scheduler entrypoints exist; consumer Scheduler deployment remains Phase 20. Live
+checks prove the shared jobs on real DynamoDB/S3 with an injected clock, not deployed targets.
+Tombstones and verified historical objects remain retained. Durable failure recovery is next.

@@ -8,6 +8,8 @@ import { createMemoryPump } from "./pump";
 import { instantSchema } from "../shared/validation";
 import { contentEventSource } from "../shared/events";
 import { createPublisher } from "./publisher";
+import { createMemoryJobStore } from "./job-store";
+import { createContentJobs } from "./jobs";
 
 export function createFixtureClock(instant: string) {
   let value = Date.parse(instantSchema.parse(instant));
@@ -29,7 +31,7 @@ export function createMemoryRuntime(options: { clock?: () => Date; source?: stri
   const source = options.source ?? contentEventSource;
   const persistence = createMemoryPersistence();
   const dispatch = createContentDispatch({ persistence: persistence.factory, clock, source });
-  const objects = createMemoryObjectStore();
+  const objects = createMemoryObjectStore({ clock });
   const upload = createUploadService({
     repository: persistence.repository,
     dispatch,
@@ -52,6 +54,14 @@ export function createMemoryRuntime(options: { clock?: () => Date; source?: stri
     publisher,
   });
   const pump = createMemoryPump({ outbox: () => persistence.store.outbox, workers, clock });
+  const jobStore = createMemoryJobStore();
+  const jobs = createContentJobs({
+    repository: persistence.repository,
+    dispatch,
+    store: jobStore,
+    objects,
+    clock,
+  });
   const drainUntilIdle = async (maxPasses = 20) => {
     if (!Number.isInteger(maxPasses) || maxPasses < 1 || maxPasses > 100)
       throw new Error("Invalid drain pass budget.");
@@ -61,5 +71,16 @@ export function createMemoryRuntime(options: { clock?: () => Date; source?: stri
     }
     throw new Error("Memory drain exceeded its pass budget.");
   };
-  return { persistence, dispatch, objects, upload, notifications, workers, pump, drainUntilIdle };
+  return {
+    persistence,
+    dispatch,
+    objects,
+    upload,
+    notifications,
+    workers,
+    pump,
+    jobStore,
+    jobs,
+    drainUntilIdle,
+  };
 }

@@ -15,6 +15,7 @@ import {
   validUnicode,
   versionSchema,
   timeZoneSchema,
+  offsetInstantSchema,
 } from "./validation";
 export { idSchema, instantSchema, jsonBytes, limits, versionSchema } from "./validation";
 const titleInputSchema = z
@@ -80,6 +81,7 @@ export const reviewTaskStateSchema = z
     contentId: idSchema,
     assignedEditorId: z.enum(editorIds),
     dueAt: instantSchema,
+    lastReminderDay: z.iso.date().nullable(),
     submitted: submittedSnapshotSchema,
     status: z.enum(reviewStatuses),
     sourceVersion: versionSchema,
@@ -97,6 +99,12 @@ export const reviewTaskStateSchema = z
       .nullable(),
   })
   .superRefine((value, ctx) => {
+    if (
+      value.lastReminderDay &&
+      (value.lastReminderDay < value.dueAt.slice(0, 10) ||
+        (value.decision && value.lastReminderDay > value.decision.at.slice(0, 10)))
+    )
+      ctx.addIssue({ code: "custom", message: "Reminder day is outside the review interval." });
     if (
       value.contentId !== value.submitted.contentId ||
       Date.parse(value.dueAt) <= Date.parse(value.submitted.submittedAt)
@@ -398,7 +406,7 @@ export const editDraftInput = z.strictObject({
 export const submitInput = z.strictObject({
   expectedVersion: versionSchema,
   assignedEditorId: z.enum(editorIds),
-  dueAt: instantSchema,
+  dueAt: offsetInstantSchema,
 });
 export const reviewDecisionInput = z.strictObject({
   expectedVersion: versionSchema,
@@ -408,6 +416,26 @@ export const reviewDecisionInput = z.strictObject({
 });
 export const versionInput = z.strictObject({ expectedVersion: versionSchema });
 export const createReviewSnapshotInput = z.strictObject({ snapshot: reviewTaskStateSchema });
+export const recordReviewReminderInput = z.strictObject({
+  expectedVersion: versionSchema,
+  reviewId: idSchema,
+  revisionId: idSchema,
+});
+export const reviewReminderFactSchema = z
+  .strictObject({
+    contentId: idSchema,
+    reviewId: idSchema,
+    review: reviewTaskStateSchema,
+    remindedAt: instantSchema,
+  })
+  .refine(
+    (value) =>
+      value.contentId === value.review.contentId &&
+      value.reviewId === value.review.reviewId &&
+      value.review.status === "pending" &&
+      value.review.lastReminderDay === value.remindedAt.slice(0, 10) &&
+      value.remindedAt >= value.review.dueAt,
+  );
 export const applyReviewSnapshotInput = z.strictObject({
   expectedVersion: versionSchema,
   snapshot: reviewTaskStateSchema,
@@ -521,6 +549,7 @@ export const publicationOutcomeSchema = z
       : value.artifact === null && value.failureCode !== null,
   );
 export const contentEventSchemas = {
+  "contentItem.reviewReminderRecorded": reviewReminderFactSchema,
   "contentItem.created": lifecycleFactSchema.refine((value) => value.status === "draft"),
   "contentItem.draftEdited": lifecycleFactSchema.refine((value) => value.status === "draft"),
   "contentItem.reviewRequested": reviewTaskStateSchema.refine(

@@ -20,6 +20,7 @@ import { verifyPaging } from "../src/lab/verify-paging";
 import { verifyScopedTransactions } from "../src/lab/verify-transactions";
 import { verifyAssets } from "../src/lab/verify-assets";
 import { verifyPublication } from "../src/lab/verify-publication";
+import { verifyJobs } from "../src/lab/verify-jobs";
 import { verifyCapabilities, verifySentinelReset } from "../src/lab/verify-capabilities";
 import { buildLab } from "./build-lab";
 
@@ -233,7 +234,7 @@ async function main() {
       const started = Date.now();
       const evidence: Record<string, unknown> = {
         status: "running",
-        scenario: "feasibility-paging-transactions-assets-and-publication",
+        scenario: "feasibility-paging-transactions-assets-publication-and-jobs",
         recordedAt: new Date().toISOString(),
         durationMs: Date.now() - started,
         image: manifest.image,
@@ -261,6 +262,10 @@ async function main() {
         evidence.assets = await verifyAssets(clients, config);
         console.log("Checking recoverable publication claims and immutable artifacts...");
         evidence.publication = await verifyPublication(clients, config);
+        console.log(
+          "Checking leased due jobs, reminders, expiry, and conditional orphan cleanup...",
+        );
+        evidence.jobs = await verifyJobs(clients, config);
         console.log("Waiting for automatic Scheduler and actual SQS redrive/collector...");
         evidence.capabilities = await verifyCapabilities(clients, config);
         console.log("Checking ownership-safe reset with an unrelated-resource sentinel...");

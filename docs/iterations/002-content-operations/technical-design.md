@@ -213,7 +213,7 @@ identities. Browser metadata imports Angular/core types only, not server factori
 
 Current state validates editorial lifecycle, bounded review/attachment snapshots, approval,
 and Phase 10 scheduling/publication execution state. Phase 11 adds verified publication-object
-execution; automatic due work/local-time conversion remains Phase 12. Editorial guard tests
+execution; Phase 12 adds due work/local-time conversion. Editorial guard tests
 enter scheduled/publishing/published through real domain commands with trusted test metadata;
 separate publisher tests verify artifact creation and recovery.
 Input titles are trimmed; stored titles must already be canonical. Body whitespace is
@@ -355,7 +355,7 @@ is not a new automation engine.
 
 Phase 9 registers only `materializeReview`, `materializeAsset`, and review-request/decision
 notification subscriptions from this table, through `src/domain/subscriptions.ts`. The
-publication/reminder rows are later-phase design, not advertised stubs. Handler validation
+publication/reminder rows are now supplied by Phases 11/12. Handler validation
 requires the exact configured source, envelope/schema version 1, bounded safe event/trace
 IDs, target-matching resource IDs, and strict typed outcome payloads. Tenant envelopes are
 rejected by this single-workspace consumer. Source checks supplement trusted transport/
@@ -709,7 +709,8 @@ Neither adapter exposes overwrite/deletion. Verified removed slots retain verifi
 metadata and bytes conservatively until reset, protecting historical approved references
 without requiring an eventually consistent asset query. Phase 12 may clean only sufficiently
 old, authoritatively retired unverified orphan objects; it must not delete verified historical
-references or forget their tombstones while bytes remain. No automatic cleanup runs yet.
+references or forget their tombstones while bytes remain. Phase 12 supplies explicit maintenance
+ticks; consumer Scheduler deployment remains Phase 20.
 
 The asset factory supplies internal `createSnapshot`/`applySnapshot` commands under the
 dedicated asset-projector identity, preserving immutable identity/verification and terminal
@@ -760,6 +761,61 @@ Commands accept ISO timestamps with an explicit offset. The UI converts a local 
 plus IANA time zone using Temporal with disambiguation set to `reject`; nonexistent or
 ambiguous daylight-saving times require correction rather than silent adjustment. Server
 validation enforces future times with its clock and stores normalized UTC instants.
+
+### Phase 12 Implementation Decisions
+
+`createContentJobs` implements `duePublication`, `dueReview`, `expireUploads`, and
+`cleanupOrphans`; the memory runtime exposes explicit `app.jobs.tick(name)`, never timers.
+Each tick admits at most 50 one-candidate query pages within a 20-second monotonic budget.
+Finite SDK requests/checkpoint release may finish beyond the admission deadline. Smaller
+test/operator budgets may not exceed these bounds. Failed candidates advance progress and
+are revisited on the next pass; unattempted time-exhausted candidates retain their cursor.
+Empty service continuation pages consume the same budget. Strong authority checks reject
+stale schedule/review/revision candidates before issuing a fenced internal command.
+
+Application-owned `JOB#<name>` / `CHECKPOINT` rows (`APP_JOB`) retain a revision, UUID token,
+30-second lease, and `{ passCutoff, cursor }`. There are four records, no growing history or
+TTL. Acquisition strongly reads then conditionally creates/replaces; every save/release
+checks token, revision, and active lease interval. A lost acquisition response grants no
+usable lease; wait for expiry. Crashes resume the last saved cursor; stale owners cannot
+overwrite a successor. The cutoff and query scope remain fixed across clock changes and
+deleted boundary keys. Memory provides the same conditional semantics without SDK calls.
+
+The current review gains required nullable `lastReminderDay`. Internal `recordReviewReminder`
+requires due-worker identity, expected version, current review/revision, pending status, and
+server due time. Only a strictly later UTC day can advance the marker; regressed clocks
+cannot resend an older day. State, activity, projections, receipt, idempotency and full
+`reviewReminderRecorded` fact commit together. Revision/submitted snapshot do not change.
+The fact contains the full current review plus `remindedAt`; materialization preserves
+monotonic reminder history, and `review-reminder.v1` notifies the assigned editor using the
+original business instant through the existing replay-safe sink. This private development
+schema evolves in place; reset older ephemeral datasets rather than treating them as migrated.
+
+Content-owned `expiringUploads` and `orphanAssets` projections identify candidates, not
+deletion authority. Cleanup requires a retired, never-verified slot, no current frozen
+review/publication reference, and both retirement/object timestamps at least 24 hours old.
+Read content strongly before inspection and again before deletion. The age bound uses
+`min(passCutoff, now) - 24 hours`, so clock rollback never relaxes retention. Missing/corrupt
+parents, archived content, verified historical assets and publication JSON are not deleted.
+Memory compares its observation; S3 re-heads exact generated asset keys, requires an
+unversioned owned bucket, and uses an ETag-conditioned delete. Changed/young/missing objects
+are skipped; errors fail closed. Keep all tombstones after deletion, including never-verified
+ones: late uploads cannot revive a slot, and future sweeps may remove late-created orphans
+only after they age. Slot-capacity reclamation/archival cleanup is deliberately not added.
+See the primary [S3 conditional delete API](https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObject.html).
+
+`src/shared/time.ts` uses pinned `@js-temporal/polyfill@0.5.1` with no global mutation.
+Accept a strict local ISO date/time and IANA zone, reject overflow and gap/fold disambiguation,
+then serialize a UTC millisecond instant. Review/schedule inputs share explicit-offset ISO
+validation/UTC normalization; server decisions validate future time. See the
+[Temporal time-zone conversion contract](https://tc39.es/proposal-temporal/docs/zoneddatetime.html).
+
+`jobs.zip` exports `scheduled`, composing actual jobs/checkpoints/stores through the public
+Scheduler target adapter. Local S3 permits the exact owned publisher or jobs Lambda context
+on the fixed worker endpoint. This phase does not provision consumer schedules/queues or
+modify the four-function feasibility spine. Live evidence uses shared jobs directly on real
+DynamoDB/S3 with an injected clock, while the independent spine still proves automatic
+Scheduler/managed transport. Full consumer deployment/grants remain Phase 20/21.
 
 ### Notification Sink
 
