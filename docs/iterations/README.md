@@ -6,10 +6,10 @@ release the framework.
 
 ## Index
 
-| Iteration                                                   | Status            | Outcome                                                                            |
-| ----------------------------------------------------------- | ----------------- | ---------------------------------------------------------------------------------- |
-| [001: Foundation](001-foundation/README.md)                 | Archived baseline | Merged and tagged `v0.0.1` in Git; npm publication and `0.1.0` deferred.           |
-| [002: Content Operations](002-content-operations/README.md) | Phase 7 complete  | Headless domain and scoped atomic dispatch verified; attachment lifecycle is next. |
+| Iteration                                                   | Status            | Outcome                                                                                          |
+| ----------------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------ |
+| [001: Foundation](001-foundation/README.md)                 | Archived baseline | Merged and tagged `v0.0.1` in Git; npm publication and `0.1.0` deferred.                         |
+| [002: Content Operations](002-content-operations/README.md) | Phase 8 complete  | Scoped domain dispatch and immutable attachments verified; materializers/notifications are next. |
 
 ## Planning Flow
 

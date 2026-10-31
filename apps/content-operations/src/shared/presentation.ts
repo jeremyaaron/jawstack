@@ -1,4 +1,5 @@
 import type { ResourceUiDefinition } from "@jawstack/angular";
+import { assetVersionInput, registerAssetInput, assetStatuses } from "./assets";
 import {
   contentStatuses,
   createContentInput,
@@ -48,6 +49,18 @@ export const contentUi = {
       roles: ["author", "editor"],
       create: false,
     },
+    registerAsset: {
+      title: "Register attachment",
+      input: registerAssetInput,
+      roles: ["author", "editor"],
+      create: false,
+    },
+    removeAsset: {
+      title: "Remove attachment",
+      input: assetVersionInput,
+      roles: ["author", "editor"],
+      create: false,
+    },
     approve: { title: "Approve", input: reviewDecisionInput, roles: ["editor"], create: false },
     requestChanges: {
       title: "Request changes",
@@ -63,6 +76,24 @@ export const contentUi = {
     },
     archive: { title: "Archive", input: versionInput, roles: ["editor"], create: false },
   },
+} satisfies ResourceUiDefinition;
+
+export const assetUi = {
+  name: "asset",
+  title: "Assets",
+  state: {
+    kind: "jawstack.state",
+    fields: {
+      filename: { kind: "string", required: true, label: "Filename" },
+      contentId: { kind: "string", required: true, label: "Content" },
+      status: { kind: "enum", required: true, values: assetStatuses },
+    },
+  },
+  views: {
+    list: { kind: "jawstack.view.list", columns: ["filename", "status", "contentId"] },
+    detail: { kind: "jawstack.view.detail", titleField: "filename", sections: ["metadata"] },
+  },
+  commands: {},
 } satisfies ResourceUiDefinition;
 
 export const reviewUi = {

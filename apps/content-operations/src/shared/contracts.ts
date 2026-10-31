@@ -1,21 +1,15 @@
 import { z } from "zod";
 import { editorIds, fixtureIds } from "./identities";
-
-export const limits = Object.freeze({
-  title: 160,
-  bodyBytes: 32 * 1024,
-  note: 2000,
-  snapshotBytes: 64 * 1024,
-  stateBytes: 160 * 1024,
-  eventBytes: 80 * 1024,
-});
-export const jsonBytes = (value: unknown) =>
-  new TextEncoder().encode(JSON.stringify(value)).byteLength;
-export const idSchema = z.uuid();
-export const versionSchema = z.number().int().min(1).max(Number.MAX_SAFE_INTEGER);
-export const instantSchema = z.iso.datetime({ precision: 3 });
-const validUnicode = (value: string) =>
-  new TextDecoder("utf-8", { ignoreBOM: true }).decode(new TextEncoder().encode(value)) === value;
+import { activeAsset, assetSlotSchema, readyAttachmentSchema, readyAttachments } from "./assets";
+import {
+  idSchema,
+  instantSchema,
+  jsonBytes,
+  limits,
+  validUnicode,
+  versionSchema,
+} from "./validation";
+export { idSchema, instantSchema, jsonBytes, limits, versionSchema } from "./validation";
 const titleInputSchema = z
   .string()
   .trim()
@@ -54,8 +48,6 @@ export const contentStatuses = [
 ] as const;
 export const reviewStatuses = ["pending", "approved", "changesRequested", "superseded"] as const;
 
-// Slot/object protocols arrive in Phase 8; this schema intentionally accepts no fabricated assets.
-const noAttachmentsSchema = z.array(z.never()).max(0).readonly();
 export const submittedSnapshotSchema = z
   .strictObject({
     contentId: idSchema,
@@ -63,9 +55,15 @@ export const submittedSnapshotSchema = z
     authorId: z.enum(fixtureIds),
     title: titleSchema,
     body: bodySchema,
-    attachments: noAttachmentsSchema,
+    attachments: z.array(readyAttachmentSchema).max(limits.activeAssets).readonly(),
     submittedAt: instantSchema,
   })
+  .refine(
+    (value) =>
+      value.attachments.every((asset) => asset.contentId === value.contentId) &&
+      new Set(value.attachments.map((asset) => asset.assetId)).size === value.attachments.length,
+    "Invalid submitted attachment references.",
+  )
   .refine((value) => jsonBytes(value) <= limits.snapshotBytes, "Submitted snapshot exceeds 64 KiB.")
   .readonly();
 
@@ -120,7 +118,7 @@ export const contentStateSchema = z
     body: bodySchema,
     revisionId: idSchema,
     status: z.enum(contentStatuses),
-    attachments: noAttachmentsSchema,
+    attachments: z.array(assetSlotSchema).max(limits.retainedAssets).readonly(),
     review: reviewTaskStateSchema.nullable(),
     approval: z
       .strictObject({
@@ -141,6 +139,12 @@ export const contentStateSchema = z
       .nullable(),
   })
   .superRefine((value, ctx) => {
+    if (
+      value.attachments.some((asset) => asset.contentId !== value.contentId) ||
+      new Set(value.attachments.map((asset) => asset.assetId)).size !== value.attachments.length ||
+      value.attachments.filter(activeAsset).length > limits.activeAssets
+    )
+      ctx.addIssue({ code: "custom", message: "Invalid or excessive attachment slots." });
     const review = value.review;
     if (review && review.contentId !== value.contentId)
       ctx.addIssue({ code: "custom", message: "Review belongs to different content." });
@@ -159,7 +163,11 @@ export const contentStateSchema = z
         review.submitted.revisionId !== value.revisionId ||
         review.submitted.title !== value.title ||
         review.submitted.body !== value.body ||
-        review.submitted.authorId !== value.authorId
+        review.submitted.authorId !== value.authorId ||
+        value.attachments.some((slot) => slot.status === "pending") ||
+        JSON.stringify(
+          [...review.submitted.attachments].sort((a, b) => a.assetId.localeCompare(b.assetId)),
+        ) !== JSON.stringify(readyAttachments(value.attachments))
       )
         ctx.addIssue({
           code: "custom",
@@ -234,5 +242,10 @@ export const contentEventSchemas = {
   "contentItem.draftReopened": lifecycleFactSchema.refine((value) => value.status === "draft"),
   "contentItem.archived": lifecycleFactSchema.refine((value) => value.status === "archived"),
   "reviewTask.snapshotApplied": reviewTaskStateSchema,
+  "contentItem.assetRegistered": assetSlotSchema.refine((value) => value.status === "pending"),
+  "contentItem.assetReady": assetSlotSchema.refine((value) => value.status === "ready"),
+  "contentItem.assetRemoved": assetSlotSchema.refine((value) => value.status === "removed"),
+  "contentItem.assetExpired": assetSlotSchema.refine((value) => value.status === "expired"),
+  "asset.snapshotApplied": assetSlotSchema,
 } as const;
 export type ContentEventType = keyof typeof contentEventSchemas;

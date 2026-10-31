@@ -212,8 +212,8 @@ intersects fixture roles with resolved auth roles and rejects unknown/external f
 identities. Browser metadata imports Angular/core types only, not server factories or SDKs.
 
 Current state validates the editorial lifecycle, latest bounded review, approval, and schedule
-invalidation metadata. Attachments accept only an empty array until Phase 8; full operational
-publication state and scheduling/time-zone semantics remain Phases 10-12. Tests seed the
+invalidation metadata. Phase 8 adds bounded attachment slots and frozen verified references;
+full operational publication state and scheduling/time-zone semantics remain Phases 10-12. Tests seed the
 reserved scheduled/publishing/published editorial states to verify guards, not execution.
 Input titles are trimmed; stored titles must already be canonical. Body whitespace is
 preserved, Unicode is validated, and serialized snapshot/state/event byte bounds apply in
@@ -551,6 +551,56 @@ URLs that can overwrite an approved object after validation.
 A crash after object creation leaves an unready slot. Retrying the same upload can verify
 the object and complete it; an expiry command can retire abandoned slots. A removal that
 wins the content version race prevents later completion and leaves garbage for cleanup.
+
+### Phase 8 Implementation Decisions
+
+`src/shared/assets.ts` defines strict pending/ready/removed/expired slots with generated
+content/asset/key identity, uploader, claimed filename/type/size, one-hour deadline, verified
+size/SHA-256/time, retirement time, and content `sourceVersion`. At most 10 slots are active;
+at most 32 slots including retained tombstones exist on one aggregate. This explicit
+development bound prevents unbounded root history without silently discarding references.
+Registration at capacity is rejected. All existing serialized state/snapshot/event bounds
+remain enforced. Ready review references omit mutable upload lifecycle metadata.
+
+Registration/removal/expiry change the revision; readiness alone preserves it because
+submission cannot precede readiness. Every changed slot emits a full version-1 snapshot.
+Only dedicated `upload_verifier`/`uploadVerifier` and `asset_janitor`/`assetJanitor` identities
+can complete/expire, respectively; fixtures cannot impersonate them by adding roles.
+The service treats an already-ready matching retry as a read-only success; raw completion
+requires a pending slot (or replay of the original scoped command). Ordinary ingress must
+not expose internal names. These development service identities are not production auth.
+
+The transport-independent service admits at most two uploads per instance, applies a
+30-second stream deadline/cancellation and byte ceiling, rechecks authority after streaming
+and object creation, and bounds optimistic completion to three attempts. It refreshes
+expected version only after reloading/rechecking the current slot; it does not retry a stale
+editorial decision. Interrupted I/O is sanitized and never marks a slot ready. HTTP routing
+and authenticated download behavior remain Phase 14, not a Phase 8 API claim.
+
+Both object-store adapters derive keys from validated UUIDs, detect leading PNG/JPEG/PDF
+signatures, calculate SHA-256, and verify bounded readback. Signature detection is not full
+format decoding, sanitization, or antivirus scanning. The memory adapter copies byte arrays,
+defaults to 128 objects/128 MiB, and allows bounded overrides up to 256 objects/256 MiB.
+The S3 factory rejects inherited AWS credentials/configuration and nonlocal endpoints or
+foreign bucket/region before sending. It uses explicit test credentials, the existing
+final-destination transport guard, finite SDK retries/timeouts, `If-None-Match: *`, and up to
+three conditional-conflict attempts, followed by type/size/metadata/digest readback.
+See [S3 conditional writes](https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes.html).
+The [PNG signature](https://www.w3.org/TR/png-3/#5PNG-file-signature) is checked exactly;
+JPEG uses SOI/marker bytes and PDF uses a leading supported version header.
+
+Neither adapter exposes overwrite/deletion. Verified removed slots retain verification
+metadata and bytes conservatively until reset, protecting historical approved references
+without requiring an eventually consistent asset query. Phase 12 may clean only sufficiently
+old, authoritatively retired unverified orphan objects; it must not delete verified historical
+references or forget their tombstones while bytes remain. No automatic cleanup runs yet.
+
+The asset factory supplies internal `createSnapshot`/`applySnapshot` commands under the
+dedicated asset-projector identity, preserving immutable identity/verification and terminal
+retirement metadata. Complete tombstones may arrive before pending/ready facts; stale or
+regressing facts cannot revive them. Projections include stable `asset.list` and
+`asset.content.<contentId>` rows, including retired statuses. Phase 9 still owns envelope
+validation, out-of-order ignore/reload loops, subscriptions, and actual materializer workers.
 
 Run bounded orphan cleanup only for objects older than 24 hours whose authoritative slot
 is removed/expired. Logical slot expiry is checked at command time. Keep tombstones at least

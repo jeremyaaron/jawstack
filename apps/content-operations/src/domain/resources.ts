@@ -25,6 +25,16 @@ import {
 import { fixtureIdentities } from "../shared/identities";
 import { contentUi, reviewUi } from "../shared/presentation";
 import { contentProjectionPlan, reviewProjectionPlan } from "./projections";
+import {
+  activeAsset,
+  assetObjectKey,
+  assetVersionInput,
+  completeUploadInput,
+  readyAttachments,
+  type AssetSlot,
+} from "../shared/assets";
+import { limits } from "../shared/validation";
+import { createAssetResource } from "./asset-resource";
 
 type ResourceOptions = Readonly<{ newId?: () => string }>;
 type ContentResponse = Readonly<{
@@ -33,6 +43,7 @@ type ContentResponse = Readonly<{
   revisionId: string;
   status: ContentState["status"];
   reviewId?: string;
+  assetId?: string;
 }>;
 const fail = (
   code: ConstructorParameters<typeof JawStackRuntimeError>[0],
@@ -44,6 +55,22 @@ const fail = (
 const requireThat = (condition: unknown, message: string) => {
   if (!condition) fail("command.rejected", message);
 };
+export const uploadVerifierIdentity = Object.freeze({
+  subject: "upload_verifier",
+  role: "uploadVerifier",
+});
+export const assetJanitorIdentity = Object.freeze({
+  subject: "asset_janitor",
+  role: "assetJanitor",
+});
+function serviceActor(auth: AuthContext, identity: { subject: string; role: string }) {
+  if (
+    auth.subject !== identity.subject ||
+    !auth.roles.includes(identity.role) ||
+    !["dev", "test"].includes(auth.mode)
+  )
+    fail("auth.forbidden", "A resolved internal service identity is required.");
+}
 
 function actor(auth: AuthContext) {
   const fixture = fixtureIdentities.find((identity) => identity.subject === auth.subject);
@@ -62,9 +89,16 @@ function actor(auth: AuthContext) {
 function storedContent(
   context: CommandContext,
   expectedVersion: number,
-  policy: "ownerOrEditor" | "editor",
+  policy: "ownerOrEditor" | "editor" | "uploadVerifier" | "assetJanitor",
 ): ResourceState<ContentState> {
-  const identity = actor(context.auth);
+  const identity =
+    policy === "uploadVerifier" || policy === "assetJanitor"
+      ? (serviceActor(
+          context.auth,
+          policy === "uploadVerifier" ? uploadVerifierIdentity : assetJanitorIdentity,
+        ),
+        undefined)
+      : actor(context.auth);
   const previous = context.previous;
   const parsed = contentStateSchema.safeParse(previous?.state);
   if (
@@ -75,11 +109,16 @@ function storedContent(
     parsed.data.contentId !== context.resourceId ||
     !versionSchema.safeParse(previous.version).success ||
     (parsed.data.review && parsed.data.review.sourceVersion > previous.version) ||
+    parsed.data.attachments.some((asset) => asset.sourceVersion > previous.version) ||
     !instantSchema.safeParse(previous.createdAt).success ||
     !instantSchema.safeParse(previous.updatedAt).success
   )
     return fail("resource.invalid_state", "Stored content is invalid.");
-  if (!identity.editor && (policy === "editor" || identity.subject !== parsed.data.authorId))
+  if (
+    identity &&
+    !identity.editor &&
+    (policy === "editor" || identity.subject !== parsed.data.authorId)
+  )
     return fail("auth.forbidden", "This identity cannot change this content.");
   if (previous.version !== expectedVersion)
     return fail("resource.conflict", "Content changed; reload before retrying.", {
@@ -103,6 +142,7 @@ function finish(
   eventType: ContentEventType,
   title: string,
   reviews: readonly EventDraft[] = [],
+  asset?: AssetSlot,
 ): CommandDecision<ContentState, ContentResponse> {
   const parsed = contentStateSchema.safeParse(candidate);
   if (!parsed.success)
@@ -115,16 +155,18 @@ function finish(
   const version = (previous?.version ?? 0) + 1;
   if (!versionSchema.safeParse(version).success)
     return fail("resource.invalid_state", "Content version is exhausted.");
-  const payload = ["contentItem.reviewRequested", "contentItem.reviewDecided"].includes(eventType)
-    ? next.review
-    : {
-        contentId: next.contentId,
-        authorId: next.authorId,
-        title: next.title,
-        revisionId: next.revisionId,
-        status: next.status,
-        sourceVersion: version,
-      };
+  const payload =
+    asset ??
+    (["contentItem.reviewRequested", "contentItem.reviewDecided"].includes(eventType)
+      ? next.review
+      : {
+          contentId: next.contentId,
+          authorId: next.authorId,
+          title: next.title,
+          revisionId: next.revisionId,
+          status: next.status,
+          sourceVersion: version,
+        });
   return {
     nextState: next,
     activity: [
@@ -145,6 +187,7 @@ function finish(
       revisionId: next.revisionId,
       status: next.status,
       ...(next.review ? { reviewId: next.review.reviewId } : {}),
+      ...(asset ? { assetId: asset.assetId } : {}),
     },
   };
 }
@@ -166,7 +209,8 @@ export function createContentItemResource(options: ResourceOptions = {}) {
     const value = (options.newId ?? (() => globalThis.crypto.randomUUID()))();
     if (
       !idSchema.safeParse(value).success ||
-      [context.resourceId, previous?.revisionId, previous?.review?.reviewId].includes(value)
+      [context.resourceId, previous?.revisionId, previous?.review?.reviewId].includes(value) ||
+      previous?.attachments.some((slot) => slot.assetId === value)
     )
       return fail("runtime.internal", "ID generator did not produce a fresh UUID.");
     return value;
@@ -233,6 +277,10 @@ export function createContentItemResource(options: ResourceOptions = {}) {
         decide: (context) => {
           const previous = storedContent(context, context.input.expectedVersion, "ownerOrEditor");
           requireThat(previous.state.status === "draft", "Only a draft can be submitted.");
+          requireThat(
+            !previous.state.attachments.some((asset) => asset.status === "pending"),
+            "Every active attachment must be ready before submission.",
+          );
           if (Date.parse(context.input.dueAt) <= context.now.getTime())
             return fail("command.validation", "Review due time must be in the future.");
           const review = reviewTaskStateSchema.safeParse({
@@ -249,7 +297,7 @@ export function createContentItemResource(options: ResourceOptions = {}) {
               title: previous.state.title,
               body: previous.state.body,
               revisionId: previous.state.revisionId,
-              attachments: previous.state.attachments,
+              attachments: readyAttachments(previous.state.attachments),
               submittedAt: context.now.toISOString(),
             },
           });
@@ -268,6 +316,163 @@ export function createContentItemResource(options: ResourceOptions = {}) {
           );
         },
       }),
+      registerAsset: defineCommand({
+        ...contentUi.commands.registerAsset,
+        emits: [{ eventType: "contentItem.assetRegistered", schemaVersion: 1 }],
+        decide: (context) => {
+          const previous = storedContent(context, context.input.expectedVersion, "ownerOrEditor");
+          requireThat(
+            previous.state.status === "draft",
+            "Attachments can only be registered on drafts.",
+          );
+          requireThat(
+            previous.state.attachments.filter(activeAsset).length < limits.activeAssets &&
+              previous.state.attachments.length < limits.retainedAssets,
+            "Attachment slot capacity reached.",
+          );
+          const assetId = newId(context, previous.state);
+          const revisionId = newId(context, previous.state);
+          if (assetId === revisionId)
+            return fail("runtime.internal", "Asset and revision IDs must differ.");
+          const asset: AssetSlot = {
+            assetId,
+            contentId: context.resourceId,
+            filename: context.input.filename,
+            mediaType: context.input.mediaType,
+            expectedSize: context.input.expectedSize,
+            objectKey: assetObjectKey(context.resourceId, assetId),
+            uploaderId: actor(context.auth).subject,
+            status: "pending",
+            registeredAt: context.now.toISOString(),
+            uploadExpiresAt: new Date(
+              context.now.getTime() + limits.uploadLifetimeMs,
+            ).toISOString(),
+            verified: null,
+            retiredAt: null,
+            sourceVersion: previous.version + 1,
+          };
+          return finish(
+            context,
+            previous,
+            { ...previous.state, revisionId, attachments: [...previous.state.attachments, asset] },
+            "contentItem.assetRegistered",
+            "Registered attachment",
+            [],
+            asset,
+          );
+        },
+      }),
+      completeUpload: defineCommand({
+        title: "Verify upload",
+        roles: [uploadVerifierIdentity.role],
+        input: completeUploadInput,
+        emits: [{ eventType: "contentItem.assetReady", schemaVersion: 1 }],
+        decide: (context) => {
+          const previous = storedContent(context, context.input.expectedVersion, "uploadVerifier");
+          const slot = previous.state.attachments.find(
+            (asset) => asset.assetId === context.input.assetId,
+          );
+          requireThat(
+            previous.state.status === "draft" && slot?.status === "pending",
+            "Upload requires a pending slot on a draft.",
+          );
+          requireThat(
+            context.now.getTime() < Date.parse(slot!.uploadExpiresAt),
+            "Upload slot has expired.",
+          );
+          const object = context.input.object;
+          requireThat(
+            object.contentId === context.resourceId &&
+              object.assetId === slot!.assetId &&
+              object.objectKey === slot!.objectKey &&
+              object.mediaType === slot!.mediaType &&
+              object.size === slot!.expectedSize,
+            "Verified object differs from the registered slot.",
+          );
+          const asset: AssetSlot = {
+            ...slot!,
+            status: "ready",
+            verified: { size: object.size, sha256: object.sha256, at: context.now.toISOString() },
+            sourceVersion: previous.version + 1,
+          };
+          return finish(
+            context,
+            previous,
+            {
+              ...previous.state,
+              attachments: previous.state.attachments.map((old) =>
+                old.assetId === asset.assetId ? asset : old,
+              ),
+            },
+            "contentItem.assetReady",
+            "Verified attachment",
+            [],
+            asset,
+          );
+        },
+      }),
+      ...Object.fromEntries(
+        (["removeAsset", "expireAsset"] as const).map((name) => [
+          name,
+          defineCommand({
+            ...(name === "removeAsset"
+              ? contentUi.commands.removeAsset
+              : {
+                  title: "Expire upload",
+                  roles: [assetJanitorIdentity.role],
+                  input: assetVersionInput,
+                }),
+            emits: [
+              {
+                eventType:
+                  name === "removeAsset" ? "contentItem.assetRemoved" : "contentItem.assetExpired",
+                schemaVersion: 1,
+              },
+            ],
+            decide: (context) => {
+              const previous = storedContent(
+                context,
+                context.input.expectedVersion,
+                name === "removeAsset" ? "ownerOrEditor" : "assetJanitor",
+              );
+              const slot = previous.state.attachments.find(
+                (asset) => asset.assetId === context.input.assetId,
+              );
+              requireThat(
+                previous.state.status === "draft" && slot && activeAsset(slot),
+                "Only active draft attachments can be retired.",
+              );
+              if (name === "expireAsset")
+                requireThat(
+                  slot!.status === "pending" &&
+                    context.now.getTime() >= Date.parse(slot!.uploadExpiresAt),
+                  "Only expired pending uploads can be expired.",
+                );
+              const asset: AssetSlot = {
+                ...slot!,
+                status: name === "removeAsset" ? "removed" : "expired",
+                retiredAt: context.now.toISOString(),
+                sourceVersion: previous.version + 1,
+              };
+              return finish(
+                context,
+                previous,
+                {
+                  ...previous.state,
+                  revisionId: newId(context, previous.state),
+                  attachments: previous.state.attachments.map((old) =>
+                    old.assetId === asset.assetId ? asset : old,
+                  ),
+                },
+                name === "removeAsset" ? "contentItem.assetRemoved" : "contentItem.assetExpired",
+                name === "removeAsset" ? "Removed attachment" : "Expired upload",
+                [],
+                asset,
+              );
+            },
+          }),
+        ]),
+      ),
       ...Object.fromEntries(
         (["approve", "requestChanges"] as const).map((name) => [
           name,
@@ -470,5 +675,9 @@ export function createReviewTaskResource() {
 }
 
 export function createContentOperationsResources(options: ResourceOptions = {}) {
-  return [createContentItemResource(options), createReviewTaskResource()] as const;
+  return [
+    createContentItemResource(options),
+    createReviewTaskResource(),
+    createAssetResource(),
+  ] as const;
 }

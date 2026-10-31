@@ -1,7 +1,7 @@
 # Iteration 2 Implementation Plan: Content Operations
 
-Status: reviewed. Phases 0-7 are complete. Scoped atomic dispatch, the extended live
-LocalStack gate, and workspace regression verification passed. Phase 8 has not started.
+Status: reviewed. Phases 0-8 are complete. Attachment lifecycle, immutable object uploads,
+the extended live LocalStack gate, and workspace regressions passed. Phase 9 has not started.
 
 ## Purpose
 
@@ -90,7 +90,7 @@ work may proceed only after an explicit sequencing decision, without claiming th
 | 5     | AWS CDK                    | Named worker/scheduler bindings                           | Complete |
 | 6     | Consumer domain            | Draft and review aggregate                                | Complete |
 | 7     | Consumer persistence       | Scoped dispatch, atomic operation records and projections | Complete |
-| 8     | Consumer services          | Attachment lifecycle and verified object storage          | Planned  |
+| 8     | Consumer services          | Attachment lifecycle and verified object storage          | Complete |
 | 9     | Consumer workers           | Materializers, notification sink and memory event pump    | Planned  |
 | 10    | Consumer domain            | Publication intent, claims and generation transitions     | Planned  |
 | 11    | Consumer workers           | Recoverable publication execution                         | Planned  |
@@ -900,6 +900,52 @@ integration gate, documentation walkthrough, local links, and `git diff --check`
 - No public framework implementation, dependency, package version, workflow, real AWS
   resource, release, or commit was changed/created. Editorial worker transport, HTTP, UI,
   production IAM, and real-AWS deployment remain outside this phase. Phase 8 is next.
+
+### Phase 8: October 31, 2026
+
+- Added strict attachment-slot/object-reference schemas and content-owned registration,
+  internal verified completion, draft removal, and internal expiry commands. Registration/
+  removal/expiry invalidate revisions; completion preserves membership/revision. Submission
+  rejects pending slots and freezes only ready object references. All serialized bounds,
+  fixture ownership, expected versions, generated-key identity, and source-version checks
+  remain enforced; clients cannot provide trusted storage identity or verification metadata.
+- Added a pure asset factory with internal snapshot creation/application, monotonic source
+  versions, immutable verification metadata, terminal tombstones, and stable per-content/
+  list projections. Both review and asset UI command maps are empty. Phase 9 still owns
+  workers, subscriptions, source-envelope validation, and ignore/reload loops.
+- Chose 10 active/32 total retained slots to keep tombstones without unbounded aggregate
+  history. Registration fails at capacity rather than losing references. Verified retired
+  bytes remain until explicit reset; automatic pending expiry and safe unverified-orphan
+  deletion remain Phase 12. This conservative policy also retains historical approvals.
+- Added bounded memory and guarded local-only S3 object stores: generated UUID paths,
+  PNG/JPEG/PDF signature checks, exact declared/actual sizes up to 10 MiB, server SHA-256,
+  conditional creation, bounded readback, and mismatch rejection without overwrite. No
+  delete API is exposed. Memory has explicit object/byte capacity; S3 has owned-bucket/
+  region checks, explicit dummy credentials, endpoint/final-transport guards, finite SDK
+  requests and three conditional-409 attempts. No dependency or framework API was added.
+- Added the transport-independent upload service: two in-flight streams per instance,
+  30-second cancellation/byte bounds, authority rechecks before/after object I/O, and at
+  most three optimistic completion attempts. Read-only matching retries do not mutate ready
+  state. An object-only write can recover after an interrupted completion; removal/expiry/
+  submission races cannot mark an invalid slot ready. Deadline handling returns even when
+  an async producer never settles `next()`/cleanup. HTTP routes remain Phase 14.
+- Added 51 credential-free domain/upload/object-store tests (221 consumer/506 workspace
+  tests total): malicious filenames/roles/IDs, media/size boundaries, conditional duplicate/
+  different bytes, corrupt readback, unsafe AWS configuration with zero sends, tombstone/
+  active-slot limits, expiry, approval retention, completion/removal/submission races,
+  interrupted writes, concurrency admission, hanging streams, and bounded retry recovery.
+  The existing pure-manifest test now includes all three actual resources; the shared UI
+  bundle still excludes domain/server/SDK imports.
+- `pnpm verify:release` passed: format/typecheck/tests/lint/build, pkg-guard with zero
+  findings, isolated generated-app install/typecheck/tests/build/AWS bundle/synth/doctor,
+  and six package dry runs. Local Markdown links and `git diff --check` passed. The live
+  gate includes real S3 plus DynamoDB upload recovery and all previous spine/paging/scoped/
+  Scheduler/redrive/sentinel/reset/reprovision checks; observed details are recorded in
+  [LocalStack evidence](localstack-evidence.md). The owned lab was stopped after verification.
+- No public framework implementation, package version, dependency, workflow, real AWS
+  resource, release, or commit was changed/created. Signature checks are not full media
+  decoding/sanitization or antivirus; no editorial HTTP/UI or deployed materializer is
+  claimed. Phase 9 is next.
 
 For later phases, append the date, meaningful behavior delivered, commands/results,
 not-run checks, design changes, and remaining limitations. Do not replace observed

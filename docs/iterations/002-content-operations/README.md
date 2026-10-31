@@ -1,7 +1,7 @@
 # Iteration 2: Content Operations
 
-Status: Phases 0-7 complete. Scoped atomic dispatch, live LocalStack verification, and
-workspace regressions passed. Phase 8 has not started.
+Status: Phases 0-8 complete. Attachment lifecycle, immutable object uploads, live LocalStack
+verification, and workspace regressions passed. Phase 9 has not started.
 
 ## Documents
 
@@ -34,4 +34,8 @@ Named CDK worker/scheduler bindings now support application-owned grants and DLQ
 without construct-tree inspection. The consumer now supports draft/review/approval decisions
 through public core commands with invocation-scoped memory/DynamoDB dispatch, logical
 idempotency expiry, atomic command receipts, and bounded/deduplicated projection transactions.
-The live gate now also checks scoped replay, expiry, rollback, and consumer projection moves.
+The live gate also checks scoped replay, expiry, rollback, consumer projection moves, and
+immutable attachment uploads with interrupted-completion recovery. Content owns bounded
+attachment slots and freezes verified references for review; the asset read model has
+internal materialization primitives. Snapshot workers, notifications, and the memory event
+pump begin in Phase 9. HTTP upload/download routes and automatic cleanup remain later work.

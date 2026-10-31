@@ -251,19 +251,61 @@ cover the exact 60/61-action budget, resource-type isolation, ambiguous successf
 responses, and a winner committing before a stale decision. These are not claims of
 AWS-equivalent contention, IAM enforcement, or arbitrary throughput.
 
+## Phase 8: Attachments and Immutable Objects
+
+Observed on October 31, 2026, using the same pinned LocalStack `2026.10.0` image/digest,
+ARM64 architecture, guarded local-only clients, and user-attested Hobby tier. The final
+`feasibility-paging-scoped-transactions-and-assets` gate started
+`2026-10-31T19:52:15.892Z` and completed `2026-10-31T19:55:22.937Z` in 187.045 seconds
+with `decision: go`. An earlier complete run also passed in 169.287 seconds; the final run
+followed the independent stream-cancellation deadline fix.
+
+Asset run ID: `70c30ad1-eae0-4a3e-b2e7-4608d9b0a101`.
+Content ID: `d30cb76f-70e9-41ef-accb-038f66fdee93`.
+
+| Check                             | Observed Result                                                                                                                                                                                                                                        |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Real object/database split        | The service wrote and read back an actual private S3 object, then injected a failed completion dispatch. Strong DynamoDB reads still showed the slot pending, not ready. This was a controlled interruption, not a process-crash test.                 |
+| Retry recovery                    | Different bytes at the generated existing key were rejected without overwrite. The original bytes subsequently completed the authoritative slot with their verified SHA-256. A matching ready retry left the content version unchanged.                |
+| Concurrent duplicate object calls | Four conditional duplicate calls against the already-existing key returned its same digest. Listing the exact asset prefix found one logical original object. This is duplicate-write convergence, not a claim that four physical creations succeeded. |
+| Submission and approval           | Pending submission was rejected. Ready submission froze the object reference/digest; approval succeeded, and the upload service then rejected another upload against approved content.                                                                 |
+| Retirement retention              | Reopen/removal retained a full removed tombstone and the same readable verified object, preserving the historical approved reference. No object-store deletion operation was invoked.                                                                  |
+| Logical expiry                    | Advancing the injected server clock one hour rejected a pending upload before object creation. The internal expiry command emitted an expired tombstone; listing its exact key confirmed no object existed.                                            |
+| Keys and signatures               | A path-like filename was rejected. The generated PNG key round-tripped exact bytes; JPEG/PDF signature fixtures also round-tripped through the private S3 adapter. These are signature checks, not full media-format decoding or sanitization.         |
+| Earlier integration gates         | Event spine and S3 worker output, 260-row paged queries, scoped transaction/expiry/rollback parity, automatic Scheduler, actual receives 1/2/3 and DLQ collection, sentinel-safe reset, and reprovisioned spine all passed again.                      |
+| Cleanup                           | Owned reset removed the fixture objects/table while preserving an unrelated sentinel and its nonce. No owned Lambda containers remained after reset. Final `local:down` removed the owned emulator/network; cached images were retained.               |
+
+Credential-free verification added 51 tests: 27 domain/upload/materializer tests and 24
+memory/S3 object-store contracts. All 221 consumer tests and `pnpm verify:release` passed
+(506 workspace tests, format/typecheck/lint/build, zero pkg-guard findings, isolated
+generated-app verification, and six package dry runs). Unit checks cover the exact 10 MiB
+boundary, unsafe endpoint/credential rejection with zero SDK sends, corrupt metadata/bytes/
+streams, 409 retry bounds, malicious filenames, cross-content IDs/forged roles, 10-active/
+32-retained slot limits, optimistic completion races, two-upload admission, and deadlines
+even for an async producer that never yields or completes cleanup.
+
+The application now has content-authoritative attachment commands, immutable object stores,
+and internal asset snapshot primitives. The live proof calls the transport-independent
+service directly; it is not an HTTP deployment or a running asset materializer. HTTP,
+download response hardening, worker orchestration, automatic expiry/orphan jobs, IAM
+enforcement, real AWS, media decoding, and antivirus remain outside this evidence. Verified
+removed bytes are conservatively retained until reset; no production retention guarantee
+or automatic deletion is claimed.
+
 ## Current Coverage and Exclusions
 
-| Capability                                      | Status                                                                                                                                                    |
-| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| S3 conditional artifact storage                 | Passed in Phase 1.                                                                                                                                        |
-| Automatic Scheduler target                      | Passed in Phase 1; AWS-equivalent failed-delivery retries are not verified.                                                                               |
-| Actual SQS failure redrive/DLQ collector        | Passed in Phase 1.                                                                                                                                        |
-| Live unrelated-service-resource sentinel        | Passed in Phase 1 across service-resource reset.                                                                                                          |
-| Paged DynamoDB projection/activity queries      | Passed in Phase 3, including live memory parity, service continuation, and transactional projection moves.                                                |
-| Scoped consumer transactions                    | Passed in Phase 7: concurrent original-response replay, logical expiry, conditional rollback, and exact-key projection moves across memory/live DynamoDB. |
-| Full editorial workflow and recovery            | Not implemented; later phases.                                                                                                                            |
-| API Gateway/CloudFormation/CDK asset deployment | Excluded from this Hobby lab; SDK provisioning is not deployment-parity evidence.                                                                         |
-| IAM enforcement, production auth, real AWS      | Not verified; no real-AWS deployment performed.                                                                                                           |
+| Capability                                      | Status                                                                                                                                                                |
+| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| S3 conditional artifact storage                 | Passed in Phase 1.                                                                                                                                                    |
+| Automatic Scheduler target                      | Passed in Phase 1; AWS-equivalent failed-delivery retries are not verified.                                                                                           |
+| Actual SQS failure redrive/DLQ collector        | Passed in Phase 1.                                                                                                                                                    |
+| Live unrelated-service-resource sentinel        | Passed in Phase 1 across service-resource reset.                                                                                                                      |
+| Paged DynamoDB projection/activity queries      | Passed in Phase 3, including live memory parity, service continuation, and transactional projection moves.                                                            |
+| Scoped consumer transactions                    | Passed in Phase 7: concurrent original-response replay, logical expiry, conditional rollback, and exact-key projection moves across memory/live DynamoDB.             |
+| Attachment lifecycle/object storage             | Passed in Phase 8: real immutable S3 readback, interrupted completion recovery, frozen review references, removal retention, and logical expiry with no object write. |
+| Full editorial workflow and recovery            | Not implemented; later phases.                                                                                                                                        |
+| API Gateway/CloudFormation/CDK asset deployment | Excluded from this Hobby lab; SDK provisioning is not deployment-parity evidence.                                                                                     |
+| IAM enforcement, production auth, real AWS      | Not verified; no real-AWS deployment performed.                                                                                                                       |
 
 The overall feasibility decision is **go**. The documented
 [Scheduler emulation limitations](https://docs.localstack.cloud/aws/services/scheduler/#current-limitations),

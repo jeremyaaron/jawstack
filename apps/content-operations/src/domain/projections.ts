@@ -1,5 +1,6 @@
 import type { ProjectionWrite, ResourceState } from "@jawstack/core";
 import type { ContentState, ReviewTaskState } from "../shared/contracts";
+import type { AssetSlot } from "../shared/assets";
 
 function contentRows(
   state: ContentState,
@@ -95,4 +96,26 @@ export function reviewProjectionPlan(
   next: ReviewTaskState,
 ): ProjectionWrite[] {
   return moves(previous ? reviewRows(previous) : [], reviewRows(next));
+}
+
+export function assetProjectionPlan(
+  previous: AssetSlot | undefined,
+  next: AssetSlot,
+): ProjectionWrite[] {
+  const rows = (asset: AssetSlot): ProjectionWrite[] =>
+    ["asset.list", `asset.content.${asset.contentId}`].map((projectionName) => ({
+      projectionName,
+      itemId: asset.assetId,
+      sort: `${asset.registeredAt}#${asset.assetId}`,
+      data: {
+        filename: asset.filename,
+        contentId: asset.contentId,
+        mediaType: asset.mediaType,
+        status: asset.status,
+        sourceVersion: asset.sourceVersion,
+        size: asset.verified?.size ?? asset.expectedSize,
+        sha256: asset.verified?.sha256 ?? null,
+      },
+    }));
+  return moves(previous ? rows(previous) : [], rows(next));
 }

@@ -18,6 +18,7 @@ import { cleanupSpine, provisionSpine, waitFor } from "../src/lab/provision";
 import { verifySpine } from "../src/lab/verify";
 import { verifyPaging } from "../src/lab/verify-paging";
 import { verifyScopedTransactions } from "../src/lab/verify-transactions";
+import { verifyAssets } from "../src/lab/verify-assets";
 import { verifyCapabilities, verifySentinelReset } from "../src/lab/verify-capabilities";
 import { buildLab } from "./build-lab";
 
@@ -231,7 +232,7 @@ async function main() {
       const started = Date.now();
       const evidence: Record<string, unknown> = {
         status: "running",
-        scenario: "feasibility-paging-and-scoped-transactions",
+        scenario: "feasibility-paging-scoped-transactions-and-assets",
         recordedAt: new Date().toISOString(),
         durationMs: Date.now() - started,
         image: manifest.image,
@@ -253,6 +254,10 @@ async function main() {
           "Checking scoped command replay, expiry, atomic rollback, and projection moves...",
         );
         evidence.scopedTransactions = await verifyScopedTransactions(clients, config);
+        console.log(
+          "Checking immutable asset uploads, readback, interrupted completion, and lifecycle...",
+        );
+        evidence.assets = await verifyAssets(clients, config);
         console.log("Waiting for automatic Scheduler and actual SQS redrive/collector...");
         evidence.capabilities = await verifyCapabilities(clients, config);
         console.log("Checking ownership-safe reset with an unrelated-resource sentinel...");

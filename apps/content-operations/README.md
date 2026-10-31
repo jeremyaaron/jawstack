@@ -5,8 +5,10 @@ harness for the event spine, object storage, scheduling, failure collection, and
 Phase 3 extends it with memory/DynamoDB paged-query parity and transactional projection moves.
 Phase 6 adds a headless content/review domain, strict schemas, fixture identities, and
 browser-safe presentation metadata. Phase 7 adds scoped dispatch and atomic memory/DynamoDB
-persistence. Workers, HTTP, and Angular UI are not implemented yet; the LocalStack harness
-exercises the separate event-spine proof and direct consumer command transactions.
+persistence. Phase 8 adds content-owned attachment slots, an asset read-model primitive,
+immutable memory/local-S3 objects, and a bounded upload service. Editorial workers, HTTP,
+and Angular UI are not implemented yet; the lab exercises the separate event spine,
+direct consumer transactions, and the attachment/object-store protocol.
 
 ## Credential-Free Checks
 
@@ -36,8 +38,10 @@ The pure factories in `src/domain/resources.ts` expose:
   and eligible `archive`. Content is the only editorial authority.
 - `reviewTask`: internal-only `createSnapshot` and `applySnapshot` materialization
   primitives, not independent editorial commands. Its browser command map is empty.
+- `asset`: internal-only snapshot creation/application from full content-owned attachment
+  facts. Per-content projections retain removed/expired tombstones. Its UI command map is empty.
 
-`src/shared/contracts.ts` owns strict Zod state/input/version-1 event schemas;
+`src/shared/contracts.ts` and `src/shared/assets.ts` own strict state/input/version-1 fact schemas;
 `src/shared/presentation.ts` shares browser-safe metadata and schemas without server
 decisions. `src/domain/projections.ts` plans content/status/due-review and review history/
 editor/pending membership, including explicit old-key deletions and stable sort keys.
@@ -120,10 +124,9 @@ Factories generate separate revision/review UUIDs lazily, with injectable `newId
 
 ### Staged Capabilities
 
-Attachments intentionally accept only `[]` until Phase 8 adds bounded slots and verified
-object references. No asset bytes, object store, scheduling commands, publication execution,
-or artifact-writing protocol is implemented here. The schedule metadata shape supports
-invalidation; scheduling/time-zone semantics and full publication execution state remain
+Scheduling commands, publication execution, and the publication artifact-writing protocol
+are not implemented here. The schedule metadata shape supports invalidation;
+scheduling/time-zone semantics and full publication execution state remain
 Phases 10-12. Scheduled/publishing/published transition tests use trusted seeded editorial
 states, not an executed publication workflow.
 
@@ -132,12 +135,55 @@ internal primitives. They require `review_projector`/`reviewProjector`, preserve
 fields, and reject stale source versions or regressing closed outcomes. A closed snapshot
 can arrive before its older requested fact without restoring pending state. Phase 9 will
 add envelope/source validation, ignore/reload behavior, worker retries, and the event pump.
-Public ingress must reject both internal command names regardless of headers, and fixture
+The asset primitives apply the same dedicated-projector, increasing-source-version, and
+immutable-metadata rules, including terminal tombstones. Public ingress must reject snapshot
+commands, `completeUpload`, and `expireAsset` regardless of headers, and fixture
 selectors must never offer service identities. No HTTP ingress is exposed yet.
 
 Tests execute public commands against memory and SDK contract persistence without Work
 Request helpers, direct event publication, or a second editorial authority. The live proof
 below includes consumer transactions, not deployed editorial workers or an HTTP application.
+
+## Attachments and Uploads
+
+- `registerAsset` and `removeAsset` require an owning author/editor, draft status, and
+  `expectedVersion`. Registration generates a new asset UUID, revision UUID, immutable key
+  `assets/<contentId>/<assetId>/original`, and one-hour deadline. Removal/expiry retain a
+  full tombstone and change the draft revision; verified completion does not change membership.
+- There are at most 10 active slots and 32 total retained slots, including tombstones.
+  The latter is a deliberate development bound: registration stops at capacity instead of
+  forgetting an object reference. Automatic expiry/orphan cleanup remains Phase 12. Verified
+  objects, including removed ones, are conservatively retained until explicit local reset.
+- PNG, JPEG, and PDF bytes are limited to 10 MiB per file; declared size/type must match
+  actual bytes and an allowed leading signature. Filenames are display-only Unicode text
+  up to 255 characters; paths, controls, bidi controls, and markup delimiters are rejected.
+  A filename, client checksum, or client storage key never supplies object authority.
+- `createUploadService` accepts resolved identity, content/asset IDs, and a byte array or
+  async byte stream. It strongly loads content, checks fixture ownership, draft/slot state
+  and logical deadline, then reads under a 30-second deadline with at most two in-flight
+  uploads per service instance. Excess admission is retryable; there is no unbounded queue.
+- Memory and guarded local S3 adapters conditionally create, compute SHA-256, and verify
+  readback bytes/type/size/digest. Matching retries succeed; different existing bytes fail
+  without overwrite. Memory defaults to 128 objects/128 MiB (configurable within bounded
+  limits). S3 permits only the owned local bucket/region and declared local endpoints,
+  dummy credentials, final transport checks, finite SDK retries/timeouts, and at most three
+  conditional 409 attempts. Neither adapter exposes deletion or an overwrite operation.
+- Only the internal upload verifier can run `completeUpload`. The service rereads and
+  rechecks on at most three optimistic completion attempts; it never reapplies a stale
+  decision after removal, expiry, or submission. A ready retry verifies the same bytes and
+  returns the current slot without another mutation. An interrupted completion leaves an
+  unready slot plus an immutable object; retrying the same bytes can complete it safely.
+- `submit` rejects pending slots and freezes ready references (IDs, key, filename, type,
+  size, digest), not raw bytes or retired slots. Approved/scheduled/published content cannot
+  accept uploads or removal. Removing a reopened attachment does not delete its historical
+  bytes. The dedicated janitor's `expireAsset` retires only due pending draft slots.
+
+Compose `createMemoryObjectStore` from `src/application/object-store.ts` and
+`createUploadService` from `src/application/uploads.ts` with the existing memory repository
+and dispatcher for credential-free use. `createLocalS3ObjectStore` is explicitly local-only;
+it is not a production AWS client factory. Snapshot workers arrive in Phase 9 and HTTP
+upload/download routing in Phase 14. Signature detection is not full media decoding,
+sanitization, antivirus scanning, or permission to embed PDFs as active documents.
 
 ## LocalStack Prerequisites
 
@@ -210,6 +256,13 @@ scopes, seven-day logical expiry without physical deletion, and auxiliary/primar
 rollback. It checks status/due deletion and exact sort/partition moves with duplicate sort
 aliases. These fixtures stay in the owned table and are removed by reset as well. The
 command-receipt history is application-owned, not a new public JawStack item kind.
+
+The attachment proof uses actual S3 writes/readback and DynamoDB content commands. It
+injects an interruption after object creation, confirms the slot remains pending, rejects
+different retry bytes, and recovers matching completion. It checks concurrent conditional
+creation, one logical key, frozen review references, approved-upload rejection, retained
+removed bytes, and expiry without an object write. PNG/JPEG/PDF signature fixtures round
+trip; this is not evidence of full media decoding. These objects are removed by owned reset.
 
 `--confirm-reset` is required because the full gate then deletes the owned proof dataset,
 checks that a separately owned sentinel table and its nonce survived, and reprovisions

@@ -880,6 +880,7 @@ describe("pure resource composition and browser metadata", () => {
     expect(manifest.resources.map((resource) => resource.name)).toEqual([
       "contentItem",
       "reviewTask",
+      "asset",
     ]);
     expect(ids).not.toHaveBeenCalled();
     expect(random).not.toHaveBeenCalled();
