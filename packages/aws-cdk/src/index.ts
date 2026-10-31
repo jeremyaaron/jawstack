@@ -27,6 +27,12 @@ export function describePackage(): string {
 
 export type JawStackRemovalPolicy = "destroy" | "retain";
 
+export type JawStackWorkerBinding = Readonly<{
+  workerFunction: lambda.Function;
+  queue: sqs.Queue;
+  deadLetterQueue: sqs.Queue;
+}>;
+
 export type JawStackResourceWorkflowEntrypoints = Readonly<{
   apiHandler: string;
   outboxHandler: string;
@@ -54,11 +60,28 @@ export class JawStackResourceWorkflowApp extends Construct {
   readonly outboxSweeperFunction: lambda.Function;
   readonly workerFunctions: readonly lambda.Function[];
   readonly workerQueues: readonly sqs.Queue[];
+  readonly workerBindingsByName: Readonly<Record<string, JawStackWorkerBinding | undefined>>;
   readonly schedulerFunctions: readonly lambda.Function[];
+  readonly schedulerFunctionsByName: Readonly<Record<string, lambda.Function | undefined>>;
   readonly schedulerDlqs: readonly sqs.Queue[];
 
   constructor(scope: Construct, id: string, props: JawStackResourceWorkflowAppProps) {
     super(scope, id);
+
+    const workers = workersFromResources(props.resources);
+    const schedules = schedulesFromResources(props.resources);
+    const workerHandlers = props.entrypoints.workerHandlers ?? {};
+    const schedulerHandlers = props.entrypoints.schedulerHandlers ?? {};
+    assertUniqueNames(workers, "worker");
+    assertUniqueNames(schedules, "schedule");
+    workers.forEach((worker) => requireHandlerEntrypoint(workerHandlers, worker.name, "worker"));
+    schedules.forEach((schedule) =>
+      requireHandlerEntrypoint(
+        schedulerHandlers,
+        schedule.targetHandler ?? schedule.name,
+        "scheduler",
+      ),
+    );
 
     const names = resourceNames(props.appName, props.stage);
     const removalPolicy = removalPolicyFor(props.stage, props.removalPolicy);
@@ -100,8 +123,8 @@ export class JawStackResourceWorkflowApp extends Construct {
     const workerConstruct = new JawStackWorkerConstruct(this, "Workers", {
       appName: props.appName,
       stage: props.stage,
-      workers: workersFromResources(props.resources),
-      workerHandlers: props.entrypoints.workerHandlers ?? {},
+      workers,
+      workerHandlers,
       table: tableConstruct.table,
       eventBus: eventBusConstruct.eventBus,
       lambdaDefaults,
@@ -111,8 +134,8 @@ export class JawStackResourceWorkflowApp extends Construct {
     const schedulerConstruct = new JawStackSchedulerConstruct(this, "Schedulers", {
       appName: props.appName,
       stage: props.stage,
-      schedules: schedulesFromResources(props.resources),
-      schedulerHandlers: props.entrypoints.schedulerHandlers ?? {},
+      schedules,
+      schedulerHandlers,
       table: tableConstruct.table,
       lambdaDefaults,
       schedulerDefaults,
@@ -127,7 +150,9 @@ export class JawStackResourceWorkflowApp extends Construct {
     this.outboxSweeperFunction = outboxConstruct.sweeperFunction;
     this.workerFunctions = workerConstruct.workerFunctions;
     this.workerQueues = workerConstruct.workerQueues;
+    this.workerBindingsByName = workerConstruct.workerBindingsByName;
     this.schedulerFunctions = schedulerConstruct.schedulerFunctions;
+    this.schedulerFunctionsByName = schedulerConstruct.schedulerFunctionsByName;
     this.schedulerDlqs = schedulerConstruct.schedulerDlqs;
 
     new CfnOutput(this, "ApiUrl", {
@@ -372,19 +397,17 @@ type JawStackWorkerConstructProps = Readonly<{
 class JawStackWorkerConstruct extends Construct {
   readonly workerFunctions: readonly lambda.Function[];
   readonly workerQueues: readonly sqs.Queue[];
+  readonly workerBindingsByName: Readonly<Record<string, JawStackWorkerBinding | undefined>>;
 
   constructor(scope: Construct, id: string, props: JawStackWorkerConstructProps) {
     super(scope, id);
 
     const workerFunctions: lambda.Function[] = [];
     const workerQueues: sqs.Queue[] = [];
+    const workerBindingsByName: Record<string, JawStackWorkerBinding> = Object.create(null);
 
     props.workers.forEach((worker) => {
-      const codePath = props.workerHandlers[worker.name];
-
-      if (codePath === undefined) {
-        throw new Error(`Missing worker handler entrypoint for "${worker.name}".`);
-      }
+      const codePath = requireHandlerEntrypoint(props.workerHandlers, worker.name, "worker");
 
       const maxConcurrency = worker.maxConcurrency ?? props.queueDefaults.defaultMaxConcurrency;
       const workerName = `${safeName(props.appName)}-${safeName(props.stage)}-${safeName(worker.name)}`;
@@ -451,10 +474,16 @@ class JawStackWorkerConstruct extends Construct {
 
       workerFunctions.push(workerFunction);
       workerQueues.push(queue);
+      workerBindingsByName[worker.name] = Object.freeze({
+        workerFunction,
+        queue,
+        deadLetterQueue: dlq,
+      });
     });
 
     this.workerFunctions = workerFunctions;
     this.workerQueues = workerQueues;
+    this.workerBindingsByName = Object.freeze(workerBindingsByName);
   }
 }
 
@@ -471,6 +500,7 @@ type JawStackSchedulerConstructProps = Readonly<{
 
 class JawStackSchedulerConstruct extends Construct {
   readonly schedulerFunctions: readonly lambda.Function[];
+  readonly schedulerFunctionsByName: Readonly<Record<string, lambda.Function | undefined>>;
   readonly schedulerDlqs: readonly sqs.Queue[];
 
   constructor(scope: Construct, id: string, props: JawStackSchedulerConstructProps) {
@@ -478,14 +508,11 @@ class JawStackSchedulerConstruct extends Construct {
 
     const schedulerFunctions: lambda.Function[] = [];
     const schedulerDlqs: sqs.Queue[] = [];
+    const schedulerFunctionsByName: Record<string, lambda.Function> = Object.create(null);
 
     props.schedules.forEach((scheduleDefinition) => {
       const handlerName = scheduleDefinition.targetHandler ?? scheduleDefinition.name;
-      const codePath = props.schedulerHandlers[handlerName];
-
-      if (codePath === undefined) {
-        throw new Error(`Missing scheduler handler entrypoint for "${handlerName}".`);
-      }
+      const codePath = requireHandlerEntrypoint(props.schedulerHandlers, handlerName, "scheduler");
 
       const scheduleBaseName = `${safeName(props.appName)}-${safeName(props.stage)}-${safeName(
         scheduleDefinition.name,
@@ -570,9 +597,11 @@ class JawStackSchedulerConstruct extends Construct {
 
       schedulerFunctions.push(schedulerFunction);
       schedulerDlqs.push(dlq);
+      schedulerFunctionsByName[scheduleDefinition.name] = schedulerFunction;
     });
 
     this.schedulerFunctions = schedulerFunctions;
+    this.schedulerFunctionsByName = Object.freeze(schedulerFunctionsByName);
     this.schedulerDlqs = schedulerDlqs;
   }
 }
@@ -688,6 +717,31 @@ function schedulerDefaultsFromCostProfile(costProfile: CostProfile): SchedulerDe
     maxRetryAttempts: numberProperty(schedulerProfile, "maxRetryAttempts") ?? 2,
     maxEventAgeSeconds: numberProperty(schedulerProfile, "maxEventAgeSeconds") ?? 3600,
   };
+}
+
+function assertUniqueNames(
+  definitions: readonly Readonly<{ name: string }>[],
+  kind: "worker" | "schedule",
+): void {
+  const names = new Set<string>();
+  for (const { name } of definitions) {
+    if (names.has(name))
+      throw new Error(
+        `Duplicate ${kind} name "${name}". ${kind === "worker" ? "Worker" : "Schedule"} names must be unique across resources.`,
+      );
+    names.add(name);
+  }
+}
+
+function requireHandlerEntrypoint(
+  handlers: Readonly<Record<string, string>>,
+  name: string,
+  kind: "worker" | "scheduler",
+): string {
+  const codePath = Object.hasOwn(handlers, name) ? handlers[name] : undefined;
+  if (typeof codePath !== "string" || codePath.trim().length === 0)
+    throw new Error(`Missing ${kind} handler entrypoint for "${name}".`);
+  return codePath;
 }
 
 function workersFromResources(resources: readonly ResourceDefinition[]): WorkerDefinition[] {

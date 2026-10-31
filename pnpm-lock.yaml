@@ -81,6 +81,9 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
+      '@jawstack/angular':
+        specifier: workspace:*
+        version: link:../../packages/angular
       esbuild:
         specifier: ^0.28.1
         version: 0.28.1

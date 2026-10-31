@@ -31,6 +31,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@jawstack/angular": "workspace:*",
     "esbuild": "^0.28.1",
     "tsx": "^4.20.6",
     "vitest": "^3.0.0"

@@ -3,7 +3,9 @@
 Private first-party JawStack consumer. Iteration 2 Phases 0-1 supply a LocalStack feasibility
 harness for the event spine, object storage, scheduling, failure collection, and safe reset.
 Phase 3 extends it with memory/DynamoDB paged-query parity and transactional projection moves.
-The editorial application and Angular UI are not implemented yet.
+Phase 6 adds a headless content/review domain, strict schemas, fixture identities, and
+browser-safe presentation metadata. Application dispatch, workers, HTTP, and Angular UI
+are not implemented yet; the LocalStack harness still exercises the separate spine proof.
 
 ## Credential-Free Checks
 
@@ -24,6 +26,98 @@ connect to any AWS service. The build creates a bundled Node 22 Lambda ZIP under
 Build the workspace once so the harness can bundle installed public package entrypoints.
 Unit tests are explicitly restricted to `test/unit/**/*.test.ts`; live integration is a
 separate script, never a token-dependent test in default discovery.
+
+## Editorial Domain
+
+The pure factories in `src/domain/resources.ts` expose:
+
+- `contentItem`: `create`, `editDraft`, `submit`, `approve`, `requestChanges`, `reopenDraft`,
+  and eligible `archive`. Content is the only editorial authority.
+- `reviewTask`: internal-only `createSnapshot` and `applySnapshot` materialization
+  primitives, not independent editorial commands. Its browser command map is empty.
+
+`src/shared/contracts.ts` owns strict Zod state/input/version-1 event schemas;
+`src/shared/presentation.ts` shares browser-safe metadata and schemas without server
+decisions. `src/domain/projections.ts` plans content/status/due-review and review history/
+editor/pending membership, including explicit old-key deletions and stable sort keys.
+Factories/imports do not generate IDs, start services, resolve credentials, or call AWS.
+
+Credential-free headless composition through public core APIs:
+
+```ts
+import { createInMemoryPersistence, executeCommand, TestAuthProvider } from "@jawstack/core";
+import { createContentOperationsResources } from "./src/domain/resources";
+import { fixtureAuth } from "./src/shared/identities";
+
+const memory = createInMemoryPersistence();
+const result = await executeCommand(
+  {
+    resourceType: "contentItem",
+    commandName: "create",
+    input: { title: "Release notes", body: "Draft release notes." },
+    requestContext: {},
+  },
+  {
+    registry: createContentOperationsResources(),
+    repository: memory.repository,
+    unitOfWork: memory.unitOfWork,
+    authProvider: new TestAuthProvider(fixtureAuth("author_1")),
+    ids: { resourceId: () => globalThis.crypto.randomUUID() },
+  },
+);
+```
+
+Bind `ids.resourceId` to a UUID generator (or supply a server-generated UUID explicitly):
+the framework's default prefixed IDs are not this application's ID format. Factories
+generate separate revision/review UUIDs lazily, with injectable `newId` for tests. This is
+test composition, not the application dispatcher. Do not attach HTTP or unscoped shared
+idempotency keys to it: scoped dispatch, expiry, replay, and transaction budgets are Phase 7.
+
+### Authority and Bounds
+
+- Fixtures are `author_1`, `author_2`, `editor_1`, and `editor_2`. Resolved identity and
+  claimed role must agree; forged extra roles do not promote an author. Authors manage
+  only their own drafts; either editor can manage content and decide a review. These
+  development/test identities are not production authentication.
+- All non-create editorial inputs include `expectedVersion`, checked against the loaded
+  state and again at commit by the public unit of work. Approve/request-changes also
+  require the current review ID, revision UUID, and a nonblank decision note.
+- Resource version, revision UUID, and review UUID are distinct. Changed drafts/reopens
+  generate revisions; unchanged saves retain the revision but advance resource version.
+  Submission/decisions preserve the revision. Review `sourceVersion` is the content
+  version, not the secondary review row's own optimistic version.
+- Submission freezes the complete submitted snapshot. Requested/decided/superseded facts
+  retain it; later edits cannot rewrite old facts. Reopen/archive supersede pending
+  reviews, and reopen clears approval/schedule. Archive removes active projections, not
+  primary history. Content retains only its latest bounded review, not a growing history array.
+- Titles are trimmed, nonempty, and at most 160 characters; plain-text body is at most
+  32 KiB UTF-8; notes are at most 2,000 characters. Body whitespace is preserved and invalid
+  Unicode rejected. Serialized snapshots/state/event payloads are bounded to 64/160/80 KiB.
+- Editor assignments must be registered fixtures and due times future UTC instants with
+  millisecond precision. Unknown input/state/event fields are rejected. Actor, approval,
+  outcome, and storage identity are not trusted UI inputs. Stored and resulting state
+  are validated, and each event schema checks its declared lifecycle outcome.
+
+### Staged Capabilities
+
+Attachments intentionally accept only `[]` until Phase 8 adds bounded slots and verified
+object references. No asset bytes, object store, scheduling commands, publication execution,
+or artifact-writing protocol is implemented here. The schedule metadata shape supports
+invalidation; scheduling/time-zone semantics and full publication execution state remain
+Phases 10-12. Scheduled/publishing/published transition tests use trusted seeded editorial
+states, not an executed publication workflow.
+
+Core requires commands and separates create from update, so the review resource has two
+internal primitives. They require `review_projector`/`reviewProjector`, preserve submitted
+fields, and reject stale source versions or regressing closed outcomes. A closed snapshot
+can arrive before its older requested fact without restoring pending state. Phase 9 will
+add envelope/source validation, ignore/reload behavior, worker retries, and the event pump.
+Public ingress must reject both internal command names regardless of headers, and fixture
+selectors must never offer service identities. No HTTP ingress is exposed yet.
+
+Tests execute public commands against memory persistence without Work Request helpers,
+direct event publication, or a second editorial authority. The pinned LocalStack proof
+below is unchanged and is not evidence of a deployed editorial consumer.
 
 ## LocalStack Prerequisites
 

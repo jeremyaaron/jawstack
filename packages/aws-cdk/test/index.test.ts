@@ -1,10 +1,14 @@
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 
-import { App, Stack } from "aws-cdk-lib";
+import { App, Duration, Stack } from "aws-cdk-lib";
 import { Match, Template } from "aws-cdk-lib/assertions";
-import { describe, expect, it } from "vitest";
+import * as lambda from "aws-cdk-lib/aws-lambda";
+import { SqsEventSource } from "aws-cdk-lib/aws-lambda-event-sources";
+import * as s3 from "aws-cdk-lib/aws-s3";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   defineSchedule,
   defineWorker,
@@ -17,6 +21,7 @@ import {
   JawStackResourceWorkflowApp,
   packageName,
   type JawStackResourceWorkflowAppProps,
+  type JawStackWorkerBinding,
 } from "../src/index";
 
 describe("@jawstack/aws-cdk", () => {
@@ -37,6 +42,14 @@ describe("@jawstack/aws-cdk", () => {
     template.resourceCountIs("AWS::Events::Rule", 2);
     template.resourceCountIs("AWS::SQS::Queue", 3);
     template.resourceCountIs("AWS::Scheduler::Schedule", 1);
+  });
+
+  it("preserves baseline logical IDs and resource types", () => {
+    const template = synthTemplate().toJSON();
+    const resources = template.Resources as Record<string, { Type: string }>;
+    expect(
+      Object.fromEntries(Object.entries(resources).map(([id, resource]) => [id, resource.Type])),
+    ).toMatchSnapshot();
   });
 
   it("configures the DynamoDB table with stream, TTL, and outbox GSI", () => {
@@ -395,7 +408,339 @@ describe("@jawstack/aws-cdk", () => {
       ]),
     });
   });
+
+  it("exposes declared names with the original array instances, order, queue wiring, and readonly wrappers", () => {
+    const { stack, workflow } = createWorkflow(namedProps());
+    expect(Object.keys(workflow.workerBindingsByName)).toEqual(["publishContent", "verifyAsset"]);
+    expect(Object.keys(workflow.schedulerFunctionsByName)).toEqual(["firstTick", "secondTick"]);
+    const template = Template.fromStack(stack);
+    for (const [index, name] of ["publishContent", "verifyAsset"].entries()) {
+      const binding: JawStackWorkerBinding = workflow.workerBindingsByName[name]!;
+      expect(binding.workerFunction).toBe(workflow.workerFunctions[index]);
+      expect(binding.queue).toBe(workflow.workerQueues[index]);
+      expect(Object.isFrozen(binding)).toBe(true);
+      template.hasResourceProperties("AWS::SQS::Queue", {
+        RedrivePolicy: {
+          deadLetterTargetArn: stack.resolve(binding.deadLetterQueue.queueArn),
+          maxReceiveCount: 4,
+        },
+      });
+      template.hasResourceProperties("AWS::Lambda::EventSourceMapping", {
+        EventSourceArn: stack.resolve(binding.queue.queueArn),
+        FunctionName: stack.resolve(binding.workerFunction.functionName),
+      });
+    }
+    for (const [index, name] of ["firstTick", "secondTick"].entries()) {
+      const fn = workflow.schedulerFunctionsByName[name]!;
+      expect(fn).toBe(workflow.schedulerFunctions[index]);
+      template.hasResourceProperties("AWS::Lambda::Function", {
+        Environment: {
+          Variables: Match.objectLike({
+            JAWSTACK_SCHEDULE_NAME: name,
+            JAWSTACK_SCHEDULE_TARGET_HANDLER: "sharedTick",
+          }),
+        },
+      });
+    }
+    expect(workflow.schedulerFunctionsByName.firstTick).not.toBe(
+      workflow.schedulerFunctionsByName.secondTick,
+    );
+    expect(workflow.schedulerFunctionsByName.sharedTick).toBeUndefined();
+    expect(Object.isFrozen(workflow.workerBindingsByName)).toBe(true);
+    expect(Object.isFrozen(workflow.schedulerFunctionsByName)).toBe(true);
+  });
+
+  it("returns empty records/arrays and undefined for unknown names without prototype fallback", () => {
+    expectTypeOf<JawStackResourceWorkflowApp["workerBindingsByName"][string]>().toEqualTypeOf<
+      JawStackWorkerBinding | undefined
+    >();
+    expectTypeOf<JawStackResourceWorkflowApp["schedulerFunctionsByName"][string]>().toEqualTypeOf<
+      lambda.Function | undefined
+    >();
+    const props = workflowProps();
+    const { workflow } = createWorkflow({
+      ...props,
+      resources: [{ ...workerResource(), workers: [], schedules: [] }],
+      entrypoints: {
+        apiHandler: props.entrypoints.apiHandler,
+        outboxHandler: props.entrypoints.outboxHandler,
+      },
+    });
+    expect(Object.keys(workflow.workerBindingsByName)).toEqual([]);
+    expect(Object.keys(workflow.schedulerFunctionsByName)).toEqual([]);
+    expect(workflow.workerFunctions).toEqual([]);
+    expect(workflow.workerQueues).toEqual([]);
+    expect(workflow.schedulerFunctions).toEqual([]);
+    expect(workflow.schedulerDlqs).toEqual([]);
+    expect(Object.getPrototypeOf(workflow.workerBindingsByName)).toBeNull();
+    expect(Object.getPrototypeOf(workflow.schedulerFunctionsByName)).toBeNull();
+    for (const name of ["missing", "constructor", "toString", "__proto__"]) {
+      expect(workflow.workerBindingsByName[name]).toBeUndefined();
+      expect(workflow.schedulerFunctionsByName[name]).toBeUndefined();
+    }
+  });
+
+  it("keeps worker/schedule namespaces independent and supports own prototype-like handler names", () => {
+    const props = workflowProps();
+    const { workflow } = createWorkflow({
+      ...props,
+      resources: [
+        {
+          ...workerResource(),
+          workers: [defineWorker({ name: "constructor", eventTypes: ["workRequest.created"] })],
+          schedules: [
+            defineSchedule({
+              name: "constructor",
+              expression: "rate(1 day)",
+              targetHandler: "toString",
+            }),
+          ],
+        },
+      ],
+      entrypoints: {
+        ...props.entrypoints,
+        workerHandlers: { constructor: props.entrypoints.apiHandler },
+        schedulerHandlers: { toString: props.entrypoints.apiHandler },
+      },
+    });
+    const name: string = "constructor";
+    expect(workflow.workerBindingsByName[name]!.workerFunction).toBe(workflow.workerFunctions[0]);
+    expect(workflow.schedulerFunctionsByName[name]).toBe(workflow.schedulerFunctions[0]);
+  });
+
+  it.each(["worker", "schedule"] as const)(
+    "rejects duplicate %s names within one resource before creating infrastructure",
+    (kind) => {
+      const resource = workerResource();
+      const duplicated =
+        kind === "worker"
+          ? { ...resource, workers: [...resource.workers, ...resource.workers] }
+          : { ...resource, schedules: [...resource.schedules, ...resource.schedules] };
+      expectInvalidWorkflow(
+        { ...workflowProps(), resources: [duplicated] },
+        `Duplicate ${kind} name`,
+      );
+    },
+  );
+
+  it.each(["worker", "schedule"] as const)(
+    "rejects duplicate %s names across resources before creating infrastructure",
+    (kind) => {
+      const resource = workerResource();
+      const first =
+        kind === "worker" ? { ...resource, schedules: [] } : { ...resource, workers: [] };
+      expectInvalidWorkflow(
+        { ...workflowProps(), resources: [first, { ...first, name: "reviewTask" }] },
+        `Duplicate ${kind} name`,
+      );
+    },
+  );
+
+  it.each(["worker", "scheduler"] as const)(
+    "rejects missing/blank %s handler entrypoints before creating infrastructure",
+    (kind) => {
+      for (const value of [undefined, "", "   "]) {
+        const props = workflowProps();
+        const name = kind === "worker" ? "sendNotification" : "staleWorkRequestReminder";
+        const handlers = value === undefined ? {} : { [name]: value };
+        expectInvalidWorkflow(
+          {
+            ...props,
+            entrypoints: {
+              ...props.entrypoints,
+              ...(kind === "worker"
+                ? { workerHandlers: handlers }
+                : { schedulerHandlers: handlers }),
+            },
+          },
+          `Missing ${kind} handler entrypoint for "${name}".`,
+        );
+      }
+    },
+  );
+
+  it.each(["worker", "scheduler"] as const)(
+    "does not adopt inherited %s handler entrypoints",
+    (kind) => {
+      const props = workflowProps();
+      const name = kind === "worker" ? "sendNotification" : "staleWorkRequestReminder";
+      const handlers: Record<string, string> = Object.create({
+        [name]: props.entrypoints.apiHandler,
+      });
+      expectInvalidWorkflow(
+        {
+          ...props,
+          entrypoints: {
+            ...props.entrypoints,
+            ...(kind === "worker" ? { workerHandlers: handlers } : { schedulerHandlers: handlers }),
+          },
+        },
+        `Missing ${kind} handler entrypoint for "${name}".`,
+      );
+    },
+  );
+
+  it("grants object access to only the named worker without inspecting construct children", () => {
+    const { stack, workflow } = createWorkflow(namedProps());
+    const bucket = new s3.Bucket(stack, "Artifacts", {
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      encryption: s3.BucketEncryption.S3_MANAGED,
+      enforceSSL: true,
+    });
+    const publisher = workflow.workerBindingsByName.publishContent!;
+    bucket.grantReadWrite(publisher.workerFunction, "publications/*");
+    const template = Template.fromStack(stack);
+    const put = statementsForFunction(template, stack, publisher.workerFunction).find((statement) =>
+      actions(statement).includes("s3:PutObject"),
+    );
+    expect(put).toBeDefined();
+    expect(resources(put!)).toContainEqual(stack.resolve(bucket.arnForObjects("publications/*")));
+    expect(resources(put!)).not.toContainEqual(stack.resolve(bucket.arnForObjects("*")));
+    for (const fn of [
+      workflow.apiFunction,
+      workflow.workerBindingsByName.verifyAsset!.workerFunction,
+      ...workflow.schedulerFunctions,
+    ])
+      expect(statementsForFunction(template, stack, fn).flatMap(actions)).not.toContain(
+        "s3:PutObject",
+      );
+  });
+
+  it("grants writes only to the selected schedule, retaining other schedulers' read-only default", () => {
+    const { stack, workflow } = createWorkflow(namedProps());
+    const tick = workflow.schedulerFunctionsByName.firstTick!;
+    workflow.table.grantWriteData(tick);
+    const template = Template.fromStack(stack);
+    const put = statementsForFunction(template, stack, tick).find((statement) =>
+      actions(statement).includes("dynamodb:PutItem"),
+    );
+    expect(put).toBeDefined();
+    expect(resources(put!)).toContainEqual(stack.resolve(workflow.table.tableArn));
+    expect(
+      statementsForFunction(template, stack, workflow.schedulerFunctionsByName.secondTick!).flatMap(
+        actions,
+      ),
+    ).not.toContain("dynamodb:PutItem");
+    expect(
+      statementsForFunction(template, stack, workflow.schedulerFunctionsByName.secondTick!).flatMap(
+        actions,
+      ),
+    ).toContain("dynamodb:Query");
+  });
+
+  it("attaches an application-owned collector to the named DLQ using only public bindings", () => {
+    const { stack, workflow } = createWorkflow();
+    const binding = workflow.workerBindingsByName.sendNotification!;
+    const collector = new lambda.Function(stack, "FailureCollector", {
+      runtime: lambda.Runtime.NODEJS_22_X,
+      handler: "index.handler",
+      code: lambda.Code.fromInline("exports.handler = async () => {};"),
+      timeout: Duration.seconds(5),
+      reservedConcurrentExecutions: 2,
+    });
+    workflow.table.grantReadWriteData(collector);
+    collector.addEventSource(
+      new SqsEventSource(binding.deadLetterQueue, { batchSize: 1, maxConcurrency: 2 }),
+    );
+    const template = Template.fromStack(stack);
+    template.resourceCountIs("AWS::Lambda::Function", 6);
+    template.resourceCountIs("AWS::Lambda::EventSourceMapping", 3);
+    template.hasResourceProperties("AWS::Lambda::EventSourceMapping", {
+      EventSourceArn: stack.resolve(binding.deadLetterQueue.queueArn),
+      FunctionName: stack.resolve(collector.functionName),
+      BatchSize: 1,
+      ScalingConfig: { MaximumConcurrency: 2 },
+    });
+    const statements = statementsForFunction(template, stack, collector);
+    const consume = statements.find((statement) =>
+      actions(statement).includes("sqs:DeleteMessage"),
+    );
+    expect(consume).toBeDefined();
+    expect(resources(consume!)).toContainEqual(stack.resolve(binding.deadLetterQueue.queueArn));
+    expect(statements.flatMap(actions)).toContain("dynamodb:PutItem");
+    expect(statements.flatMap(actions)).toContain("dynamodb:GetItem");
+    expect(
+      statementsForFunction(template, stack, binding.workerFunction).flatMap((statement) =>
+        actions(statement).includes("sqs:DeleteMessage") ? resources(statement) : [],
+      ),
+    ).not.toContainEqual(stack.resolve(binding.deadLetterQueue.queueArn));
+  });
 });
+
+function createWorkflow(props = workflowProps()) {
+  const stack = new Stack(new App(), "NamedStack");
+  return { stack, workflow: new JawStackResourceWorkflowApp(stack, "Workflow", props) };
+}
+
+function expectInvalidWorkflow(props: JawStackResourceWorkflowAppProps, message: string) {
+  const stack = new Stack(new App(), "InvalidStack");
+  expect(() => new JawStackResourceWorkflowApp(stack, "Workflow", props)).toThrow(message);
+  const template = Template.fromStack(stack);
+  template.resourceCountIs("AWS::DynamoDB::Table", 0);
+  template.resourceCountIs("AWS::Lambda::Function", 0);
+  template.resourceCountIs("AWS::SQS::Queue", 0);
+}
+
+type PolicyStatement = Readonly<{ Action: string | readonly string[]; Resource: unknown }>;
+function actions(statement: PolicyStatement): readonly string[] {
+  return typeof statement.Action === "string" ? [statement.Action] : statement.Action;
+}
+function resources(statement: PolicyStatement): readonly unknown[] {
+  return Array.isArray(statement.Resource) ? statement.Resource : [statement.Resource];
+}
+function statementsForFunction(
+  template: Template,
+  stack: Stack,
+  fn: lambda.Function,
+): readonly PolicyStatement[] {
+  const role = stack.resolve(fn.role!.roleName);
+  const policies = Object.values(template.findResources("AWS::IAM::Policy")) as {
+    Properties: { Roles: unknown[]; PolicyDocument: { Statement: PolicyStatement[] } };
+  }[];
+  return policies
+    .filter((policy) =>
+      policy.Properties.Roles.some((candidate) => isDeepStrictEqual(candidate, role)),
+    )
+    .flatMap((policy) => policy.Properties.PolicyDocument.Statement);
+}
+
+function namedProps(): JawStackResourceWorkflowAppProps {
+  const props = workflowProps();
+  const entrypoint = props.entrypoints.apiHandler;
+  return {
+    ...props,
+    resources: [
+      {
+        ...workerResource(),
+        workers: [defineWorker({ name: "publishContent", eventTypes: ["workRequest.created"] })],
+        schedules: [
+          defineSchedule({
+            name: "firstTick",
+            expression: "rate(1 day)",
+            targetHandler: "sharedTick",
+          }),
+        ],
+      },
+      {
+        ...workerResource(),
+        name: "reviewTask",
+        workers: [defineWorker({ name: "verifyAsset", eventTypes: ["workRequest.closed"] })],
+        schedules: [
+          defineSchedule({
+            name: "secondTick",
+            expression: "rate(1 hour)",
+            targetHandler: "sharedTick",
+          }),
+        ],
+      },
+    ],
+    entrypoints: {
+      ...props.entrypoints,
+      workerHandlers: { publishContent: entrypoint, verifyAsset: entrypoint },
+      schedulerHandlers: { sharedTick: entrypoint },
+    },
+  };
+}
 
 function synthTemplate(): Template {
   const app = new App();

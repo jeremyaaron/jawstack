@@ -1,7 +1,7 @@
 # Iteration 2 Implementation Plan: Content Operations
 
-Status: reviewed. Phases 0-4 are complete. Angular presentation/error contracts and the
-public-contract regression gate passed. Phase 5 has not started.
+Status: reviewed. Phases 0-6 are complete. The headless editorial aggregate and full
+workspace regression gate passed. Phase 7 has not started.
 
 ## Purpose
 
@@ -87,8 +87,8 @@ work may proceed only after an explicit sequencing decision, without claiming th
 | 2     | Core                       | Paged query contracts and memory implementation           | Complete |
 | 3     | AWS runtime                | DynamoDB paged query implementation                       | Complete |
 | 4     | Angular                    | Browser-safe presentation contract and structured errors  | Complete |
-| 5     | AWS CDK                    | Named worker/scheduler bindings                           | Planned  |
-| 6     | Consumer domain            | Draft and review aggregate                                | Planned  |
+| 5     | AWS CDK                    | Named worker/scheduler bindings                           | Complete |
+| 6     | Consumer domain            | Draft and review aggregate                                | Complete |
 | 7     | Consumer persistence       | Scoped dispatch, atomic operation records and projections | Planned  |
 | 8     | Consumer services          | Attachment lifecycle and verified object storage          | Planned  |
 | 9     | Consumer workers           | Materializers, notification sink and memory event pump    | Planned  |
@@ -798,6 +798,71 @@ integration gate, documentation walkthrough, local links, and `git diff --check`
   package dry runs. Local Markdown links and `git diff --check` passed.
 - No LocalStack/real-AWS scenario was run: no SDK/service boundary or provisioning behavior
   changed. No workflows, release, or commit were changed/created. Phase 5 has not started.
+
+### Phase 5: October 31, 2026
+
+- Exported `JawStackWorkerBinding` and additive readonly `workerBindingsByName`/
+  `schedulerFunctionsByName` records. Worker entries expose the original function, queue,
+  and DLQ; schedule keys use declaration names even when handlers are shared. Existing
+  arrays/order, construct props, physical naming, logical IDs, and default topology/grants
+  remain unchanged. Maps/wrappers are frozen while CDK constructs remain composable.
+- Added upfront duplicate-name validation across resources within each namespace, plus
+  clear missing/blank handler-entrypoint errors before infrastructure creation. Handler
+  entries must be own properties. Maps have no prototype fallback; unknown names return
+  `undefined`, explicitly represented in public types regardless of consumer compiler flags.
+- All 28 CDK tests passed, including fifteen new cases/type assertions. Captured the baseline
+  logical-ID/type snapshot before production edits and verified it stayed unchanged. Tests
+  cover multiple resources, shared scheduler handlers, independent namespaces, missing/
+  duplicate/inherited entries, empty maps, and prototype-like declared names.
+- Offline synth assertions prove application composition through public bindings: object-
+  prefix S3 access reaches only the selected worker, table writes reach only the selected
+  scheduler, and an application-owned DLQ collector receives the correct event source and
+  table/queue grants without tree inspection. Runtime collection/idempotency behavior and
+  deployment/IAM enforcement are not claimed by these synth-only checks. Usage is documented
+  in the [CDK README](../../../packages/aws-cdk/README.md).
+- `pnpm verify:release` passed: formatting, workspace typecheck, all 330 unit tests, lint,
+  builds, pkg-guard (zero findings), isolated generated-app install/typecheck/tests/build/
+  AWS bundle/synth/doctor, and six package dry runs. Local Markdown links and
+  `git diff --check` passed. Public declarations export the new binding types and records.
+- No LocalStack/real-AWS run or deployment was performed. No dependencies, package versions,
+  workflows, release, or commit were changed/created. Phase 6 has not started.
+
+### Phase 6: October 31, 2026
+
+- Added strict Zod editorial state/input/version-1 fact schemas, UTF-8/serialized payload
+  bounds, four immutable local fixture identities, browser-safe presentation metadata, and
+  pure content/review resource factories. Content commands implement create/edit, submit,
+  editor decisions, reopen, and eligible archive. Resolved fixture roles/ownership, expected
+  versions, current review/revision matching, and stored/resulting state checks run before
+  commit. No Work Request helper or second event publisher is used.
+- Content remains authoritative. Full frozen submitted snapshots travel in requested/
+  decided/superseded facts with the next content `sourceVersion`. Primary version, revision
+  UUID, and review UUID are distinct; unchanged saves preserve revision. Pure projection
+  plans retain creation-time ordering and explicitly delete obsolete status/due keys.
+- Added internal review `createSnapshot`/`applySnapshot` primitives because core requires
+  commands and separates creates from updates. They preserve immutable submission fields,
+  enforce service identity/source-version progression, and cannot authorize content
+  transitions. The review browser command map is empty. Phase 9 still owns source/envelope
+  validation, ignore/reload loops, transport, retries, and actual projection workers.
+- Scope is explicit in the design and [consumer README](../../../apps/content-operations/README.md):
+  attachments accept only an empty array until Phase 8; reserved execution statuses are
+  fixture-seeded for editorial guard tests, not executed schedules/publications. Full
+  operational publication state, scheduling/time-zone rules, scoped dispatch/idempotency,
+  HTTP, and UI remain in their planned later phases. No production fixture-auth claim is made.
+- All 96 new domain tests and 141 consumer tests passed: lifecycle matrix, ownership/forged
+  roles, stale versions/reviews, concurrent edits/submissions, immutable snapshots, bounds,
+  malformed state/facts, secondary-review authority, pure manifest construction, and a real
+  browser-targeted shared-metadata bundle. New Angular access is a type-only workspace dev
+  dependency with source-path/compiler settings matching the existing demo; no external
+  dependency or public runtime package change was introduced.
+- `pnpm verify:release` passed: formatting, workspace typecheck, all 426 unit tests, lint,
+  builds, pkg-guard (zero findings), isolated generated-app install/typecheck/tests/build/
+  AWS bundle/synth/doctor, and six package dry runs. Local Markdown links and
+  `git diff --check` passed. The existing LocalStack proof remains unchanged and was not
+  rerun; it is not evidence of deploying the new editorial domain.
+- Preserved the uncommitted Phase 5 changes. No framework implementation, package version,
+  workflow, real AWS resource, release, or commit was changed/created in Phase 6. Phase 7
+  has not started.
 
 For later phases, append the date, meaningful behavior delivered, commands/results,
 not-run checks, design changes, and remaining limitations. Do not replace observed

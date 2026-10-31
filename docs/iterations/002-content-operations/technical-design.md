@@ -85,6 +85,24 @@ records keyed by declared worker/schedule name. Each worker binding contains
 rather than overwriting a binding. Application grants and DLQ collectors use these public
 bindings; they do not inspect construct-tree children or depend on array ordering.
 
+Phase 5 implements the records with exact, case-sensitive declaration names. Schedule keys
+are schedule names rather than target-handler names, so a shared handler does not collapse
+multiple schedules. Workers and schedules have separate name namespaces. Both maps and
+worker-binding wrappers are frozen, with no object-prototype fallback for missing names;
+the underlying CDK constructs remain mutable for application composition. Unknown lookups
+return `undefined` and application composition must check them explicitly.
+The public lookup value types include `undefined` independently of the consumer's
+`noUncheckedIndexedAccess` setting.
+
+Construction preflights duplicate names across resources and requires own, nonblank handler
+entrypoint entries before creating infrastructure. Existing props, arrays/order, logical IDs,
+physical naming, retry/concurrency settings, and default grants remain unchanged. In
+particular, scheduler table-write access and DLQ collectors are application-owned additions,
+not automatically enabled framework behavior. Synth tests target S3 permissions, scheduler
+write grants, and a collector's event-source mapping through the public bindings; a baseline
+logical-ID/type snapshot was captured before implementation. These checks do not deploy
+resources or establish live IAM/runtime delivery behavior.
+
 ## Application Layout and Dependencies
 
 ```text
@@ -186,6 +204,22 @@ Initial application limits:
 Bound payloads before a transaction so limits fail as validation errors, not storage errors.
 Do not embed an indefinitely growing list of reviews, deliveries, or attempts in content state.
 
+Phase 6 lands the headless editorial portion as strict, bounded schemas and pure factories
+in `src/shared`/`src/domain`. It uses UUID content/revision/review IDs and four fixed local
+author/editor fixtures. Bind core resource-ID generation to UUIDs; revision/review IDs are
+generated lazily inside decisions with an injectable test generator. Identity policy
+intersects fixture roles with resolved auth roles and rejects unknown/external fixture
+identities. Browser metadata imports Angular/core types only, not server factories or SDKs.
+
+Current state validates the editorial lifecycle, latest bounded review, approval, and schedule
+invalidation metadata. Attachments accept only an empty array until Phase 8; full operational
+publication state and scheduling/time-zone semantics remain Phases 10-12. Tests seed the
+reserved scheduled/publishing/published editorial states to verify guards, not execution.
+Input titles are trimmed; stored titles must already be canonical. Body whitespace is
+preserved, Unicode is validated, and serialized snapshot/state/event byte bounds apply in
+addition to the raw UTF-8 body limit. An unchanged save advances resource version without
+inventing a new revision; reopening always invalidates the revision.
+
 ## Commands and Consistency
 
 ### Single-Resource Authority
@@ -197,6 +231,16 @@ against upload completion or removal on the same versioned row.
 Review and asset resources expose reads and internal `applySnapshot` commands. Those
 commands emit their own declared materialization events, but no worker subscribes to its
 own output. Public ingress rejects internal command names, regardless of caller headers.
+
+Phase 6 review primitives are `createSnapshot` (create) and `applySnapshot` (update), because
+core definitions require commands and the executor separates creation from optimistic
+update. Both require the dedicated review-projector identity; neither is an editorial UI
+command, and the review UI command map stays empty. They preserve the immutable submission
+and require increasing content `sourceVersion`; equal/older facts reject without a commit.
+Phase 9's worker must read/ignore stale facts, reload on optimistic conflicts, and validate
+envelopes/sources before invoking these primitives. That transport loop is not implemented
+in Phase 6. Public ingress must reject both internal names, and fixture selectors must never
+resolve a service identity.
 
 This makes the three PRD resource types real queryable JawStack resources without requiring
 three independently mutable authorities. A temporarily missing review/asset row does not

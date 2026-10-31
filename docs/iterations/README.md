@@ -6,10 +6,10 @@ release the framework.
 
 ## Index
 
-| Iteration                                                   | Status            | Outcome                                                                                        |
-| ----------------------------------------------------------- | ----------------- | ---------------------------------------------------------------------------------------------- |
-| [001: Foundation](001-foundation/README.md)                 | Archived baseline | Merged and tagged `v0.0.1` in Git; npm publication and `0.1.0` deferred.                       |
-| [002: Content Operations](002-content-operations/README.md) | Phase 4 complete  | Angular presentation-only metadata and structured API errors added; editorial app still ahead. |
+| Iteration                                                   | Status            | Outcome                                                                                  |
+| ----------------------------------------------------------- | ----------------- | ---------------------------------------------------------------------------------------- |
+| [001: Foundation](001-foundation/README.md)                 | Archived baseline | Merged and tagged `v0.0.1` in Git; npm publication and `0.1.0` deferred.                 |
+| [002: Content Operations](002-content-operations/README.md) | Phase 6 complete  | Headless content/review aggregate implemented; scoped dispatch and persistence are next. |
 
 ## Planning Flow
 
