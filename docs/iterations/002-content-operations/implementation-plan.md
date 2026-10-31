@@ -1,7 +1,7 @@
 # Iteration 2 Implementation Plan: Content Operations
 
-Status: reviewed. Phases 0-1 are complete. The full live feasibility gate passed with a
-go decision, and workspace regression verification passed. Phase 2 has not started.
+Status: reviewed. Phases 0-2 are complete. The feasibility gate and Phase 2 public-contract
+regression verification passed. Phase 3 has not started.
 
 ## Purpose
 
@@ -84,7 +84,7 @@ work may proceed only after an explicit sequencing decision, without claiming th
 | ----- | -------------------------- | --------------------------------------------------------- | -------- |
 | 0     | Consumer tooling           | Isolated lab and transactional event spine                | Complete |
 | 1     | Consumer tooling           | S3, Scheduler, DLQ, teardown proof and gate decision      | Complete |
-| 2     | Core                       | Paged query contracts and memory implementation           | Planned  |
+| 2     | Core                       | Paged query contracts and memory implementation           | Complete |
 | 3     | AWS runtime                | DynamoDB paged query implementation                       | Planned  |
 | 4     | Angular                    | Browser-safe presentation contract and structured errors  | Planned  |
 | 5     | AWS CDK                    | Named worker/scheduler bindings                           | Planned  |
@@ -718,6 +718,30 @@ integration gate, documentation walkthrough, local links, and `git diff --check`
   network were confirmed absent after teardown. No subsequent phase has started.
 - No public framework contract, package version, release, real AWS deployment, or commit
   was changed/performed. Details are in [LocalStack Evidence](localstack-evidence.md).
+
+### Phase 2: October 31, 2026
+
+- Added public `Page`, `ProjectionQuery`, `ActivityQuery`, and standalone `QueryRepository`
+  contracts, plus `InMemoryRepository.queryProjection` and `queryActivity`. Existing command
+  repositories, array-returning reads/order, resource definitions, and Work Requests remain
+  compatible. Public declarations export the new types.
+- Implemented UTF-8 physical-key ordering (including the existing optional item-ID suffix),
+  half-open projection ranges, direction, 50-item defaults/200-item maximum, detached records,
+  and keyset continuation that survives deletion of the boundary item. Activity stays ascending.
+- Added bounded canonical version-1 cursors with query-scope fingerprints, strict shape/key
+  validation, and the additive `query.invalid` error. The only AWS-runtime change maps that
+  shared error to HTTP 400; DynamoDB paged queries remain Phase 3 work. Documented replay,
+  lack of snapshot/signature guarantees, and application-owned filter/authorization scope.
+- All 71 new query tests and 24 existing core tests passed. A built-package smoke compared
+  32 projection paging/range/direction combinations and tied activity paging against the
+  exported AWS physical-key mappers; all matched.
+- `pnpm verify:release` passed: formatting, workspace typecheck, all 231 unit tests, lint,
+  builds, pkg-guard (zero findings), isolated generated-app install/typecheck/tests/build/
+  AWS bundle/synth/doctor, and six package dry runs. Local Markdown links and
+  `git diff --check` passed.
+- No LocalStack scenario was rerun: no SDK/service boundary or provisioning behavior changed.
+  No dependencies, package versions, workflows, real AWS resources, release, or commit were
+  changed/created. Phase 3 has not started.
 
 For later phases, append the date, meaningful behavior delivered, commands/results,
 not-run checks, design changes, and remaining limitations. Do not replace observed

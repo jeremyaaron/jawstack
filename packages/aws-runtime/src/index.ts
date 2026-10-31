@@ -1790,6 +1790,7 @@ function apiError(
 function httpStatusForError(code: RuntimeErrorCode): number {
   switch (code) {
     case "command.validation":
+    case "query.invalid":
       return 400;
     case "auth.missing":
       return 401;

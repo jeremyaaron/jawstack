@@ -362,6 +362,28 @@ versioned base64url cursor contains the continuation key and query-scope fingerp
 validate its shape, size (4 KiB maximum), resource/partition, range, direction, and filter
 scope before use. A cursor is not an authorization credential.
 
+Phase 2 contract decisions: `QueryRepository` is additive and separate from the command
+repository. Queries default to 50 items with an integer maximum of 200. Activity is always
+ascending; projection direction defaults to ascending. Compare complete physical sort keys
+in UTF-8 byte order, using the existing mapper's optional `#itemId` suffix rule. Projection
+ranges are `[sortFrom, sortBefore)` against those keys: equal bounds are empty, reversed
+bounds are invalid. Query names must have a resource prefix and nonempty dot-separated
+segments. Bound/continuation keys are at most 1,024 UTF-8 bytes and physical partitions at
+most 2,048 bytes. Unknown query options, including raw database keys and filters, are rejected.
+The ordering follows [DynamoDB Query](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Query.html)
+string-key semantics rather than locale collation.
+
+The version-1 cursor carries a base64url continuation sort key plus a SHA-256 fingerprint
+of query kind, physical partition, range, and direction. The whole envelope is canonical
+base64url and at most 4 KiB. Page size is not part of scope, so callers may change it while
+continuing; the cursor is not signed and confers no access. Invalid queries/cursors throw
+the additive `query.invalid` runtime error (HTTP 400). Memory reads return detached records
+and continue by key comparison even after boundary deletion. Paging is not a snapshot;
+concurrent inserts or sort moves can change later pages. An absent cursor ends the read;
+an empty page is valid. Legacy array methods retain their behavior. The DynamoDB adapter
+implementation remains Phase 3 work; application filters need an outer, filter-bound cursor
+in the later query-handler phase, not unscoped filter options in this low-level API.
+
 Board title/author filters are simple normalized substring/equality filters, not full-text
 search. Query the narrowest status partition, evaluate at most 200 candidates, and return
 a continuation even when a page has no matches. Continue until enough matches or the

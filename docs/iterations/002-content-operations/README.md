@@ -1,7 +1,7 @@
 # Iteration 2: Content Operations
 
-Status: Phases 0-1 complete. The full live feasibility gate passed with a go decision,
-and workspace regression verification passed. Phase 2 has not started.
+Status: Phases 0-2 complete. Core paged queries and the public-contract regression gate
+passed. The local feasibility gate remains go. Phase 3 has not started.
 
 ## Documents
 
