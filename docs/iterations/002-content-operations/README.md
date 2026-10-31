@@ -1,7 +1,7 @@
 # Iteration 2: Content Operations
 
-Status: Phases 0-3 complete. Memory/DynamoDB paged queries, the extended live gate,
-and public-contract regression verification passed. Phase 4 has not started.
+Status: Phases 0-4 complete. Angular presentation-only metadata, structured API errors,
+and public-contract regression verification passed. Phase 5 has not started.
 
 ## Documents
 
@@ -27,3 +27,5 @@ gate now covers the event spine, S3, automatic Scheduler, actual DLQ collection,
 ownership-safe reset/reprovisioning; production-parity exclusions are recorded explicitly.
 The [consumer README](../../../apps/content-operations/README.md) describes the current
 harness. The editorial application remains unimplemented.
+Angular components now accept browser-safe presentation definitions and the fetch client
+exposes structured API errors; these contracts do not implement the editorial screens.

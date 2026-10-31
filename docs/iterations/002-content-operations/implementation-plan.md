@@ -1,7 +1,7 @@
 # Iteration 2 Implementation Plan: Content Operations
 
-Status: reviewed. Phases 0-3 are complete. The extended local feasibility/paging gate and
-public-contract regression verification passed. Phase 4 has not started.
+Status: reviewed. Phases 0-4 are complete. Angular presentation/error contracts and the
+public-contract regression gate passed. Phase 5 has not started.
 
 ## Purpose
 
@@ -86,7 +86,7 @@ work may proceed only after an explicit sequencing decision, without claiming th
 | 1     | Consumer tooling           | S3, Scheduler, DLQ, teardown proof and gate decision      | Complete |
 | 2     | Core                       | Paged query contracts and memory implementation           | Complete |
 | 3     | AWS runtime                | DynamoDB paged query implementation                       | Complete |
-| 4     | Angular                    | Browser-safe presentation contract and structured errors  | Planned  |
+| 4     | Angular                    | Browser-safe presentation contract and structured errors  | Complete |
 | 5     | AWS CDK                    | Named worker/scheduler bindings                           | Planned  |
 | 6     | Consumer domain            | Draft and review aggregate                                | Planned  |
 | 7     | Consumer persistence       | Scoped dispatch, atomic operation records and projections | Planned  |
@@ -769,6 +769,35 @@ integration gate, documentation walkthrough, local links, and `git diff --check`
   `git diff --check` passed. Final teardown left no owned containers or Docker network.
 - No dependencies, package versions, workflows, real AWS resources, release, or commit
   were changed/created. Phase 4 has not started.
+
+### Phase 4: October 31, 2026
+
+- Exported presentation-only `ResourceUiDefinition`/`CommandUiDefinition` contracts and
+  narrowed config, all six resource component inputs, and form helpers to them. Full core
+  resource definitions remain structurally assignable. New metadata fixtures use only
+  literal presentation fields and shared Zod schemas, without fake `decide` functions or
+  server imports. This does not sanitize full resource objects or migrate legacy consumers.
+- Exported `JawStackApiError extends Error` with code, actual HTTP status, opaque details,
+  and optional correlation ID. The fetch client preserves server messages/application
+  codes, safely classifies malformed responses/JSON, and leaves network/abort/body-stream
+  failures unchanged. Existing request paths, auth headers, success payloads, and command/
+  idempotency serialization remain compatible. Error fallbacks are explicit in the design
+  and [Angular README](../../../packages/angular/README.md).
+- All 42 Angular tests passed: eight legacy cases, seven presentation-only component/
+  config cases, twenty-six client/error cases, and one source browser-boundary build.
+  The same fixture bundles the compiled public entrypoint after every library build;
+  esbuild's graph guard rejects Node builtins/HTTP shims, core runtime, AWS SDK/runtime,
+  and CDK imports. Both modes passed with zero server-runtime imports. This is DOM/build
+  coverage, not browser layout or editorial-application acceptance.
+- Added esbuild and Zod as test/build-only Angular dev dependencies using already-resolved
+  versions; the lockfile changes only those importer entries. No public runtime dependency
+  or package version changed, and no new pkg-guard suppressions were needed.
+- `pnpm verify:release` passed: formatting, workspace typecheck, all 315 unit tests, lint,
+  builds (including the compiled browser guard and legacy demo), pkg-guard (zero findings),
+  isolated generated-app install/typecheck/tests/build/AWS bundle/synth/doctor, and six
+  package dry runs. Local Markdown links and `git diff --check` passed.
+- No LocalStack/real-AWS scenario was run: no SDK/service boundary or provisioning behavior
+  changed. No workflows, release, or commit were changed/created. Phase 5 has not started.
 
 For later phases, append the date, meaningful behavior delivered, commands/results,
 not-run checks, design changes, and remaining limitations. Do not replace observed

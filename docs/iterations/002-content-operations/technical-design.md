@@ -620,6 +620,24 @@ command map contains only `Pick<CommandDefinition, "title" | "roles" | "input" |
 Use type-only core imports in shared/client code. Browser-build checks must prove that
 neither the Node HTTP shim nor AWS/CDK libraries or server decision factories are required.
 
+Phase 4 implements the structural metadata contract in `@jawstack/angular` without runtime
+core imports. Full definitions remain assignable, not automatically sanitized: new browser
+modules must import only shared schemas and UI metadata, not a server definition and then
+cast it. Source tests and every library build bundle a presentation-only fixture with a
+dependency-graph guard; the latter checks the compiled public entrypoint. Legacy demo/
+template imports stay in place as compatibility regressions, not a claim their own module
+graphs are already migrated.
+
+`JawStackApiError` takes a message plus `{ code, status, details?, correlationId? }`; its
+`status` is the actual HTTP response status and `code` accepts application-defined strings.
+The default client reads `error.code/message/details` and `meta.correlationId`. Missing or
+invalid HTTP error fields use `http.error`; malformed successful envelopes use
+`api.invalid_response`. Invalid JSON is classified without exposing raw response text;
+network, abort, and body-stream failures propagate unchanged. Existing success payloads,
+request serialization, and ordinary `Error` message rendering remain compatible. Generic
+components keep their existing display behavior; custom application views can branch on
+the structured client error for explicit permission/conflict handling.
+
 Use custom Angular reactive forms for uploads, review selection, scheduling, and conflict
 handling. Reuse the shell, badges, error panels, command controls, and simple resource form
 where appropriate. Build a custom paged activity view rather than making the existing
