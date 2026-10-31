@@ -219,18 +219,51 @@ This proves SDK-provisioned local query behavior, not a deployment, snapshot iso
 production authorization/IAM, or arbitrary application filtering. Existing exclusions below
 remain unchanged. Fixed item-kind filtering is not a user-supplied search expression.
 
+## Phase 7: Scoped Consumer Transactions
+
+Observed on October 31, 2026, using the same pinned LocalStack `2026.10.0` image/digest,
+ARM64 architecture, Docker 27.3.1, guarded local-only clients, and user-attested Hobby tier.
+The complete `feasibility-paging-and-scoped-transactions` gate started
+`2026-10-31T19:22:33.814Z` and completed `2026-10-31T19:25:28.478Z` in 174.664 seconds,
+with `decision: go`. Scoped run ID: `82f26079-a9fb-481a-9d36-f9a54acebe77`.
+
+| Check                          | Observed Result                                                                                                                                                                                                                      |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Concurrent equivalent commands | Six creates and six edits per adapter returned exactly one stored response per command, including original metadata. Only one create activity was persisted.                                                                         |
+| Scope and conflicting reuse    | The same key worked for separate subjects and for create/edit command scopes. A changed payload in an existing scope was rejected.                                                                                                   |
+| Logical expiry                 | A seven-day server-clock advance allowed a different target to reuse the key while its physical record remained in DynamoDB; subsequent retries returned the replacement response. No TTL deletion was needed.                       |
+| Auxiliary rollback             | A pre-existing create-only command receipt caused the entire create to fail: no primary state, activity, list projection, or idempotency record appeared.                                                                            |
+| Primary condition rollback     | A stale expected version rejected a composed commit; state stayed at version 3, its projection survived, and the version-4 receipt was absent.                                                                                       |
+| Projection moves               | Submit/reopen removed obsolete status/due rows. Separate synthetic commits moved exact sorts and partitions, coalescing duplicate physical sort aliases. Strong physical-key reads confirmed old DynamoDB sort/due keys were absent. |
+| Adapter parity                 | Both memory and live DynamoDB passed the same scoped scenario; no stale user mutation was retried.                                                                                                                                   |
+| Earlier gates                  | Stream/outbox/bus/queue/S3 spine, 260-row paging (123-item service-shortened first page), automatic Scheduler, actual worker receives 1/2/3 and DLQ collection, sentinel-safe reset, and reprovisioned spine all passed again.       |
+
+The consumer commands were dispatched directly against the owned table. This proves
+consumer persistence, not deployed editorial HTTP/workers/UI. A synthetic single-resource
+commit isolates sort/partition mechanics; it is not an added user-facing content command.
+Fixture data was discarded by the owned reset. Final `local:down` removed the owned emulator
+and network; images were retained. No real AWS resource was created or contacted.
+
+Credential-free verification: all 170 consumer tests, including 29 new transaction tests,
+and `pnpm verify:release` (455 workspace tests, format/typecheck/lint/build, zero pkg-guard
+findings, isolated generated-app verification, six package dry runs). Unit contracts also
+cover the exact 60/61-action budget, resource-type isolation, ambiguous successful SDK
+responses, and a winner committing before a stale decision. These are not claims of
+AWS-equivalent contention, IAM enforcement, or arbitrary throughput.
+
 ## Current Coverage and Exclusions
 
-| Capability                                      | Status                                                                                                     |
-| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| S3 conditional artifact storage                 | Passed in Phase 1.                                                                                         |
-| Automatic Scheduler target                      | Passed in Phase 1; AWS-equivalent failed-delivery retries are not verified.                                |
-| Actual SQS failure redrive/DLQ collector        | Passed in Phase 1.                                                                                         |
-| Live unrelated-service-resource sentinel        | Passed in Phase 1 across service-resource reset.                                                           |
-| Paged DynamoDB projection/activity queries      | Passed in Phase 3, including live memory parity, service continuation, and transactional projection moves. |
-| Full editorial workflow and recovery            | Not implemented; later phases.                                                                             |
-| API Gateway/CloudFormation/CDK asset deployment | Excluded from this Hobby lab; SDK provisioning is not deployment-parity evidence.                          |
-| IAM enforcement, production auth, real AWS      | Not verified; no real-AWS deployment performed.                                                            |
+| Capability                                      | Status                                                                                                                                                    |
+| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| S3 conditional artifact storage                 | Passed in Phase 1.                                                                                                                                        |
+| Automatic Scheduler target                      | Passed in Phase 1; AWS-equivalent failed-delivery retries are not verified.                                                                               |
+| Actual SQS failure redrive/DLQ collector        | Passed in Phase 1.                                                                                                                                        |
+| Live unrelated-service-resource sentinel        | Passed in Phase 1 across service-resource reset.                                                                                                          |
+| Paged DynamoDB projection/activity queries      | Passed in Phase 3, including live memory parity, service continuation, and transactional projection moves.                                                |
+| Scoped consumer transactions                    | Passed in Phase 7: concurrent original-response replay, logical expiry, conditional rollback, and exact-key projection moves across memory/live DynamoDB. |
+| Full editorial workflow and recovery            | Not implemented; later phases.                                                                                                                            |
+| API Gateway/CloudFormation/CDK asset deployment | Excluded from this Hobby lab; SDK provisioning is not deployment-parity evidence.                                                                         |
+| IAM enforcement, production auth, real AWS      | Not verified; no real-AWS deployment performed.                                                                                                           |
 
 The overall feasibility decision is **go**. The documented
 [Scheduler emulation limitations](https://docs.localstack.cloud/aws/services/scheduler/#current-limitations),

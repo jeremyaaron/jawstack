@@ -4,8 +4,9 @@ Private first-party JawStack consumer. Iteration 2 Phases 0-1 supply a LocalStac
 harness for the event spine, object storage, scheduling, failure collection, and safe reset.
 Phase 3 extends it with memory/DynamoDB paged-query parity and transactional projection moves.
 Phase 6 adds a headless content/review domain, strict schemas, fixture identities, and
-browser-safe presentation metadata. Application dispatch, workers, HTTP, and Angular UI
-are not implemented yet; the LocalStack harness still exercises the separate spine proof.
+browser-safe presentation metadata. Phase 7 adds scoped dispatch and atomic memory/DynamoDB
+persistence. Workers, HTTP, and Angular UI are not implemented yet; the LocalStack harness
+exercises the separate event-spine proof and direct consumer command transactions.
 
 ## Credential-Free Checks
 
@@ -42,36 +43,55 @@ decisions. `src/domain/projections.ts` plans content/status/due-review and revie
 editor/pending membership, including explicit old-key deletions and stable sort keys.
 Factories/imports do not generate IDs, start services, resolve credentials, or call AWS.
 
-Credential-free headless composition through public core APIs:
+Credential-free headless composition through the consumer dispatcher:
 
 ```ts
-import { createInMemoryPersistence, executeCommand, TestAuthProvider } from "@jawstack/core";
-import { createContentOperationsResources } from "./src/domain/resources";
+import { createContentDispatch } from "./src/application/dispatch";
+import { createMemoryPersistence } from "./src/application/memory";
 import { fixtureAuth } from "./src/shared/identities";
 
-const memory = createInMemoryPersistence();
-const result = await executeCommand(
+const memory = createMemoryPersistence();
+const dispatch = createContentDispatch({ persistence: memory.factory });
+const result = await dispatch(
   {
     resourceType: "contentItem",
     commandName: "create",
     input: { title: "Release notes", body: "Draft release notes." },
+    idempotencyKey: crypto.randomUUID(),
     requestContext: {},
   },
-  {
-    registry: createContentOperationsResources(),
-    repository: memory.repository,
-    unitOfWork: memory.unitOfWork,
-    authProvider: new TestAuthProvider(fixtureAuth("author_1")),
-    ids: { resourceId: () => globalThis.crypto.randomUUID() },
-  },
+  fixtureAuth("author_1"),
 );
 ```
 
-Bind `ids.resourceId` to a UUID generator (or supply a server-generated UUID explicitly):
-the framework's default prefixed IDs are not this application's ID format. Factories
-generate separate revision/review UUIDs lazily, with injectable `newId` for tests. This is
-test composition, not the application dispatcher. Do not attach HTTP or unscoped shared
-idempotency keys to it: scoped dispatch, expiry, replay, and transaction budgets are Phase 7.
+Dispatch supplies UUID resource IDs and accepts only an already-resolved identity; an HTTP
+adapter must authenticate/allowlist before calling it. Fixture authentication is local-only.
+Factories generate separate revision/review UUIDs lazily, with injectable `newId` for tests.
+
+### Dispatch and Persistence
+
+- Every mutation requires a key of 1-200 ASCII letters, digits, `_`, `.`, `:`, or `-`.
+  Retain the key for retries of the same input; generate another for a new intent. Scope is
+  resource type, command, and resolved subject; the core fingerprint also includes target ID.
+- Each invocation captures its own identity, request, scope, and server instant. Records
+  expire logically at seven days. DynamoDB conditionally replaces an expired row even if
+  TTL cleanup has not deleted it; live rows remain protected from competing writes.
+- Concurrent equivalent retries return the original stored response, including its request/
+  correlation metadata. A conflict or ambiguous SDK failure permits at most four strong
+  replay lookups (0/10/25/50 ms pauses), never another mutation attempt. Different payloads
+  conflict; stale user edits without an equivalent stored command remain conflicts.
+- `src/aws/persistence.ts` composes exported JawStack builders with one bounded, typed
+  `commandReceipt` operation per successful resource version (`OPS#commandReceipt`, sort
+  `<resourceType>#<resourceId>#<version>`). Its create-only condition participates in the
+  primary/activity/outbox/projection/idempotency transaction. Receipts contain no bodies,
+  credentials, or growing arrays; worker-specific operation variants remain later work.
+- The memory adapter serializes staged commits and publishes all records together. Both
+  adapters share physical-key normalization, projection delete/put coalescing, conflicting
+  put/duplicate action rejection, and a 60-action limit checked before any write. Exact old
+  keys are deleted; the memory adapter does not silently erase other sorts for an item.
+- No framework internals or generic arbitrary-write extension point are exposed. Supply a
+  guarded DynamoDB client and owned table to `createDynamoPersistence`; dispatch itself
+  never creates clients, resolves AWS credentials, or starts a service.
 
 ### Authority and Bounds
 
@@ -115,9 +135,9 @@ add envelope/source validation, ignore/reload behavior, worker retries, and the 
 Public ingress must reject both internal command names regardless of headers, and fixture
 selectors must never offer service identities. No HTTP ingress is exposed yet.
 
-Tests execute public commands against memory persistence without Work Request helpers,
-direct event publication, or a second editorial authority. The pinned LocalStack proof
-below is unchanged and is not evidence of a deployed editorial consumer.
+Tests execute public commands against memory and SDK contract persistence without Work
+Request helpers, direct event publication, or a second editorial authority. The live proof
+below includes consumer transactions, not deployed editorial workers or an HTTP application.
 
 ## LocalStack Prerequisites
 
@@ -183,6 +203,13 @@ descending half-open ranges, and complete ordered parity with memory. Real publi
 of work move a projection sort and partition with explicit old-key deletion; a deleted
 boundary key still permits continuation. All fixture data stays in the owned table and
 is removed by the same reset. Batch writes are limited to 25 items and three attempts.
+
+The scoped transaction proof executes consumer commands against both adapters: six concurrent
+creates and edits, exact response replay, conflicting payloads, distinct command/subject
+scopes, seven-day logical expiry without physical deletion, and auxiliary/primary conditional
+rollback. It checks status/due deletion and exact sort/partition moves with duplicate sort
+aliases. These fixtures stay in the owned table and are removed by reset as well. The
+command-receipt history is application-owned, not a new public JawStack item kind.
 
 `--confirm-reset` is required because the full gate then deletes the owned proof dataset,
 checks that a separately owned sentinel table and its nonce survived, and reprovisions

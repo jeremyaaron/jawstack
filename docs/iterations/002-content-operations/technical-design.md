@@ -287,11 +287,23 @@ the same payload and creates another after user changes. Scope records by resour
 command, and resolved subject, retaining the existing payload fingerprint's resource ID.
 Keep records for seven days; expiry is enforced logically as well as by eventual TTL cleanup.
 
-The application dispatch factory constructs a scoped `DynamoDbRepository` and
-`DynamoDbCommandUnitOfWork` for each invocation, supplying the same command/subject context.
-Use corresponding scoped wrappers around in-memory persistence. Never mutate a shared
-repository's scope while requests are concurrent. On a competing idempotent commit, reread
-the stored record and return its original response only if the fingerprint matches.
+The application dispatcher captures a cloned resolved identity/request and fixed server
+instant, then constructs a scoped repository/unit of work for that invocation. The DynamoDB
+adapter delegates state reads to `DynamoDbRepository` and composes public transaction builders
+for writes; it does not use an unextended `DynamoDbCommandUnitOfWork`, whose idempotency
+condition does not support logical expiry reclamation. Use corresponding scoped wrappers
+around in-memory persistence. Never mutate a shared repository's scope while requests are
+concurrent. Require keys of 1-200 ASCII letters/digits or `_ . : -`, without whitespace.
+
+Strong reads treat `expiresAt <= floor(now/1000)` as absent; the transactional idempotency
+put allows only an absent or expired record, preserving protection against live competing
+requests while eventual TTL deletion lags. On a competing commit or ambiguous SDK failure,
+perform at most four strong replay lookups with 0/10/25/50 ms pauses. A found record goes
+through the core executor's existing parsed-input fingerprint check with a replay-only
+repository/unit of work. Return its original response, including metadata, only on a match.
+This also covers a winner committing between initial lookup and a stale decision. Never
+retry the mutation itself; absent replay records leave the original conflict/unavailable
+result intact. No private fingerprint implementation is copied into the consumer.
 
 The same single-resource commit owns activity, projections, outbox, and idempotency. Do
 not issue a second direct event publication or cross-resource write after returning success.
@@ -367,6 +379,23 @@ exported `buildCommandTransactWriteItems` result with a bounded list of typed op
 records derived from the validated decision. Persist attempt history with the corresponding
 content transition. Mirror this atomically in the memory adapter. This is not a public
 arbitrary transaction DSL, and it must not bypass the primary version or idempotency checks.
+
+Phase 7 implements one strict `commandReceipt` variant, derived from validated commit
+metadata: resource type/ID, command, subject, positive safe resource version, and the server
+command instant as `committedAt`. Each string is bounded to 200 characters (IDs/names use
+the same safe ASCII components); the receipt contains no user body or unbounded collection.
+The key is `OPS#commandReceipt` / `<resourceType>#<resourceId>#<version>`, with a create-only
+condition in the same transaction. It provides a concrete auxiliary atomic-write contract
+without prebuilding publication/notification protocols. Later phases add explicit typed
+attempt/delivery variants and their access patterns, not arbitrary caller-supplied SDK actions.
+
+The shared planner canonicalizes projection sorts through the exported physical key builder.
+Same-key deletes plus a put become one put, equivalent puts/deletes coalesce, and conflicting
+puts or other duplicate action keys fail before sending. The primary and idempotency
+conditions are retained. The memory adapter stages under a per-store commit queue and
+publishes state, activity, outbox, exact-key projections, receipts, and scoped idempotency
+without yielding; failures leave every collection unchanged. SDK contract tests and the
+live owned-table scenario cover the same moves and rollback rules.
 
 DynamoDB permits up to 100 distinct transaction actions and does not allow two actions on
 one item. Enforce a lower app budget of 60 actions and reject excess before sending. See

@@ -17,6 +17,7 @@ import { createClients, destroyClients } from "../src/lab/clients";
 import { cleanupSpine, provisionSpine, waitFor } from "../src/lab/provision";
 import { verifySpine } from "../src/lab/verify";
 import { verifyPaging } from "../src/lab/verify-paging";
+import { verifyScopedTransactions } from "../src/lab/verify-transactions";
 import { verifyCapabilities, verifySentinelReset } from "../src/lab/verify-capabilities";
 import { buildLab } from "./build-lab";
 
@@ -230,7 +231,7 @@ async function main() {
       const started = Date.now();
       const evidence: Record<string, unknown> = {
         status: "running",
-        scenario: "feasibility-and-paged-queries",
+        scenario: "feasibility-paging-and-scoped-transactions",
         recordedAt: new Date().toISOString(),
         durationMs: Date.now() - started,
         image: manifest.image,
@@ -248,6 +249,10 @@ async function main() {
         evidence.proof = await verifySpine(clients, config);
         console.log("Checking multi-page DynamoDB queries and transactional projection moves...");
         evidence.paging = await verifyPaging(clients, config);
+        console.log(
+          "Checking scoped command replay, expiry, atomic rollback, and projection moves...",
+        );
+        evidence.scopedTransactions = await verifyScopedTransactions(clients, config);
         console.log("Waiting for automatic Scheduler and actual SQS redrive/collector...");
         evidence.capabilities = await verifyCapabilities(clients, config);
         console.log("Checking ownership-safe reset with an unrelated-resource sentinel...");

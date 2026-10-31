@@ -1,7 +1,7 @@
 # Iteration 2: Content Operations
 
-Status: Phases 0-6 complete. The headless content/review aggregate and full workspace
-regression verification passed. Phase 7 has not started.
+Status: Phases 0-7 complete. Scoped atomic dispatch, live LocalStack verification, and
+workspace regressions passed. Phase 8 has not started.
 
 ## Documents
 
@@ -32,4 +32,6 @@ Angular components now accept browser-safe presentation definitions and the fetc
 exposes structured API errors; these contracts do not implement the editorial screens.
 Named CDK worker/scheduler bindings now support application-owned grants and DLQ collectors
 without construct-tree inspection. The consumer now supports draft/review/approval decisions
-through public core commands; scoped dispatch and persistence composition begin in Phase 7.
+through public core commands with invocation-scoped memory/DynamoDB dispatch, logical
+idempotency expiry, atomic command receipts, and bounded/deduplicated projection transactions.
+The live gate now also checks scoped replay, expiry, rollback, and consumer projection moves.

@@ -1,7 +1,7 @@
 # Iteration 2 Implementation Plan: Content Operations
 
-Status: reviewed. Phases 0-6 are complete. The headless editorial aggregate and full
-workspace regression gate passed. Phase 7 has not started.
+Status: reviewed. Phases 0-7 are complete. Scoped atomic dispatch, the extended live
+LocalStack gate, and workspace regression verification passed. Phase 8 has not started.
 
 ## Purpose
 
@@ -89,7 +89,7 @@ work may proceed only after an explicit sequencing decision, without claiming th
 | 4     | Angular                    | Browser-safe presentation contract and structured errors  | Complete |
 | 5     | AWS CDK                    | Named worker/scheduler bindings                           | Complete |
 | 6     | Consumer domain            | Draft and review aggregate                                | Complete |
-| 7     | Consumer persistence       | Scoped dispatch, atomic operation records and projections | Planned  |
+| 7     | Consumer persistence       | Scoped dispatch, atomic operation records and projections | Complete |
 | 8     | Consumer services          | Attachment lifecycle and verified object storage          | Planned  |
 | 9     | Consumer workers           | Materializers, notification sink and memory event pump    | Planned  |
 | 10    | Consumer domain            | Publication intent, claims and generation transitions     | Planned  |
@@ -863,6 +863,43 @@ integration gate, documentation walkthrough, local links, and `git diff --check`
 - Preserved the uncommitted Phase 5 changes. No framework implementation, package version,
   workflow, real AWS resource, release, or commit was changed/created in Phase 6. Phase 7
   has not started.
+
+### Phase 7: October 31, 2026
+
+- Added private invocation-scoped dispatch and memory/DynamoDB persistence factories. Each
+  command captures resolved identity, command fields, and server time without retaining an
+  opaque ingress context. Keys are mandatory, bounded safe ASCII; scope includes resource
+  type, command, and subject. No shared repository scope is mutated.
+- Seven-day logical expiry is checked on reads and in the transactional replacement
+  condition, without waiting for TTL deletion. Competing commits and ambiguous SDK outcomes
+  use bounded strong replay reads, then the core's own fingerprint check to return the
+  stored original response. No private fingerprint code or stale mutation retry is added.
+- Composed public builders with one strict create-only command receipt per resource
+  version. Primary/activity/outbox/projections/idempotency/receipt commit together; memory
+  stages under a per-store queue and publishes synchronously. Worker-specific operation
+  variants remain later phases, not an arbitrary SDK transaction extension point.
+- Shared transaction planning canonicalizes physical projection keys, coalesces equivalent
+  deletes/puts and sort aliases, rejects conflicting puts/duplicate physical actions, and
+  enforces the 60-action budget before writes. Primary version and idempotency conditions
+  remain in the transaction; exact old projection keys are removed in both adapters.
+- Added 29 credential-free adapter/dispatch tests: concurrent creates/edits with exact
+  response replay, conflicting payload/target reuse, resource/command/subject isolation,
+  expiry boundaries, immutable scope/time, opaque contexts, stale-decision race replay,
+  auxiliary rollback, status/due/sort/partition moves, 60/61 actions, bounded keys, SDK
+  failures, and ambiguous successful commits. All 170 consumer tests passed.
+- The complete `feasibility-paging-and-scoped-transactions` live gate passed on the pinned
+  ARM64 LocalStack image and user-attested Hobby tier in 174.664 seconds. Both adapters
+  passed six concurrent creates and six concurrent edits, logical expiry with an undeleted
+  record, conditional rollback, and physical projection moves/deduplication. The prior
+  event-spine, paging, automatic Scheduler, actual redrive/collector, sentinel-safe reset,
+  and reprovision proofs also passed. See [evidence](localstack-evidence.md).
+- `pnpm verify:release` passed: formatting, workspace typecheck, all 455 unit tests, lint,
+  builds, pkg-guard (zero findings), isolated generated-app install/typecheck/tests/build/
+  AWS bundle/synth/doctor, and six package dry runs. Local Markdown links and
+  `git diff --check` passed. The owned lab was stopped after verification.
+- No public framework implementation, dependency, package version, workflow, real AWS
+  resource, release, or commit was changed/created. Editorial worker transport, HTTP, UI,
+  production IAM, and real-AWS deployment remain outside this phase. Phase 8 is next.
 
 For later phases, append the date, meaningful behavior delivered, commands/results,
 not-run checks, design changes, and remaining limitations. Do not replace observed
