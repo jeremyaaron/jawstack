@@ -1,7 +1,7 @@
 # Iteration 2 Implementation Plan: Content Operations
 
-Status: reviewed. Phase 0 is complete, including live proof and workspace regression
-checks. Phase 1 and subsequent phases have not started.
+Status: reviewed. Phases 0-1 are complete. The full live feasibility gate passed with a
+go decision, and workspace regression verification passed. Phase 2 has not started.
 
 ## Purpose
 
@@ -83,7 +83,7 @@ work may proceed only after an explicit sequencing decision, without claiming th
 | Phase | Primary Owner              | Deliverable                                               | Status   |
 | ----- | -------------------------- | --------------------------------------------------------- | -------- |
 | 0     | Consumer tooling           | Isolated lab and transactional event spine                | Complete |
-| 1     | Consumer tooling           | S3, Scheduler, DLQ, teardown proof and gate decision      | Planned  |
+| 1     | Consumer tooling           | S3, Scheduler, DLQ, teardown proof and gate decision      | Complete |
 | 2     | Core                       | Paged query contracts and memory implementation           | Planned  |
 | 3     | AWS runtime                | DynamoDB paged query implementation                       | Planned  |
 | 4     | Angular                    | Browser-safe presentation contract and structured errors  | Planned  |
@@ -702,6 +702,22 @@ integration gate, documentation walkthrough, local links, and `git diff --check`
   network were confirmed absent after teardown.
 - Phase 1 S3/Scheduler/DLQ and live sentinel checks remain not run. No real AWS, package
   release/version change, or automatic commit was performed.
+
+### Phase 1: October 31, 2026
+
+- Extended the pinned SDK-provisioned lab with private conditional S3 artifacts, a real
+  recurring Scheduler target, source-queue redrive/DLQ, and a durable failure collector.
+- Complete live gate passed twice, including automatic scheduling, exactly three failing
+  receives, durable collection/acknowledgement, unrelated-owner sentinel survival,
+  zero old Lambda containers after reset, and reprovisioned event/S3 proof.
+- Added reset consent and running/passed/failed gate evidence; decision is `go` with
+  explicit IAM/deployment/Scheduler-retry exclusions. App unit suite now has 42 passing tests.
+- `pnpm verify:release` passed: formatting, workspace typecheck, all 160 unit tests, lint,
+  builds, pkg-guard (zero findings), isolated generated-app verification, and six package
+  dry runs. Local Markdown links and `git diff --check` passed. Final owned containers and
+  network were confirmed absent after teardown. No subsequent phase has started.
+- No public framework contract, package version, release, real AWS deployment, or commit
+  was changed/performed. Details are in [LocalStack Evidence](localstack-evidence.md).
 
 For later phases, append the date, meaningful behavior delivered, commands/results,
 not-run checks, design changes, and remaining limitations. Do not replace observed

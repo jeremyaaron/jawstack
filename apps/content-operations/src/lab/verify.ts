@@ -1,4 +1,5 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { isDeepStrictEqual } from "node:util";
 import { GetItemCommand, QueryCommand } from "@aws-sdk/client-dynamodb";
 import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
@@ -14,6 +15,7 @@ import { proofResource } from "./resource";
 import { LabError, type LabConfig } from "./config";
 import type { LabClients } from "./clients";
 import { waitFor } from "./provision";
+import { proofArtifact } from "./artifact";
 
 export async function verifySpine(c: LabClients, config: LabConfig) {
   const resourceId = `proof_${randomUUID()}`;
@@ -94,6 +96,18 @@ export async function verifySpine(c: LabClients, config: LabConfig) {
     }),
   );
   if (records.Count !== 1) throw new LabError("Expected exactly one logical worker receipt.");
+  const expectedKey = `proofs/${resourceId}.json`;
+  const expectedBody = proofArtifact(resourceId, receipt.eventId as string, request.input.message);
+  const artifact = await c.s3.send(
+    new GetObjectCommand({ Bucket: config.bucket, Key: expectedKey }),
+  );
+  if (
+    receipt.artifactKey !== expectedKey ||
+    !artifact.Body ||
+    (await artifact.Body.transformToString()) !== expectedBody ||
+    receipt.artifactDigest !== createHash("sha256").update(expectedBody).digest("hex")
+  )
+    throw new LabError("Worker's S3 artifact did not match its receipt.");
   return {
     resourceId,
     correlationId,
@@ -105,6 +119,7 @@ export async function verifySpine(c: LabClients, config: LabConfig) {
       "idempotency",
       "published outbox",
       "worker receipt",
+      "worker S3 artifact",
     ],
     commandReplay: "passed",
   };

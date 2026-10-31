@@ -16,6 +16,7 @@ import {
 import { createClients, destroyClients } from "../src/lab/clients";
 import { cleanupSpine, provisionSpine, waitFor } from "../src/lab/provision";
 import { verifySpine } from "../src/lab/verify";
+import { verifyCapabilities, verifySentinelReset } from "../src/lab/verify-capabilities";
 import { buildLab } from "./build-lab";
 
 const exec = promisify(execFile);
@@ -45,10 +46,14 @@ async function main() {
   const command = process.argv[2];
   if (!["up", "provision", "verify", "reset", "down"].includes(command ?? ""))
     throw new LabError("Expected up, provision, verify, reset, or down.");
-  if (process.argv.slice(3).some((arg) => command !== "reset" || arg !== "--confirm-reset"))
+  if (
+    process.argv
+      .slice(3)
+      .some((arg) => !["reset", "verify"].includes(command ?? "") || arg !== "--confirm-reset")
+  )
     throw new LabError("Unexpected lab command argument.");
-  if (command === "reset" && !process.argv.includes("--confirm-reset"))
-    throw new LabError("Reset deletes the owned local dataset. Pass --confirm-reset.");
+  if (["reset", "verify"].includes(command ?? "") && !process.argv.includes("--confirm-reset"))
+    throw new LabError("This operation resets the owned proof dataset. Pass --confirm-reset.");
   const config = createLabConfig(env.CONTENT_OPS_LAB_ID ?? "dev");
   const statePath = join(root, ".localstack", `${config.instanceId}.json`);
   let manifest: LabManifest;
@@ -130,6 +135,13 @@ async function main() {
   const compose = (args: string[]) =>
     docker(["compose", "--project-name", config.project, "--file", "compose.yaml", ...args]);
   const containerCount = await assertContainerOwner();
+  const noLambdaContainers = () =>
+    waitFor("owned Lambda container cleanup", async () =>
+      (await docker(["ps", "-aq", "--filter", `name=^/${config.project}-localstack-1-lambda-`])) ===
+      ""
+        ? true
+        : undefined,
+    );
   if (command !== "up" && command !== "down" && containerCount !== 1)
     throw new LabError("No unique owned emulator container; run local:up first.");
   const ready = () =>
@@ -182,46 +194,84 @@ async function main() {
   if (command === "down") {
     // The entire owned emulator is ephemeral; stopping it also removes its local service state.
     await compose(["down", "--remove-orphans", "--timeout", "30"]);
+    await noLambdaContainers();
     await rm(statePath, { force: true });
     console.log("Owned lab stopped. Ephemeral service state is discarded; images are retained.");
     return;
   }
   await ready();
   const clients = createClients(config);
+  const reset = async () => {
+    await cleanupSpine(clients, config, manifest);
+    await noLambdaContainers();
+    manifest = { ...manifest, status: "starting", mappings: [] };
+    delete manifest.queueUrl;
+    delete manifest.streamArn;
+    delete manifest.capabilitiesVersion;
+    await save();
+  };
   try {
     if (command === "provision") {
       await buildLab();
       await provisionSpine(clients, config, manifest, save);
       console.log("Owned spine resources provisioned.");
     } else if (command === "reset") {
-      await cleanupSpine(clients, config, manifest);
-      manifest = { ...manifest, status: "starting", mappings: [] };
-      delete manifest.queueUrl;
-      delete manifest.streamArn;
-      await save();
+      await reset();
       console.log(
         "Owned service resources removed; emulator remains running. Run local:provision to recreate them.",
       );
     } else {
       if (manifest.status !== "ready") throw new LabError("The lab is not provisioned.");
+      if (manifest.capabilitiesVersion !== 1)
+        throw new LabError("Reset/reprovision the lab for Phase 1 capabilities first.");
       if (env.CONTENT_OPS_LOCALSTACK_PLAN !== "hobby")
         throw new LabError("Hobby entitlement attestation is required for verification.");
       const started = Date.now();
-      const proof = await verifySpine(clients, config);
-      const evidence = {
-        status: "passed",
-        scenario: "phase-0-spine",
+      const evidence: Record<string, unknown> = {
+        status: "running",
+        scenario: "phase-0-and-1-feasibility",
         recordedAt: new Date().toISOString(),
         durationMs: Date.now() - started,
         image: manifest.image,
         architecture: manifest.architecture,
         entitlement: "Hobby (user attested)",
-        proof,
       };
-      await writeFile(
-        join(root, ".localstack", `${config.instanceId}-evidence.json`),
-        JSON.stringify(evidence, null, 2),
-      );
+      const writeEvidence = () =>
+        writeFile(
+          join(root, ".localstack", `${config.instanceId}-evidence.json`),
+          JSON.stringify(evidence, null, 2),
+        );
+      await writeEvidence();
+      try {
+        console.log("Checking transactional spine and worker S3 output...");
+        evidence.proof = await verifySpine(clients, config);
+        console.log("Waiting for automatic Scheduler and actual SQS redrive/collector...");
+        evidence.capabilities = await verifyCapabilities(clients, config);
+        console.log("Checking ownership-safe reset with an unrelated-resource sentinel...");
+        evidence.cleanup = {
+          ...(await verifySentinelReset(clients, config, manifest.ownerId, reset)),
+          lambdaContainersAfterReset: 0,
+        };
+        await provisionSpine(clients, config, manifest, save);
+        evidence.reprovisionProof = await verifySpine(clients, config);
+        evidence.status = "passed";
+        evidence.decision = "go";
+        evidence.durationMs = Date.now() - started;
+      } catch (error) {
+        evidence.status = "failed";
+        evidence.decision = "no-go";
+        evidence.error =
+          error instanceof LabError
+            ? error.message
+            : error instanceof Error
+              ? error.name
+              : "unknown";
+        throw error;
+      } finally {
+        evidence.durationMs = Date.now() - started;
+        evidence.completedAt = new Date().toISOString();
+        await writeEvidence();
+      }
       console.log(JSON.stringify(evidence, null, 2));
     }
   } finally {

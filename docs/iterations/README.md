@@ -6,10 +6,10 @@ release the framework.
 
 ## Index
 
-| Iteration                                                   | Status            | Outcome                                                                                                  |
-| ----------------------------------------------------------- | ----------------- | -------------------------------------------------------------------------------------------------------- |
-| [001: Foundation](001-foundation/README.md)                 | Archived baseline | Merged and tagged `v0.0.1` in Git; npm publication and `0.1.0` deferred.                                 |
-| [002: Content Operations](002-content-operations/README.md) | Phase 0 complete  | A passing local event-spine harness; editorial application and remaining feasibility checks still ahead. |
+| Iteration                                                   | Status            | Outcome                                                                               |
+| ----------------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------- |
+| [001: Foundation](001-foundation/README.md)                 | Archived baseline | Merged and tagged `v0.0.1` in Git; npm publication and `0.1.0` deferred.              |
+| [002: Content Operations](002-content-operations/README.md) | Phase 1 complete  | Full local feasibility gate passed; editorial application implementation still ahead. |
 
 ## Planning Flow
 

@@ -46,43 +46,27 @@ import {
 } from "@aws-sdk/client-sqs";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { assertOwned, LabError, localQueueUrl, type LabConfig, type LabManifest } from "./config";
+import {
+  assertOwned,
+  labFunctions,
+  LabError,
+  localQueueUrl,
+  type LabConfig,
+  type LabManifest,
+} from "./config";
 import type { LabClients } from "./clients";
+import {
+  assertCapabilitiesVacant,
+  cleanupCapabilities,
+  preflightCapabilities,
+  provisionSchedule,
+  provisionStorageAndDlq,
+  queueArn as labQueueArn,
+  stopCapabilitySchedule,
+} from "./capabilities";
 
-export async function waitFor<T>(
-  description: string,
-  poll: () => Promise<T | undefined>,
-  timeoutMs = 120_000,
-  sleep: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-): Promise<T> {
-  const deadline = Date.now() + timeoutMs;
-  do {
-    const result = await poll();
-    if (result !== undefined) return result;
-    await sleep(Math.min(500, Math.max(0, deadline - Date.now())));
-  } while (Date.now() < deadline);
-  throw new LabError(`Timed out waiting for ${description}.`);
-}
-
-export async function missing<T>(request: () => Promise<T>): Promise<T | undefined> {
-  try {
-    return await request();
-  } catch (error) {
-    if (
-      error instanceof Error &&
-      [
-        "ResourceNotFoundException",
-        "ResourceNotFound",
-        "NoSuchEntityException",
-        "NoSuchEntity",
-        "QueueDoesNotExist",
-        "AWS.SimpleQueueService.NonExistentQueue",
-      ].includes(error.name)
-    )
-      return undefined;
-    throw error;
-  }
-}
+import { missing, waitFor } from "./lifecycle";
+export { missing, waitFor } from "./lifecycle";
 
 const tags = (ownerId: string) => [{ Key: "jawstack:owner", Value: ownerId }];
 const tagRecord = (
@@ -105,7 +89,7 @@ export async function provisionSpine(
     await missing(() => c.iam.send(new GetRoleCommand({ RoleName: config.role }))),
     await missing(() => c.sqs.send(new GetQueueUrlCommand({ QueueName: config.queue }))),
   ];
-  for (const name of [config.dispatcher, config.worker]) {
+  for (const { name } of labFunctions(config)) {
     collisions.push(
       await missing(() => c.lambda.send(new GetFunctionCommand({ FunctionName: name }))),
     );
@@ -119,8 +103,10 @@ export async function provisionSpine(
     throw new LabError(
       "A named resource already exists. Refusing to adopt or retag it; use ownership-checked reset.",
     );
+  await assertCapabilitiesVacant(c, config);
   manifest.status = "provisioning";
   await save();
+  await provisionStorageAndDlq(c, config, manifest.ownerId);
   const ownerTags = tags(manifest.ownerId);
   const arnBase = `arn:aws`;
   const tableArn = `${arnBase}:dynamodb:${config.region}:000000000000:table/${config.table}`;
@@ -165,7 +151,14 @@ export async function provisionSpine(
     new CreateQueueCommand({
       QueueName: config.queue,
       tags: { "jawstack:owner": manifest.ownerId },
-      Attributes: { VisibilityTimeout: "180", MessageRetentionPeriod: "345600" },
+      Attributes: {
+        VisibilityTimeout: "30",
+        MessageRetentionPeriod: "345600",
+        RedrivePolicy: JSON.stringify({
+          deadLetterTargetArn: labQueueArn(config, config.dlq),
+          maxReceiveCount: "3",
+        }),
+      },
     }),
   );
   manifest.queueUrl = localQueueUrl(queue.QueueUrl!, config);
@@ -195,7 +188,12 @@ export async function provisionSpine(
         Statement: [
           {
             Effect: "Allow",
-            Action: ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem"],
+            Action: [
+              "dynamodb:GetItem",
+              "dynamodb:PutItem",
+              "dynamodb:UpdateItem",
+              "dynamodb:TransactWriteItems",
+            ],
             Resource: tableArn,
           },
           {
@@ -212,25 +210,29 @@ export async function provisionSpine(
           {
             Effect: "Allow",
             Action: ["sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:GetQueueAttributes"],
-            Resource: queueArn,
+            Resource: [queueArn, labQueueArn(config, config.dlq)],
           },
           {
             Effect: "Allow",
             Action: ["logs:CreateLogStream", "logs:PutLogEvents"],
-            Resource: [config.dispatcher, config.worker].map(
-              (name) =>
-                `${arnBase}:logs:${config.region}:000000000000:log-group:/aws/lambda/${name}:*`,
-            ),
+            Resource: labFunctions(config)
+              .map(({ name }) => name)
+              .map(
+                (name) =>
+                  `${arnBase}:logs:${config.region}:000000000000:log-group:/aws/lambda/${name}:*`,
+              ),
+          },
+          {
+            Effect: "Allow",
+            Action: ["s3:GetObject", "s3:PutObject"],
+            Resource: `arn:aws:s3:::${config.bucket}/proofs/*`,
           },
         ],
       }),
     }),
   );
   const zip = await readFile(fileURLToPath(new URL("../../dist/spine.zip", import.meta.url)));
-  for (const [name, handler] of [
-    [config.dispatcher, "index.dispatcher"],
-    [config.worker, "index.worker"],
-  ] as const) {
+  for (const { name, handler, timeout } of labFunctions(config)) {
     await c.logs.send(
       new CreateLogGroupCommand({
         logGroupName: `/aws/lambda/${name}`,
@@ -248,7 +250,7 @@ export async function provisionSpine(
         Role: role.Role!.Arn!,
         Handler: handler,
         Code: { ZipFile: zip },
-        Timeout: 30,
+        Timeout: timeout,
         MemorySize: 256,
         Tags: { "jawstack:owner": manifest.ownerId },
         Environment: { Variables: { CONTENT_OPS_LAB_ID: config.instanceId } },
@@ -264,6 +266,7 @@ export async function provisionSpine(
       new PutFunctionConcurrencyCommand({ FunctionName: name, ReservedConcurrentExecutions: 2 }),
     );
   }
+  await provisionSchedule(c, config, manifest.ownerId);
   await c.sqs.send(
     new SetQueueAttributesCommand({
       QueueUrl: manifest.queueUrl,
@@ -319,6 +322,12 @@ export async function provisionSpine(
       BatchSize: 1,
       ScalingConfig: { MaximumConcurrency: 2 },
     },
+    {
+      FunctionName: config.collector,
+      EventSourceArn: labQueueArn(config, config.dlq),
+      BatchSize: 1,
+      ScalingConfig: { MaximumConcurrency: 2 },
+    },
   ]) {
     const mapping = await c.lambda.send(new CreateEventSourceMappingCommand(input));
     if (!mapping.UUID) throw new LabError("Missing event mapping UUID.");
@@ -330,6 +339,7 @@ export async function provisionSpine(
     });
   }
   manifest.status = "ready";
+  manifest.capabilitiesVersion = 1;
   await save();
 }
 
@@ -340,7 +350,7 @@ export async function cleanupSpine(
 ): Promise<void> {
   // Preflight every resource before deleting anything, including after a partial provision.
   const functions = [];
-  for (const name of [config.dispatcher, config.worker]) {
+  for (const { name } of labFunctions(config)) {
     const fn = await missing(() => c.lambda.send(new GetFunctionCommand({ FunctionName: name })));
     if (fn) {
       assertOwned(fn.Tags, manifest.ownerId);
@@ -392,13 +402,19 @@ export async function cleanupSpine(
       const expectedSource =
         name === config.dispatcher
           ? table?.Table?.LatestStreamArn
-          : `arn:aws:sqs:${config.region}:000000000000:${config.queue}`;
+          : name === config.worker
+            ? labQueueArn(config, config.queue)
+            : name === config.collector
+              ? labQueueArn(config, config.dlq)
+              : undefined;
       if (!mapping.UUID || !expectedSource || mapping.EventSourceArn !== expectedSource) {
         throw new LabError("Unexpected event source mapping; refusing cleanup.");
       }
       mappingIds.push(mapping.UUID);
     }
   }
+  const capabilities = await preflightCapabilities(c, config, manifest.ownerId);
+  await stopCapabilitySchedule(c, config, capabilities.schedule);
   for (const id of mappingIds) {
     await missing(() => c.lambda.send(new DeleteEventSourceMappingCommand({ UUID: id })));
     await waitFor("event mapping deletion", async () =>
@@ -429,11 +445,12 @@ export async function cleanupSpine(
   }
   for (const name of functions)
     await c.lambda.send(new DeleteFunctionCommand({ FunctionName: name }));
-  for (const name of [config.dispatcher, config.worker])
+  for (const { name } of labFunctions(config))
     await missing(() =>
       c.logs.send(new DeleteLogGroupCommand({ logGroupName: `/aws/lambda/${name}` })),
     );
   if (queueUrl) await c.sqs.send(new DeleteQueueCommand({ QueueUrl: queueUrl }));
+  await cleanupCapabilities(c, config, capabilities);
   if (table) {
     await c.dynamo.send(new DeleteTableCommand({ TableName: config.table }));
     await waitFor("table deletion", async () =>

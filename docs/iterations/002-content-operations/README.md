@@ -1,7 +1,7 @@
 # Iteration 2: Content Operations
 
-Status: Phase 0 complete, including the live event-spine proof and workspace regression
-checks. Phase 1 has not started.
+Status: Phases 0-1 complete. The full live feasibility gate passed with a go decision,
+and workspace regression verification passed. Phase 2 has not started.
 
 ## Documents
 
@@ -22,7 +22,8 @@ improvements required by the consumer. It does not commit to a broad CMS framewo
 package publication, or a `v0.0.2` release.
 
 The implementation plan follows the [repository development process](../README.md), with
-25 reviewable phases beginning with the two-phase LocalStack feasibility gate. Phase 0
-has a real passing event-spine proof; S3, Scheduler, and DLQ checks remain for Phase 1.
+25 reviewable phases beginning with the two-phase LocalStack feasibility gate. The live
+gate now covers the event spine, S3, automatic Scheduler, actual DLQ collection, and
+ownership-safe reset/reprovisioning; production-parity exclusions are recorded explicitly.
 The [consumer README](../../../apps/content-operations/README.md) describes the current
 harness. The editorial application remains unimplemented.

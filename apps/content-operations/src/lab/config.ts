@@ -47,6 +47,13 @@ export function createLabConfig(instanceId = "dev", execution: "host" | "lambda"
     table: `${project}-state`,
     bus: `${project}-events`,
     queue: `${project}-proof`,
+    dlq: `${project}-proof-dlq`,
+    bucket: `${project}-artifacts`,
+    collector: `${project}-collector`,
+    scheduled: `${project}-tick`,
+    schedulerRole: `${project}-scheduler`,
+    scheduleGroup: `${project}-schedules`,
+    schedule: "spine-tick",
     role: `${project}-lambda`,
     dispatcher: `${project}-outbox`,
     worker: `${project}-worker`,
@@ -87,7 +94,11 @@ export function validateRequest(
   }
 }
 
-export function localQueueUrl(value: string, config: LabConfig): string {
+export function localQueueUrl(
+  value: string,
+  config: LabConfig,
+  queueName: string = config.queue,
+): string {
   const url = new URL(value);
   validateEndpoint(url.origin);
   if (
@@ -99,7 +110,11 @@ export function localQueueUrl(value: string, config: LabConfig): string {
   ) {
     throw new LabError("Unsafe queue URL returned by the emulator.");
   }
-  if (url.pathname.split("/").at(-1) !== config.queue) throw new LabError("Unexpected queue name.");
+  if (
+    ![config.queue, config.dlq].some((name) => name === queueName) ||
+    url.pathname.split("/").at(-1) !== queueName
+  )
+    throw new LabError("Unexpected queue name.");
   return `${config.endpoint}${url.pathname}`;
 }
 
@@ -114,6 +129,7 @@ export const manifestSchema = z
     queueUrl: z.string().optional(),
     streamArn: z.string().optional(),
     mappings: z.array(z.string()).default([]),
+    capabilitiesVersion: z.literal(1).optional(),
   })
   .strict();
 export type LabManifest = z.infer<typeof manifestSchema>;
@@ -121,4 +137,13 @@ export type LabManifest = z.infer<typeof manifestSchema>;
 export function assertOwned(tags: Record<string, string> | undefined, ownerId: string): void {
   if (tags?.["jawstack:owner"] !== ownerId)
     throw new LabError("Refusing to modify a resource not owned by this lab manifest.");
+}
+
+export function labFunctions(config: LabConfig) {
+  return [
+    { name: config.dispatcher, handler: "index.dispatcher", timeout: 30 },
+    { name: config.worker, handler: "index.worker", timeout: 5 },
+    { name: config.collector, handler: "index.collector", timeout: 5 },
+    { name: config.scheduled, handler: "index.scheduled", timeout: 30 },
+  ] as const;
 }

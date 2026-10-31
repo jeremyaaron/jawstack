@@ -4,6 +4,8 @@ import { IAMClient } from "@aws-sdk/client-iam";
 import { LambdaClient } from "@aws-sdk/client-lambda";
 import { CloudWatchLogsClient } from "@aws-sdk/client-cloudwatch-logs";
 import { SQSClient } from "@aws-sdk/client-sqs";
+import { S3Client } from "@aws-sdk/client-s3";
+import { SchedulerClient } from "@aws-sdk/client-scheduler";
 import { NodeHttpHandler } from "@smithy/node-http-handler";
 import { validateEndpoint, validateRequest, type LabConfig } from "./config";
 
@@ -37,6 +39,8 @@ export function createClients(config: LabConfig) {
     lambda: new LambdaClient(options),
     logs: new CloudWatchLogsClient(options),
     sqs: new SQSClient({ ...options, useQueueUrlAsEndpoint: false }),
+    s3: new S3Client({ ...options, forcePathStyle: true, followRegionRedirects: false }),
+    scheduler: new SchedulerClient(options),
   };
 }
 

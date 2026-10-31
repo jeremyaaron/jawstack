@@ -3,7 +3,8 @@
 ## Phase 0: Event Spine
 
 Observed on October 31, 2026. The Phase 0 event spine, reset, and restart proof passed.
-This is not a passing result for the entire two-phase feasibility gate; Phase 1 has not run.
+This section preserves the Phase 0 partial result. The Phase 1 section below records the
+subsequent passing result for the complete two-phase feasibility gate.
 
 ### Environment
 
@@ -53,7 +54,7 @@ under the app's Git-ignored `.localstack/` directory; this file preserves the re
 
 ### Safety and Credential-Free Coverage
 
-The app's unit suite currently contains 31 tests. It checks explicit runtime/identifier
+At Phase 0 completion, the app's unit suite contained 31 tests. It checked runtime/identifier
 validation, rejected AWS credential/profile/role/endpoint settings, final transport guards,
 dummy client credentials, finite SDK retries, and local queue URL validation. Instrumented
 unsafe-destination tests reject before the base network transport is called.
@@ -97,18 +98,100 @@ The commands never called `cdk deploy`, directly invoked the worker as proof, or
 published a replacement event. Lambda ZIPs and local service resources were provisioned
 through explicit guarded SDK clients.
 
-## Remaining Gate and Exclusions
+## Phase 1: Complete Feasibility Gate
 
-| Capability                                      | Status                                                                                                          |
-| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| S3 conditional artifact storage                 | Not run; Phase 1.                                                                                               |
-| Automatic Scheduler target                      | Not run; Phase 1.                                                                                               |
-| Actual SQS failure redrive/DLQ collector        | Not run; Phase 1. The Phase 0 queue intentionally has no DLQ.                                                   |
-| Live unrelated-service-resource sentinel        | Not run; Phase 1. Phase 0 tested refusal with unit doubles and scoped teardown, not the full sentinel scenario. |
-| Full editorial workflow and recovery            | Not implemented; later phases.                                                                                  |
-| API Gateway/CloudFormation/CDK asset deployment | Excluded from this Hobby lab; SDK provisioning is not deployment-parity evidence.                               |
-| IAM enforcement, production auth, real AWS      | Not verified; no real-AWS deployment performed.                                                                 |
+Observed on October 31, 2026, on the same pinned image, Docker runtime, ARM64 architecture,
+dummy credentials, and user-attested Hobby entitlement described above. No trial activation,
+real AWS credentials, or cloud deployment was used. Decision: **go** for the planned local
+integration architecture, not a claim of production readiness or full AWS parity.
 
-Phase 0 is a useful passing partial result. The overall feasibility decision remains
-pending until Phase 1 records its required checks on the same pinned configuration or
-explicitly documents a reviewed change.
+### Test Profile
+
+The lab now has four Lambda entrypoints: outbox dispatcher, artifact/receipt worker,
+failure collector, and Scheduler target. Worker and collector use 5-second timeouts with
+30-second queue visibility, batch size 1, maximum concurrency 2, and three source receives
+before redrive. Dispatcher and Scheduler target retain 30-second timeouts. The DLQ retains
+messages for fourteen days. All function logs retain seven days.
+
+These shorter, explicitly bounded worker timings are a feasibility-test profile, not a
+change to the later application's 30-second/180-second runtime design. S3 is configured
+unversioned with bucket-owner-enforced ownership and all four public-access-block flags.
+The rate schedule is disabled outside the verification scenario and disabled in `finally`.
+
+### Observed Results
+
+| Check                                         | Result | Evidence                                                                                                                                                                                                                            |
+| --------------------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Spine plus actual worker S3 output            | Passed | State/activity/projection/idempotency/outbox and the worker receipt were checked, along with exact artifact bytes and digest from S3.                                                                                               |
+| Concurrent conditional S3 creation            | Passed | Two `IfNoneMatch: *` writes converged to one creator and one stored object. Matching readback succeeded; different bytes were rejected without overwrite.                                                                           |
+| Automatic Scheduler target                    | Passed | An enabled `rate(1 minute)` schedule invoked the bundled framework Scheduler adapter, issued a normal transactional proof command, and produced a downstream S3/worker outcome. No manual trigger or direct Lambda invoke was used. |
+| Bounded failure and actual redrive            | Passed | An injected failing command traversed the real stream/bus/queue path. Durable attempt rows recorded receive counts exactly `[1, 2, 3]`; no success receipt or successful-worker marker was produced.                                |
+| Durable DLQ collection before acknowledgement | Passed | The collector stored the original event and its correlation, wrote its completion marker, and the DLQ became empty. Credential-free tests also prove a failed durable write throws before a processed marker/acknowledgement.       |
+| Unrelated-resource sentinel                   | Passed | A separately owned table and nonce survived deletion of all known owned service resources. The verifier then removed only its exact sentinel after checking its independent owner and contents.                                     |
+| Cleanup completeness                          | Passed | Functions, logs, mappings, table, queues/DLQ, roles/policies, bus, bucket, schedule/group were absent. The strengthened run also observed zero old Lambda containers after reset.                                                   |
+| Reprovision                                   | Passed | The lab was provisioned again after the sentinel check; a new transactional spine and worker S3 proof passed.                                                                                                                       |
+
+Successful complete runs:
+
+- Started `2026-10-31T16:36:04.114Z`; duration 131.335 seconds; `decision: go`.
+- Started `2026-10-31T16:40:27.442Z`, completed `2026-10-31T16:42:28.691Z`; duration
+  121.249 seconds; `decision: go`, including the explicit Lambda-container cleanup check.
+
+For the latter run, the automatic schedule used run ID
+`17f29926-6dba-4e1a-89f2-d49fc5454c95`; the failing resource was
+`failure_76ccf19c-a227-4c4e-912b-fac193fe3590` and the independent sentinel table was
+`jawstack-content-ops-dev-sentinel-19c0ff79`. The post-reset proof resource was
+`proof_2bd16959-ec51-48cd-8403-da564c08ee56`.
+
+### Verification and Safety
+
+The app now has 42 credential-free tests, adding conditional-write conflict and error
+handling, failed receive recording, durable-before-acknowledgement collection, deduplication,
+wrong-source rejection, DLQ URL validation, foreign-bucket refusal, bounded/repeating
+cleanup pagination, refusal to enable an unexpected target, and disable-on-enable-error cleanup.
+
+Provisioning preflights the added bucket, DLQ, schedule group, roles, and function names
+before creating/adopting resources. Reset completes all ownership/target checks before
+stopping the schedule and deleting resources. It refuses enabled bucket versioning and
+excessive/broken listings rather than claiming incomplete object cleanup succeeded.
+
+S3 creation/tagging is not atomic. An interruption before the ownership tag is written
+causes fail-closed reset; recreating the owned ephemeral emulator is the recovery path,
+not forcibly adopting an untagged bucket. The service-resource sentinel survives reset;
+whole-container teardown intentionally discards all data in that dedicated emulator.
+
+The complete gate now requires explicit reset consent:
+
+```sh
+pnpm --filter content-operations run local:up
+pnpm --filter content-operations run local:provision
+pnpm --filter content-operations run verify:local --confirm-reset
+pnpm --filter content-operations run local:down
+```
+
+The token remains outside Git/logs. Verification writes running/passed/failed evidence and
+an explicit go/no-go decision instead of leaving an old pass as the result of a failed gate.
+
+`pnpm verify:release` passed: formatting, workspace typecheck, all 160 unit tests (including
+the 42 harness tests), lint, builds, pkg-guard with zero findings, isolated generated-app
+install/typecheck/tests/build/AWS bundle/synth/doctor, and all six package dry runs. Local
+Markdown links and `git diff --check` also passed. Final teardown left no owned containers
+or Docker network. No real AWS deployment, package version change, release, or commit was made.
+
+## Current Coverage and Exclusions
+
+| Capability                                      | Status                                                                            |
+| ----------------------------------------------- | --------------------------------------------------------------------------------- |
+| S3 conditional artifact storage                 | Passed in Phase 1.                                                                |
+| Automatic Scheduler target                      | Passed in Phase 1; AWS-equivalent failed-delivery retries are not verified.       |
+| Actual SQS failure redrive/DLQ collector        | Passed in Phase 1.                                                                |
+| Live unrelated-service-resource sentinel        | Passed in Phase 1 across service-resource reset.                                  |
+| Full editorial workflow and recovery            | Not implemented; later phases.                                                    |
+| API Gateway/CloudFormation/CDK asset deployment | Excluded from this Hobby lab; SDK provisioning is not deployment-parity evidence. |
+| IAM enforcement, production auth, real AWS      | Not verified; no real-AWS deployment performed.                                   |
+
+The overall feasibility decision is **go**. The documented
+[Scheduler emulation limitations](https://docs.localstack.cloud/aws/services/scheduler/#current-limitations),
+including failed-delivery retry behavior, remain exclusions. The editorial application,
+production security, real-AWS deployment, and broader operational recovery still require
+their own implementation and verification; passing this gate does not establish those outcomes.

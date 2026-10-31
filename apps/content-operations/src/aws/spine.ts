@@ -1,16 +1,19 @@
-import { PutItemCommand } from "@aws-sdk/client-dynamodb";
-import { marshall } from "@aws-sdk/util-dynamodb";
 import { z } from "zod";
 import {
   DynamoDbOutboxDispatcher,
   DynamoDbWorkerIdempotencyStore,
   EventBridgePublisher,
   SqsWorkerAdapter,
+  createSchedulerTargetAdapter,
+  type SchedulerEvent,
   type DynamoDbStreamEvent,
   type SqsEvent,
 } from "@jawstack/aws-runtime";
 import { createLabConfig } from "../lab/config";
 import { createClients, destroyClients } from "../lab/clients";
+import { collectFailure, handleProofFact, putRecordOnce } from "../lab/handlers";
+import { executeProof } from "../lab/resource";
+import { queueArn } from "../lab/capabilities";
 
 function runtime() {
   const config = createLabConfig(z.string().min(1).parse(process.env.CONTENT_OPS_LAB_ID), "lambda");
@@ -43,38 +46,72 @@ export async function worker(event: SqsEvent) {
         client: clients.dynamo,
         tableName: config.table,
       }),
-      handler: async ({ event: fact }) => {
-        if (
-          fact.source !== config.source ||
-          fact.eventType !== "spineProof.created" ||
-          fact.resourceType !== "spineProof"
-        ) {
-          throw new Error("Unexpected spine proof event.");
-        }
-        const payload = z
-          .object({ message: z.string().min(1).max(100) })
-          .strict()
-          .parse(fact.payload);
-        try {
-          await clients.dynamo.send(
-            new PutItemCommand({
-              TableName: config.table,
-              Item: marshall({
-                PK: `PROOF#${fact.resourceId}`,
-                SK: "RECEIPT",
-                eventId: fact.eventId,
-                correlationId: fact.correlationId,
-                message: payload.message,
-              }),
-              ConditionExpression: "attribute_not_exists(PK)",
-            }),
-          );
-        } catch (error) {
-          if (!(error instanceof Error) || error.name !== "ConditionalCheckFailedException")
-            throw error;
-        }
+      handler: async ({ event: fact, messageId }) => {
+        const record = event.Records?.find((r) => r.messageId === messageId) as
+          | { eventSourceARN?: string; attributes?: { ApproximateReceiveCount?: string } }
+          | undefined;
+        if (record?.eventSourceARN !== queueArn(config, config.queue))
+          throw new Error("Unexpected worker queue.");
+        const count = z.coerce
+          .number()
+          .int()
+          .min(1)
+          .max(100)
+          .parse(record.attributes?.ApproximateReceiveCount);
+        await handleProofFact(clients, config, fact, count);
       },
     }).handle(event);
+  } finally {
+    destroyClients(clients);
+  }
+}
+
+export async function collector(event: SqsEvent) {
+  const { config, clients } = runtime();
+  try {
+    const records = event.Records as readonly { eventSourceARN?: string }[] | undefined;
+    if (!records?.length || records.some((r) => r.eventSourceARN !== queueArn(config, config.dlq)))
+      throw new Error("Unexpected collector queue.");
+    return await new SqsWorkerAdapter({
+      workerName: "spineFailureCollector",
+      idempotencyStore: new DynamoDbWorkerIdempotencyStore({
+        client: clients.dynamo,
+        tableName: config.table,
+      }),
+      handler: ({ event: fact }) => collectFailure(clients, config, fact),
+    }).handle(event);
+  } finally {
+    destroyClients(clients);
+  }
+}
+
+export async function scheduled(event: SchedulerEvent) {
+  const { config, clients } = runtime();
+  try {
+    return await createSchedulerTargetAdapter({
+      handlers: {
+        spineTick: async (input) => {
+          const runId = z.uuid().parse(input.runId);
+          const resourceId = `scheduled_${runId}`;
+          const result = await executeProof(
+            clients,
+            config,
+            resourceId,
+            `scheduled:${runId}`,
+            runId,
+            { message: "Automatic scheduler proof" },
+          );
+          if (!result.ok) throw new Error("Scheduled command failed.");
+          await putRecordOnce(clients, config, {
+            PK: `SCHEDULE#${runId}`,
+            SK: "FIRED",
+            resourceId,
+            runId,
+          });
+          return { resourceId };
+        },
+      },
+    })(event);
   } finally {
     destroyClients(clients);
   }

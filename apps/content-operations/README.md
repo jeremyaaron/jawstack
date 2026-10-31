@@ -1,7 +1,8 @@
 # Content Operations
 
-Private first-party JawStack consumer. Iteration 2 Phase 0 currently supplies only the
-isolated LocalStack event-spine harness, not the editorial application or an Angular UI.
+Private first-party JawStack consumer. Iteration 2 Phases 0-1 supply a LocalStack feasibility
+harness for the event spine, object storage, scheduling, failure collection, and safe reset.
+The editorial application and Angular UI are not implemented yet.
 
 ## Credential-Free Checks
 
@@ -25,7 +26,7 @@ separate script, never a token-dependent test in default discovery.
 
 ## LocalStack Prerequisites
 
-- A running Docker engine with Compose v2 and enough RAM for LocalStack plus two Node Lambdas.
+- A running Docker engine with Compose v2 and enough RAM for LocalStack plus four Node Lambdas.
 - Port 4566 available on loopback.
 - A LocalStack account on the free non-commercial Hobby plan, not a paid trial.
 - A LocalStack token placed in `.env.localstack` in this directory:
@@ -47,28 +48,47 @@ Docker socket access gives the emulator substantial privileges on the local Dock
 Use the trusted pinned image on a development machine or isolated runner, not as a sandbox
 for untrusted code. Do not mount real credential directories.
 
-## Run the Spine Proof
+## Run the Feasibility Gate
 
 From the repository root:
 
 ```sh
 pnpm --filter content-operations run local:up
 pnpm --filter content-operations run local:provision
-pnpm --filter content-operations run verify:local
+pnpm --filter content-operations run verify:local --confirm-reset
 ```
 
 The commands create a dedicated `jawstack-content-ops-dev` Compose project/network and
-app-owned local resources: DynamoDB table/stream, EventBridge bus/rule, SQS queue, IAM role,
-two Lambda functions, and bounded-retention logs. Lambda ZIPs are uploaded through the SDK.
+app-owned local resources: DynamoDB table/stream, EventBridge bus/rule, SQS queue/DLQ,
+private S3 bucket, Scheduler group/schedule, two IAM roles, four Lambda functions, and
+bounded-retention logs. Lambda ZIPs are uploaded through the SDK.
 
 The proof executes the `spineProof.create` command with a scoped idempotency key using
 public JawStack APIs. The same transaction stores state, activity, projection, outbox, and
 idempotency records. Its DynamoDB stream invokes the real outbox dispatcher Lambda;
-EventBridge routes the event to SQS; the actual worker Lambda writes an idempotent receipt.
+EventBridge routes the event to SQS; the actual worker writes a conditional S3 artifact and
+an idempotent DynamoDB receipt.
 Verification checks the stored records, response replay, correlation, published outbox,
 and one logical receipt. It does not invoke the worker directly or publish a substitute event.
 
-The CLI prints sanitized results and writes local proof metadata under `.localstack/`.
+The extended gate also checks concurrent conditional S3 writes, readback/digest verification,
+rejection of a conflicting body, and the configured bucket public-access block. It enables
+a `rate(1 minute)` schedule, observes an automatic target invocation and its downstream
+artifact, and disables the schedule in a `finally` block. No manual trigger API is used.
+
+A deliberately failing command goes through the same real stream/bus/queue path. The
+worker records receive counts 1, 2, and 3 before throwing. Actual SQS redrive moves the
+message to the DLQ; a collector persists the original event before returning successfully.
+The gate waits for that receipt, the collector marker, and an empty DLQ.
+
+`--confirm-reset` is required because the full gate then deletes the owned proof dataset,
+checks that a separately owned sentinel table and its nonce survived, and reprovisions
+and reruns the successful spine. It removes its exact test sentinel after checking owner
+and contents. Do not point this resettable harness at application data you want to keep.
+Expect a few minutes, including the real rate tick and visibility/redrive waits.
+
+The CLI prints sanitized results and writes running/passed/failed evidence under `.localstack/`.
+Only a complete gate yields `decision: go`; failed gates record `no-go`, not a stale pass.
 Ownership manifests there are required for safe lifecycle operations; do not delete them
 while the lab runs. Use `CONTENT_OPS_LAB_ID` (1-16 lowercase letters/digits/hyphens) to
 select another explicit instance; only one instance can bind the fixed host port at a time.
@@ -80,7 +100,7 @@ Reset only resources owned by the current manifest, leaving the emulator running
 ```sh
 pnpm --filter content-operations run local:reset --confirm-reset
 pnpm --filter content-operations run local:provision
-pnpm --filter content-operations run verify:local
+pnpm --filter content-operations run verify:local --confirm-reset
 ```
 
 Stop the entire owned ephemeral lab and remove its container/network:
@@ -93,6 +113,20 @@ Reset preflights ownership tags on every known resource before deleting anything
 checks the expected event-source mappings. Provisioning refuses pre-existing named
 resources rather than adopting or retagging them. On interrupted provisioning, use reset
 with the intact manifest; on a failure, the manifest is retained for recovery.
+
+Reset stops the schedule, removes mappings/functions and their warm containers, empties
+only the owned unversioned bucket within a 10,000-object/10-page limit, and removes the
+remaining owned resources. It refuses foreign tags, unexpected targets/mappings, enabled
+bucket versioning, and broken pagination rather than silently broadening cleanup.
+
+S3 creation and tagging are not one atomic API operation. If interrupted between them,
+reset refuses an untagged bucket; recreate the owned ephemeral emulator with `local:down`
+then `local:up`, rather than forcibly adopting or deleting an unverified bucket.
+
+The sentinel proves service-resource cleanup leaves unrelated resources in that emulator
+alone. `local:down` intentionally discards the entire dedicated emulator's state; it cannot
+preserve another service dataset stored inside that same disposable container. It does not
+stop other Compose projects or delete their Docker resources.
 
 ## Isolation and Limits
 
@@ -107,10 +141,16 @@ Readiness and service waits are bounded. A cold initial Lambda runtime image pul
 time; if it exceeds the limit, inspect the owned local logs privately, then reset/retry.
 Docker/service errors are summarized instead of dumping potentially sensitive output.
 
-This phase does not verify S3, Scheduler, DLQ recovery, IAM enforcement, API Gateway,
-CloudFormation, production auth, or real AWS behavior. Those are either Phase 1 checks or
-explicit exclusions. The current queue intentionally has no DLQ until Phase 1 adds the
-failure scenario. Do not use this harness for production jobs.
+The feasibility test profile uses 5-second worker/collector timeouts, 30-second source/DLQ
+visibility, three receives before redrive, and maximum concurrency 2. Dispatcher/Scheduler
+functions retain 30-second timeouts. These short test bounds make redrive practical to
+observe; they are not a change to the later application's 30-second/180-second design.
+
+The gate verifies local S3/Scheduler/SQS integration, not AWS-equivalent IAM enforcement,
+Scheduler failed-delivery retries, API Gateway/CloudFormation deployment, production auth,
+or exactly-once external effects. No AWS deployment occurs. Scheduler retry emulation has
+documented limitations; successful automatic delivery here does not validate its retry policy.
+Do not use this harness for production jobs.
 
 Planning and observed results:
 

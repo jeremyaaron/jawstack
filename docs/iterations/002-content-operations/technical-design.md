@@ -33,6 +33,11 @@ The principal decisions are:
 The compatibility spike is the first implementation gate. Drafting this document does not
 authorize starting containers, using a LocalStack token, or deploying anything to AWS.
 
+Implementation note: the Phase 0-1 gate has since passed on the pinned Hobby configuration;
+see [observed evidence](localstack-evidence.md). Its failure-test worker/collector profile
+uses 5-second timeouts and 30-second visibility to observe three receives promptly. The
+30-second/180-second application design below remains unchanged and unimplemented.
+
 ## Existing Contracts and Required Changes
 
 The baseline offers `defineResource`, `defineCommand`, `executeCommand`, `ResourceState`,
