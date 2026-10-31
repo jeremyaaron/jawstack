@@ -22,6 +22,7 @@ import { verifyAssets } from "../src/lab/verify-assets";
 import { verifyPublication } from "../src/lab/verify-publication";
 import { verifyJobs } from "../src/lab/verify-jobs";
 import { verifyFailures } from "../src/lab/verify-failures";
+import { verifyApi } from "../src/lab/verify-api";
 import { verifyCapabilities, verifySentinelReset } from "../src/lab/verify-capabilities";
 import { buildLab } from "./build-lab";
 
@@ -271,6 +272,8 @@ async function main() {
           "Checking durable failure collection, owned CLI replay, and marker-gap recovery...",
         );
         evidence.recovery = await verifyFailures(clients, config);
+        console.log("Checking loopback HTTP ingress against owned DynamoDB/private S3...");
+        evidence.http = await verifyApi(config);
         console.log("Waiting for automatic Scheduler and actual SQS redrive/collector...");
         evidence.capabilities = await verifyCapabilities(clients, config);
         console.log("Checking ownership-safe reset with an unrelated-resource sentinel...");

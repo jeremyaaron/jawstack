@@ -410,6 +410,43 @@ verification, and six package dry runs. The four-archive build contract now has 
 lab load, not because a runtime delivery timed out. No dependencies, public implementations/
 versions, or workflows changed.
 
+## Phase 14: Loopback HTTP Ingress
+
+Observed on October 31, 2026, using the same pinned LocalStack `2026.10.0` image/digest,
+ARM64 runtime, guarded endpoints/dummy credentials, and user-attested Hobby tier. The full
+extended gate ran from `2026-10-31T22:40:43.406Z` to `2026-10-31T22:44:11.143Z` in
+207.737 seconds with `decision: go`.
+
+HTTP content ID: `0646f0c0-3ece-4dc9-949e-3305422843d2`.
+
+- Actual router startup verified the ready lab manifest, owned DynamoDB table/private S3
+  bucket tags, four public-access blocks, and disabled bucket versioning.
+- HTTP create/registration/upload used real DynamoDB commands and S3 bytes. Strong HTTP
+  resource version matched DynamoDB authority, and the bounded status/title query found
+  the real projection. A second fixture downloaded the exact verified PNG through the API.
+- Pending slots were not downloadable. Stale edits returned 409; another author's edit and
+  internal completion commands returned 403. Uncommitted publication returned 404.
+  JSON/upload results excluded storage configuration, object keys, and fencing tokens.
+- Health explicitly reported `localstack` / `external-workers`. No host pump or direct
+  consumer invocation was substituted for deployed queue/Lambda/Scheduler transport.
+- All prior spine, service paging, scoped transactions, assets, publication recovery, jobs,
+  recovery/CLI, automatic Scheduler, actual SQS redrive/collector, sentinel-safe reset, and
+  reprovisioned-spine checks passed again. The unrelated sentinel/nonce survived reset and
+  zero owned Lambda containers remained afterward. Final `local:down` removed the owned lab.
+
+The HTTP-only memory walkthrough additionally executes create/upload/review/approve/
+schedule/publish/download/preview/operations/activity/archive through the managed API.
+Credential-free suites now contain 413 consumer / 698 workspace tests, including fixed
+fixture authorization, public command exclusion, scoped query budgets/continuations,
+empty filtered pages, stable overdue cutoffs, strict calendar/filter inputs, transport/body
+limits, private authority rereads, seed idempotency, import/config side effects, stalled
+bodies, and managed shutdown. `pnpm verify:release` passed: format/typecheck/test/lint/build,
+zero pkg-guard findings, isolated generated-app checks, and six package dry runs.
+
+No real AWS resource, dependency, public framework/template implementation, version, or
+workflow changed. Consumer worker/Scheduler deployment and Angular screens remain later work;
+the memory result is not evidence of deployed consumer transport or production auth.
+
 ## Current Coverage and Exclusions
 
 Phases 11-13 add publication, due/maintenance, and durable failure/replay execution with the
@@ -429,6 +466,7 @@ but consumer SQS/Lambda/Scheduler deployment is not claimed by combining indepen
 | Publication execution                           | Phase 11 live DynamoDB/S3 crash/lease recovery, one logical artifact, completed duplicate, and corrupt-object rejection passed. Bundled SQS marker ordering is unit-tested, not deployed. |
 | Due/reminder/expiry/orphan jobs                 | Phase 12 direct live DynamoDB/S3 checkpoint/lease, daily reminder, expiry and conditional deletion passed; consumer Scheduler targets remain undeployed.                                  |
 | Durable failure/recovery                        | Phase 13 owned CLI, transactional replay outbox, direct shared SQS marker/reconciliation checks, and one logical notification/artifact passed; consumer DLQ mappings remain undeployed.   |
+| Loopback HTTP commands/queries/private storage  | Phase 14 actual router/DynamoDB/private S3 ingress passed; managed memory HTTP workflow passed, without claiming deployed consumer workers.                                               |
 | Full deployed/browser editorial workflow        | Not implemented; later phases.                                                                                                                                                            |
 | API Gateway/CloudFormation/CDK asset deployment | Excluded from this Hobby lab; SDK provisioning is not deployment-parity evidence.                                                                                                         |
 | IAM enforcement, production auth, real AWS      | Not verified; no real-AWS deployment performed.                                                                                                                                           |

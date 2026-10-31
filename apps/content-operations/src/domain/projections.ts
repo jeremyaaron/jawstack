@@ -8,7 +8,6 @@ function contentRows(
   updatedAt: string,
   version: number,
 ): ProjectionWrite[] {
-  if (state.status === "archived") return [];
   const data = {
     title: state.title,
     status: state.status,
@@ -24,6 +23,8 @@ function contentRows(
     sort,
     data: { ...data, ...extra },
   });
+  if (state.status === "archived")
+    return [row("contentItem.status.archived", `${createdAt}#${state.contentId}`)];
   const rows = [
     row("contentItem.list", `${createdAt}#${state.contentId}`),
     row(`contentItem.status.${state.status}`, `${createdAt}#${state.contentId}`),

@@ -1,7 +1,7 @@
 # Iteration 2 Implementation Plan: Content Operations
 
-Status: reviewed. Phases 0-13 are complete. Durable failure collection/reconciliation,
-targeted atomic replay, owned CLI recovery, and workspace regressions passed. Phase 14 is next.
+Status: reviewed. Phases 0-14 are complete. Loopback HTTP workflows, bounded queries,
+private reads, explicit runtime/seed launchers, and workspace regressions passed. Phase 15 is next.
 
 ## Purpose
 
@@ -1186,6 +1186,50 @@ integration gate, documentation walkthrough, local links, and `git diff --check`
   resources, release, or commit changed. Consumer mappings/grants and service-level Scheduler
   failed-target topology remain Phase 20/21; HTTP/UI remain later phases. Recurring tick
   recovery continues through the Phase 12 checkpoints, not arbitrary fact replay.
+
+### Phase 14: October 31, 2026
+
+- Added a loopback-only Node API with exact Host/Origin checks, four server-resolved fixture
+  identities, public-command allowlist/internal-command exclusion, scoped dispatch, standard
+  envelopes, structured version conflicts, sanitized failures, and private response headers.
+  JSON/UTF-8/media type, upload, header/target, body deadline, connection/admission, and
+  shutdown bounds are enforced. No production-authentication claim is made.
+- Added strict browser-safe query inputs/types, narrow server-selected projections, bounded
+  content/review/calendar/operations queries, and resource/activity reads. Cursor scopes bind
+  normalized filters/fixture/range and frozen overdue cutoffs. Requested service limits
+  consume the 200-candidate budget even for empty pages; continuation survives post-filtering.
+  Archived items retain only their explicit status projection. DTO validation excludes raw
+  storage/debug fields, object keys, and fencing tokens; operations require editors.
+- Wired real bounded upload services, authority-checked verified attachment downloads, and
+  committed-artifact preview/readback. Asset rows or optional content IDs are locators only;
+  strong parent authority is reread after object verification. Retained verified historical
+  references remain readable; pending/unverified objects and uncommitted previews are denied.
+- Added `dev:api`, `dev:api:local`, and explicit-runtime `seed`. Memory manages serialized
+  worker drains and minute-granularity due ticks. LocalStack verifies ready manifest/table/
+  bucket ownership, access block, and unversioned storage before serving guarded SDK clients;
+  it has no host consumer pump and reports `external-workers`. Seed uses six stable content
+  IDs, normal commands/uploads, real PNG bytes, and preserves existing items/edits. It creates
+  authoritative intents, not simulated worker outcomes, in LocalStack mode.
+- Added 16 tests (413 consumer/698 workspace total): HTTP-only create/upload/review/approve/
+  schedule/publish/preview/inspect/archive, idempotent replay and stale conflicts, forged-role/
+  ownership/internal-command denials, actual operations summaries, strict filters/cursors,
+  empty filtered continuation and service budgets, stable overdue cutoff, calendar bounds,
+  unsafe Host/Origin, JSON/chunked/UTF-8/media/upload limits, private pending-object denial,
+  safe PDF headers, authority reread, deterministic seed, occupied ports, stalled bodies,
+  managed shutdown, sanitized dependency faults, and import/config side effects.
+- Added an opt-in live HTTP proof to the full owned lab gate: real DynamoDB authoritative
+  command/read/projection, private S3 upload/verified download, stale conflict, author ownership,
+  internal exclusion, redaction, and unavailable uncommitted preview. The separate actual
+  spine/Scheduler/redrive/reset/reprovision checks remain required. Consumer worker deployment
+  is not inferred from independent service checks; see [evidence](localstack-evidence.md).
+- The full live gate passed in 207.737 seconds, including prior automatic Scheduler,
+  actual redrive/collection, sentinel-safe reset, and reprovisioning. Final `local:down`
+  removed the owned lab. A seeded memory API is available for review on loopback port 4327.
+- Updated the [API guide](../../../apps/content-operations/API.md), run commands, implementation
+  decisions, and iteration status. Workspace release verification includes format/typecheck/
+  tests/lint/build, zero pkg-guard findings, generated-app verification, and six package dry runs.
+  No dependencies, public framework/template implementation, versions, workflows, real AWS
+  resources, release, or commit changed. Angular screens/typed client remain Phase 15.
 
 For later phases, append the date, meaningful behavior delivered, commands/results,
 not-run checks, design changes, and remaining limitations. Do not replace observed

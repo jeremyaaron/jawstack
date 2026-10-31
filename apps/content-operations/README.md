@@ -13,7 +13,10 @@ Phase 11 adds stable JSON artifacts, recoverable publication execution, outcome 
 and a bundled SQS publisher entrypoint. Phase 12 adds checkpointed due/reminder/asset jobs,
 strict local-time conversion, and conditional orphan cleanup. Phase 13 adds durable failure
 records, resumable collection, publication reconciliation, and bounded targeted recovery.
-Consumer Lambda/queue/Scheduler deployment, HTTP, and Angular UI remain later work. The live
+Phase 14 adds a loopback HTTP API, bounded application queries, private downloads/committed
+previews, deterministic seed, and explicit memory/LocalStack launchers. See the [API guide](API.md)
+for routes, identity, limits, and runnable examples. Consumer Lambda/queue/Scheduler deployment
+and Angular UI remain later work. The live
 lab exercises the separate event spine and shared consumer protocols on real local S3/DynamoDB.
 
 ## Credential-Free Checks
@@ -191,7 +194,8 @@ Compose `createMemoryObjectStore` from `src/application/object-store.ts` and
 `createUploadService` from `src/application/uploads.ts` with the existing memory repository
 and dispatcher for credential-free use. `createLocalS3ObjectStore` is explicitly local-only;
 it is not a production AWS client factory. Shared snapshot handlers and the explicit memory
-pump are implemented; HTTP upload/download routing remains Phase 14. Signature detection is not full media decoding,
+pump and loopback upload/download routes are implemented; see the [API guide](API.md).
+Signature detection is not full media decoding,
 sanitization, antivirus scanning, or permission to embed PDFs as active documents.
 
 ## Workers and Notifications
@@ -569,6 +573,12 @@ the collector has no completion marker until lease expiry/reconciliation. Editor
 recovers one artifact, and a late collector delivery cannot replace success. These are
 direct adapter checks, not deployed consumer queue evidence; the separate spine still proves
 actual redrive/collection. All fixtures are discarded by the same owned reset.
+
+The HTTP proof starts the actual loopback router with the guarded LocalStack runtime. It
+checks owned/private/unversioned storage at startup, real DynamoDB commands/strong reads/
+bounded projections, actual S3 upload/download bytes, stale conflicts, internal-command and
+ownership denials, metadata redaction, and denial of pending downloads/uncommitted previews.
+It reports `external-workers`; it does not deploy or simulate the later consumer workers.
 
 `--confirm-reset` is required because the full gate then deletes the owned proof dataset,
 checks that a separately owned sentinel table and its nonce survived, and reprovisions

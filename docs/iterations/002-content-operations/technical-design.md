@@ -1010,7 +1010,7 @@ queries and uploads use explicit handlers. Do not copy the framework executor or
 its entire internal registry as an unrestricted HTTP router.
 
 Resolve `x-content-ops-fixture` to a fixed server-side directory containing two authors and
-one editor. Ignore caller-supplied subject/roles/claims headers. Internal service identities
+two editors (`author_1`, `author_2`, `editor_1`, `editor_2`). Ignore caller-supplied subject/roles/claims headers. Internal service identities
 are constructed in process and cannot be selected from an HTTP header. Reject non-local
 configuration and reject cross-origin mutation requests; development identity is still not
 secure authentication against another local user or process.
@@ -1023,15 +1023,56 @@ credentials, bucket configuration, or uploaded bytes in diagnostic error bodies.
 
 ### Routes and Client
 
-| Route                                                                  | Purpose                                                           |
-| ---------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `GET /api/health`, `GET /api/manifest`, `GET /api/fixtures`            | Readiness, public metadata, and fixed development identities.     |
-| `POST /api/resources/contentItem/commands/create`                      | Create through normal command dispatch.                           |
-| `POST /api/resources/contentItem/:id/commands/:command`                | Allowlisted user commands only; idempotency key and strict input. |
-| `GET /api/content`, `/api/reviews`, `/api/calendar`, `/api/operations` | Typed, filtered, paginated application queries.                   |
-| `GET /api/resources/:type/:id`, `/api/resources/:type/:id/activity`    | Allowlisted resource reads and paginated activity.                |
-| `PUT /api/uploads/:contentId/:assetId`                                 | Verified, bounded attachment upload.                              |
-| `GET /api/assets/:assetId/download`, `/api/content/:id/publication`    | Authorized downloads and committed artifact previews.             |
+| Route                                                                  | Purpose                                                                     |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `GET /api/health`, `GET /api/manifest`, `GET /api/fixtures`            | Readiness, public metadata, and fixed development identities.               |
+| `POST /api/resources/contentItem/commands/create`                      | Create through normal command dispatch.                                     |
+| `POST /api/resources/contentItem/:id/commands/:command`                | Allowlisted user commands only; idempotency key and strict input.           |
+| `GET /api/content`, `/api/reviews`, `/api/calendar`, `/api/operations` | Typed, filtered, paginated application queries.                             |
+| `GET /api/resources/:type/:id`, `/api/resources/:type/:id/activity`    | Allowlisted resource reads and paginated activity.                          |
+| `PUT /api/uploads/:contentId/:assetId`                                 | Verified, bounded attachment upload.                                        |
+| `GET /api/assets/:assetId/download`, `/api/content/:id/publication`    | Authorized downloads and committed artifact previews.                       |
+| `POST /api/development/seed`                                           | Editor-only deterministic seed through normal commands and upload services. |
+
+### Phase 14 Implementation Decisions
+
+`src/http/server.ts` exposes only the shared user-command map, never the internal registry.
+All four fixtures read the shared workspace; mutation rules remain in the domain, and
+operations/seed require editors. Resource and projection DTOs validate stored schemas,
+allowlist fields, and remove object keys/fencing tokens; errors retain only safe conflict
+details. Activity exposes bounded public metadata, not arbitrary stored diagnostic data.
+
+Application query schemas/types live in browser-safe `src/shared/api.ts`. List queries bind
+opaque cursors to fixture, normalized filters, selected query partition/range, and a fixed
+overdue cutoff. Page size can change. Each request charges requested service limits toward
+a 200-candidate budget, since empty/short service pages can consume their full limit; it
+returns continuations even without matches. Page size is 1-100 (default 50), cursor max
+4 KiB, calendar range positive and at most 42 days. Archived content retains only an explicit
+archived-status projection, not active/due/maintenance membership. Operations are editor-only
+typed attempts/notification/failure summaries; callers cannot choose storage partitions.
+
+Downloads use an asset row only as a parent locator, or an optional `contentId` query locator
+before materialization. A strong content slot must grant a verified ready/removed reference;
+the object store verifies bytes and authority is reread before serving them. Retained removed
+references intentionally remain readable. Preview requires succeeded, published/archived
+authority plus matching stored artifact bytes/digest, never object existence alone.
+
+`dev:api` explicitly selects memory; `dev:api:local` selects guarded LocalStack. Memory runs
+serialized bounded worker drains every second and due jobs once per minute. LocalStack checks
+the ready ownership manifest, table/bucket tags, private access block, and disabled versioning;
+it deliberately has no host consumer pump and reports `external-workers`. Phase 20 still owns
+consumer queue/Lambda/Scheduler deployment. Seed uses six deterministic content IDs and real
+commands/uploads, preserves existing IDs/edits, and uses server-relative due times and normal
+revision/review IDs. In LocalStack it creates intents without simulating missing workers.
+
+Neither import nor runtime construction starts a server/timer or resolves credentials. Only
+explicit startup creates clients or managed work. Shutdown aborts pending bodies, stops timers,
+waits for work/response completion, and closes clients. Bounds include 16 KiB headers, 8 KiB
+targets, 256 KiB JSON, 10 MiB uploads, 30-second bodies, 64 connections, and 32 admitted requests.
+The CLI fails on occupied ports and rejects non-loopback/non-local configuration. The
+[consumer API guide](../../../apps/content-operations/API.md) is the current route/run contract.
+
+### Angular Client
 
 An application `ContentOperationsClient` implements the relevant `JawStackApiClient`
 methods and adds typed query/upload operations. Export `JawStackApiError extends Error`

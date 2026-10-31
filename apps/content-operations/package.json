@@ -14,7 +14,10 @@
     "local:down": "tsx scripts/lab.ts down",
     "verify:local": "tsx scripts/lab.ts verify",
     "jobs:inspect": "tsx scripts/jobs.ts inspect",
-    "jobs:replay": "tsx scripts/jobs.ts replay"
+    "jobs:replay": "tsx scripts/jobs.ts replay",
+    "dev:api": "tsx scripts/api.ts memory",
+    "dev:api:local": "tsx scripts/api.ts localstack",
+    "seed": "tsx scripts/seed.ts"
   },
   "dependencies": {
     "@aws-sdk/client-cloudwatch-logs": "3.1075.0",

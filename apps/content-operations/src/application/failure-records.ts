@@ -167,6 +167,22 @@ export function failureSummary(record: FailureRecord) {
     collections: structuredClone(record.collections),
   };
 }
+export const failureSummarySchema = z.object({
+  id: failureIdSchema,
+  version: versionSchema,
+  consumer: consumerSchema,
+  originalEventId: eventIdentitySchema,
+  correlationId: eventIdentitySchema,
+  eventType: z.string().min(1).max(200),
+  resourceType: z.enum(["contentItem", "reviewTask", "asset"]),
+  resourceId: idSchema,
+  firstCollectedAt: instantSchema,
+  generation: z.number().int().min(0).max(3),
+  status: z.enum(["resolved", "replayQueued", "reconciling", "failed"]),
+  resolution: collectionSchema.shape.resolution.nullable(),
+  recoveries: z.array(recoverySchema).max(3),
+  collections: z.array(collectionSchema).max(4),
+});
 export const failureKey = (id: string) => ({
   PK: `FAILURE#${failureIdSchema.parse(id)}`,
   SK: "DELIVERY",

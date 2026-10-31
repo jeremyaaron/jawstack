@@ -1,7 +1,7 @@
 # Iteration 2: Content Operations
 
-Status: Phases 0-13 complete. Durable failure collection/reconciliation, targeted atomic replay,
-owned CLI recovery, live DynamoDB/S3 checks, and workspace regressions passed. Phase 14 is next.
+Status: Phases 0-14 complete. Loopback HTTP workflows, bounded queries, private reads,
+explicit runtime/seed launchers, and workspace regressions passed. Phase 15 is next.
 
 ## Documents
 
@@ -27,7 +27,7 @@ gate now covers the event spine, S3, automatic Scheduler, actual DLQ collection,
 ownership-safe reset/reprovisioning; production-parity exclusions are recorded explicitly.
 The [consumer README](../../../apps/content-operations/README.md) describes the current
 harness and headless editorial domain. Shared handlers and an explicit memory pump now
-materialize related resources and deliver notifications; HTTP, live consumer transport
+materialize related resources and deliver notifications; live consumer transport
 orchestration and editorial screens remain unimplemented.
 Angular components now accept browser-safe presentation definitions and the fetch client
 exposes structured API errors; these contracts do not implement the editorial screens.
@@ -41,7 +41,7 @@ attachment slots and freezes verified references for review; the asset read mode
 internal materialization primitives. Phase 9 adds their shared source-version-aware handlers,
 durable local notification sink, and deterministic bounded memory outbox pump. Notification
 atomicity has memory/SDK contracts, not a live consumer deployment. HTTP upload/download
-routes and deployed consumer worker/Scheduler targets remain later work.
+routes are now implemented in Phase 14; deployed consumer worker/Scheduler targets remain later work.
 
 Phase 10 adds schedule generations, frozen publication intent, 90-second fenced claims,
 bounded attempts/retry generations, and atomic redacted attempt history in memory/DynamoDB.
@@ -62,4 +62,12 @@ failure/recovery history, resumable collection, live/expired publication reconci
 editor retry of explicit stalled delivery, atomic targeted outbox replay, owned CLI inspection/
 replay, and shared SQS collector/worker bundles. Memory uses the same policies. Direct live
 adapter checks prove durable state/marker ordering and one logical delivery/artifact after
-recovery; this is not deployed consumer queue evidence. Loopback HTTP composition is next.
+recovery; this is not deployed consumer queue evidence.
+
+Phase 14 adds the [loopback API](../../../apps/content-operations/API.md), fixture identity
+resolution, public-command allowlist, bounded query cursors, structured conflicts, actual
+uploads/downloads, and verified committed publication previews. Explicit memory mode runs
+managed handlers/jobs; explicit LocalStack mode checks owned DynamoDB/private S3 and does not
+substitute host calls for undeployed consumer workers. The deterministic seed preserves
+existing edits. HTTP-only workflow, transport/security/limits, query-budget, shutdown, and
+live HTTP service-boundary checks pass. Angular workbench/client implementation is Phase 15.
