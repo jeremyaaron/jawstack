@@ -7,11 +7,17 @@ import { SQSClient } from "@aws-sdk/client-sqs";
 import { S3Client } from "@aws-sdk/client-s3";
 import { SchedulerClient } from "@aws-sdk/client-scheduler";
 import { NodeHttpHandler } from "@smithy/node-http-handler";
-import { validateEndpoint, validateRequest, type LabConfig } from "./config";
+import {
+  assertCleanAwsEnvironment,
+  hostEndpoint,
+  validateEndpoint,
+  validateRequest,
+  type LabConfig,
+} from "./config";
 
 export class LocalOnlyHttpHandler extends NodeHttpHandler {
   constructor(private readonly endpoint: string) {
-    super({ connectionTimeout: 1_000, requestTimeout: 5_000 });
+    super({ connectionTimeout: 1_000, requestTimeout: 5_000, throwOnRequestTimeout: true });
     validateEndpoint(endpoint);
   }
 
@@ -25,6 +31,7 @@ export class LocalOnlyHttpHandler extends NodeHttpHandler {
 }
 
 export function createClients(config: LabConfig) {
+  if (config.endpoint === hostEndpoint) assertCleanAwsEnvironment(process.env);
   const options = {
     endpoint: config.endpoint,
     region: config.region,

@@ -1,4 +1,3 @@
-import { z } from "zod";
 import {
   DynamoDbRepository,
   DynamoDbWorkerIdempotencyStore,
@@ -10,7 +9,7 @@ import { createFailureService } from "../application/failures";
 import { createContentWorkers } from "../application/workers";
 import { createContentDispatch } from "../application/dispatch";
 import { consumerSchema } from "../application/failure-records";
-import { createLabConfig } from "../lab/config";
+import { localLambdaConfig } from "./local-context";
 import { createClients, destroyClients } from "../lab/clients";
 import { queueArn } from "../lab/capabilities";
 import { validatedDeliveryBatch, deliveryQueueName, deliveryMarkerTtlSeconds } from "./delivery";
@@ -91,7 +90,7 @@ export function createContentWorkerSqsHandler(
   };
 }
 async function execute(event: SqsEvent, collect: boolean) {
-  const config = createLabConfig(z.string().min(1).parse(process.env.CONTENT_OPS_LAB_ID), "lambda");
+  const config = localLambdaConfig(collect ? "collector" : "worker");
   const consumer = consumerSchema.parse(process.env.CONTENT_OPS_CONSUMER);
   if (!collect && consumer === "publishContent") throw new Error("Use the publication entrypoint.");
   const clients = createClients(config);

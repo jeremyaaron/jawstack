@@ -16,12 +16,6 @@ import {
 import { createClients, destroyClients } from "../src/lab/clients";
 import { cleanupSpine, provisionSpine, waitFor } from "../src/lab/provision";
 import { verifySpine } from "../src/lab/verify";
-import { verifyPaging } from "../src/lab/verify-paging";
-import { verifyScopedTransactions } from "../src/lab/verify-transactions";
-import { verifyAssets } from "../src/lab/verify-assets";
-import { verifyPublication } from "../src/lab/verify-publication";
-import { verifyJobs } from "../src/lab/verify-jobs";
-import { verifyFailures } from "../src/lab/verify-failures";
 import { verifyApi } from "../src/lab/verify-api";
 import { verifyCapabilities, verifySentinelReset } from "../src/lab/verify-capabilities";
 import { buildLab } from "./build-lab";
@@ -60,7 +54,9 @@ async function main() {
   )
     throw new LabError("Unexpected lab command argument.");
   if (["reset", "verify"].includes(command ?? "") && !process.argv.includes("--confirm-reset"))
-    throw new LabError("This operation resets the owned proof dataset. Pass --confirm-reset.");
+    throw new LabError(
+      "This operation resets the owned application dataset. Pass --confirm-reset.",
+    );
   const config = createLabConfig(env.CONTENT_OPS_LAB_ID ?? "dev");
   const statePath = join(root, ".localstack", `${config.instanceId}.json`);
   let manifest: LabManifest;
@@ -215,13 +211,16 @@ async function main() {
     delete manifest.queueUrl;
     delete manifest.streamArn;
     delete manifest.capabilitiesVersion;
+    delete manifest.applicationVersion;
     await save();
   };
   try {
     if (command === "provision") {
       await buildLab();
       await provisionSpine(clients, config, manifest, save);
-      console.log("Owned spine resources provisioned.");
+      console.log(
+        "Owned application and feasibility spine provisioned; application schedules enabled.",
+      );
     } else if (command === "reset") {
       await reset();
       console.log(
@@ -231,12 +230,14 @@ async function main() {
       if (manifest.status !== "ready") throw new LabError("The lab is not provisioned.");
       if (manifest.capabilitiesVersion !== 1)
         throw new LabError("Reset/reprovision the lab for Phase 1 capabilities first.");
+      if (manifest.applicationVersion !== 1)
+        throw new LabError("Reset/reprovision the lab for the actual application topology first.");
       if (env.CONTENT_OPS_LOCALSTACK_PLAN !== "hobby")
         throw new LabError("Hobby entitlement attestation is required for verification.");
       const started = Date.now();
       const evidence: Record<string, unknown> = {
         status: "running",
-        scenario: "feasibility-paging-transactions-assets-publication-jobs-and-recovery",
+        scenario: "deployed-application-happy-path-and-feasibility-regressions",
         recordedAt: new Date().toISOString(),
         durationMs: Date.now() - started,
         image: manifest.image,
@@ -252,28 +253,10 @@ async function main() {
       try {
         console.log("Checking transactional spine and worker S3 output...");
         evidence.proof = await verifySpine(clients, config);
-        console.log("Checking multi-page DynamoDB queries and transactional projection moves...");
-        evidence.paging = await verifyPaging(clients, config);
         console.log(
-          "Checking scoped command replay, expiry, atomic rollback, and projection moves...",
+          "Checking actual HTTP/upload/review/Scheduler/publisher/notification Lambdas...",
         );
-        evidence.scopedTransactions = await verifyScopedTransactions(clients, config);
-        console.log(
-          "Checking immutable asset uploads, readback, interrupted completion, and lifecycle...",
-        );
-        evidence.assets = await verifyAssets(clients, config);
-        console.log("Checking recoverable publication claims and immutable artifacts...");
-        evidence.publication = await verifyPublication(clients, config);
-        console.log(
-          "Checking leased due jobs, reminders, expiry, and conditional orphan cleanup...",
-        );
-        evidence.jobs = await verifyJobs(clients, config);
-        console.log(
-          "Checking durable failure collection, owned CLI replay, and marker-gap recovery...",
-        );
-        evidence.recovery = await verifyFailures(clients, config);
-        console.log("Checking loopback HTTP ingress against owned DynamoDB/private S3...");
-        evidence.http = await verifyApi(config);
+        evidence.application = await verifyApi(config);
         console.log("Waiting for automatic Scheduler and actual SQS redrive/collector...");
         evidence.capabilities = await verifyCapabilities(clients, config);
         console.log("Checking ownership-safe reset with an unrelated-resource sentinel...");
@@ -283,6 +266,7 @@ async function main() {
         };
         await provisionSpine(clients, config, manifest, save);
         evidence.reprovisionProof = await verifySpine(clients, config);
+        evidence.reprovisionApplication = await verifyApi(config);
         evidence.status = "passed";
         evidence.decision = "go";
         evidence.durationMs = Date.now() - started;

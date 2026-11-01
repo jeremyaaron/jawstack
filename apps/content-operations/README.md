@@ -15,8 +15,7 @@ strict local-time conversion, and conditional orphan cleanup. Phase 13 adds dura
 records, resumable collection, publication reconciliation, and bounded targeted recovery.
 Phase 14 adds a loopback HTTP API, bounded application queries, private downloads/committed
 previews, deterministic seed, and explicit memory/LocalStack launchers. See the [API guide](API.md)
-for routes, identity, limits, and runnable examples. Consumer Lambda/queue/Scheduler deployment
-remain later work. Phase 15 adds the [Angular workbench](WORKBENCH.md), typed fixture-aware
+for routes, identity, limits, and runnable examples. Phase 15 adds the [Angular workbench](WORKBENCH.md), typed fixture-aware
 client, list/board, URL filters/paging, and version-safe draft create/detail/editing. Phase 16
 adds submission, review assignment/overdue/history filters, immutable snapshots, editor
 decisions, read-model pending states, and paged primary activity. Phase 17 adds real attachment
@@ -26,8 +25,8 @@ schedule/reschedule/cancel/reopen, DST rejection, due-outcome observation, and b
 month/agenda views with calendar/detail return navigation. Phase 19 adds editor-only paged
 attempt/notification/failure views, correlated trace history, shared publication retry policy,
 and visible-only recovery polling. Non-publication replay stays in the development CLI.
-The live
-lab exercises the separate event spine and shared consumer protocols on real local S3/DynamoDB.
+Phase 20 connects the actual application workers, collectors, and recurring jobs to guarded
+LocalStack clients. The same HTTP API and workbench can use that asynchronous runtime.
 
 ## Credential-Free Checks
 
@@ -46,7 +45,7 @@ pnpm --filter content-operations run build
 These commands do not start Docker, load the token file, resolve AWS credentials, or
 connect to any AWS service. The build creates a guarded browser bundle under `dist/web/`
 and bundled Node 22 `spine.zip`, `publication.zip`, `jobs.zip`, and `recovery.zip`
-Lambda archives under `dist/`; only the spine is provisioned by the current lab.
+Lambda archives under `dist/`; all four archives supply deployed lab handlers.
 Build the workspace once so the harness can bundle installed public package entrypoints.
 Unit tests are explicitly restricted to `test/unit/**/*.test.ts`; live integration is a
 separate script, never a token-dependent test in default discovery.
@@ -148,7 +147,7 @@ Scheduling and publication commands and the publication-object writer are implem
 `publishNow` or an internal due request freezes an intent and queues a fact; draining the
 memory pump claims it, writes/verifies its immutable JSON artifact, completes the content,
 and delivers the outcome notification. Recurring job handlers and Temporal local-time/DST
-conversion are implemented; their deployed consumer Scheduler wiring remains Phase 20.
+conversion and deployed consumer Scheduler wiring are implemented.
 Domain-only completion tests still use trusted metadata;
 publisher tests additionally assert actual artifact bytes and digest.
 
@@ -160,11 +159,11 @@ now validate envelopes/sources, ignore older/equivalent snapshots, and reload on
 The asset primitives apply the same dedicated-projector, increasing-source-version, and
 immutable-metadata rules, including terminal tombstones. Public ingress must reject snapshot
 commands, `completeUpload`, `expireAsset`, and internal due/publication commands regardless of headers, and fixture
-selectors must never offer service identities. No HTTP ingress is exposed yet.
+selectors never offer service identities. The loopback HTTP ingress enforces this allowlist.
 
 Tests execute public commands against memory and SDK contract persistence without Work
 Request helpers, direct event publication, or a second editorial authority. The live proof
-below includes consumer transactions, not deployed editorial workers or an HTTP application.
+below exercises the actual HTTP application and deployed editorial workers.
 
 ## Attachments and Uploads
 
@@ -274,15 +273,14 @@ content at the same transport event ID stop a drain explicitly. Recreate the run
 resetting its dataset; do not clear the outbox underneath an existing cursor.
 
 Memory processing is volatile and does not imitate EventBridge/SQS/Lambda infrastructure.
-Automatic managed pumping belongs to later HTTP composition. Terminal memory jobs now enter
+The memory HTTP composition manages pumping explicitly. Terminal memory jobs enter
 the same durable collection/recovery protocol, and collected work releases its pump capacity.
 Collection failure/live-claim deferral retains the job and retries at an injected-clock
 one-second cutoff, without a successful worker marker. Separate bounded seven-day collection
 caches never replace permanent failure/recovery history. Invalid/foreign envelopes stay
-unacknowledged for investigation instead of being silently discarded. Live consumer queues
-remain undeployed. Tests exercise
-the complete headless draft/upload/review/publication/notification flow and SDK notification atomicity;
-the live LocalStack harness below has not been extended to deploy these consumer handlers.
+unacknowledged for investigation instead of being silently discarded. Tests exercise
+the complete headless draft/upload/review/publication/notification flow and SDK notification
+atomicity; the LocalStack gate also deploys the real consumer handlers.
 
 ## Scheduling and Publication State
 
@@ -359,8 +357,7 @@ cannot complete or fail its successor. Explicit retries preserve the original ar
 It validates the whole bounded batch, queue ARN, exact source, envelope, and subscribed fact
 before any marker lookup. Processing markers follow domain completion, never claim/object
 creation. Redelivery after a marker gap or physical marker expiry uses domain deduplication.
-`publication.zip` exports `publisher` as the Lambda handler; deploying its route/mapping is
-Phase 20, not part of the current four-function feasibility lab. Lambda S3 construction
+`publication.zip` exports `publisher` as the deployed Lambda handler. Lambda S3 construction
 requires the exact owned publisher context and fixed worker endpoint with dummy credentials.
 
 ## Due Work and Maintenance
@@ -418,8 +415,8 @@ validate future times. Explicit offsets can identify either side of a fold witho
 
 `jobs.zip` exports `scheduled`, composing the real jobs with DynamoDB checkpoints and guarded
 S3 behind the public Scheduler target adapter. The exact owned jobs Lambda context is allowed
-alongside the publisher's context. This bundle does not provision schedules: app Scheduler
-targets/routing/grants remain Phase 20/21. The current feasibility lab still has four functions.
+alongside the publisher's context. SDK provisioning declares four enabled recurring schedules,
+their fixed target inputs, execution grants, and a retained failed-target queue.
 
 Published/terminal-failure facts include `outcomeAt` from the completed attempt. Versioned
 local notification templates use this business instant and original event ID, so replay
@@ -458,8 +455,10 @@ expired-marker redeliveries still rely on permanent business deduplication.
 Publication uses the existing editor `retryPublication` command instead of envelope replay.
 Its authoritative generation must advance before a new request is queued, with at most
 three manual retries and the same frozen bytes/key. Recurring job ticks resume through their
-checkpoints and next invocation, not arbitrary fact replay. Consumer Scheduler/queue topology
-and service-level failed-target wiring remain Phase 20/21 work.
+checkpoints and next invocation, not arbitrary fact replay. Scheduler delivery failures and
+asynchronous job execution failures are retained in the owned schedule-failures queue; they
+are diagnostic service envelopes, not replayable content facts. No collector acknowledges
+or discards those envelopes. Scheduler retry fidelity is not established by the emulator.
 
 In a memory runtime, use `app.failures.inspect(fixtureAuth("editor_1"))` or
 `app.failures.replay(failureId, fixtureAuth("editor_1"), crypto.randomUUID())`, then drain
@@ -481,7 +480,8 @@ whole-batch retry and validated fixed consumer/queue names. The entire batch is 
 and validated before marker lookup; recorded replay authorization also precedes cached
 markers. Non-targeted workers may acknowledge targeted fan-out copies as ignored without
 executing business effects. Consumer wrappers explicitly set seven-day marker TTLs rather
-than inheriting the framework's fourteen-day default. The four-function spine lab is unchanged.
+than inheriting the framework's fourteen-day default. Each consumer and collector is deployed
+with its own execution role and fixed queue ARN; the feasibility spine is retained as a regression.
 
 ## LocalStack Prerequisites
 
@@ -507,7 +507,7 @@ Docker socket access gives the emulator substantial privileges on the local Dock
 Use the trusted pinned image on a development machine or isolated runner, not as a sandbox
 for untrusted code. Do not mount real credential directories.
 
-## Run the Feasibility Gate
+## Run the Application Gate
 
 From the repository root:
 
@@ -518,9 +518,27 @@ pnpm --filter content-operations run verify:local --confirm-reset
 ```
 
 The commands create a dedicated `jawstack-content-ops-dev` Compose project/network and
-app-owned local resources: DynamoDB table/stream, EventBridge bus/rule, SQS queue/DLQ,
-private S3 bucket, Scheduler group/schedule, two IAM roles, four Lambda functions, and
-bounded-retention logs. Lambda ZIPs are uploaded through the SDK.
+app-owned local resources: one DynamoDB table/stream, one EventBridge bus with five rules,
+four application queues/four worker DLQs, a retained schedule-failures queue, the proof
+queue/DLQ, one private S3 bucket, five schedules, twelve IAM roles, thirteen Lambda functions,
+and seven-day logs. Lambda ZIPs are uploaded through the SDK. The four application schedules
+are enabled; the proof schedule is enabled only during verification. The pure
+`src/aws/profile.ts` declares application names, subscriptions, bundles, and bounds for
+later CDK comparison. The shared spine dispatcher publishes actual application outbox facts.
+
+For interactive use, start `dev:api:local`, seed with `seed --runtime localstack`, and start
+`dev:web` as described in [the API guide](API.md). No UI/domain change is needed. Seeding
+commits authoritative states/intents; materializers and publication finish asynchronously.
+Seed never resets or overwrites an existing content ID. Stop the API before reset/down.
+
+The application gate starts an ephemeral loopback API, creates a draft, uploads/downloads
+real PNG bytes, submits and approves a frozen review, then schedules it five seconds ahead.
+It waits up to three minutes for an **automatic** rate-triggered due job and the deployed
+publisher, checks exact immutable JSON bytes/digest and one logical S3 artifact, and waits
+for three unique review/publication notifications and one succeeded attempt. It also checks
+materialized asset/review authority, published outbox and worker completion markers, bounded
+HTTP queries, ownership/internal-command denials, stale conflicts, and metadata redaction.
+There is no host pump, direct consumer invocation, or direct event publication in this path.
 
 The proof executes the `spineProof.create` command with a scoped idempotency key using
 public JawStack APIs. The same transaction stores state, activity, projection, outbox, and
@@ -540,7 +558,15 @@ worker records receive counts 1, 2, and 3 before throwing. Actual SQS redrive mo
 message to the DLQ; a collector persists the original event before returning successfully.
 The gate waits for that receipt, the collector marker, and an empty DLQ.
 
-The paging proof seeds 260 projection records with 8 KiB payloads, tied timestamps, and
+### Historical Adapter Proofs
+
+Phases 3-14 also ran the following direct adapter proofs. Their implementation and recorded
+evidence remain available, but `verify:local` no longer executes these injected-clock/crash
+fixtures alongside live application consumers: their intentional interruptions would race
+deployed workers. Unit/contract regressions remain active. Phase 22 adds the deployed
+application failure matrix; the current happy-path gate is not that complete acceptance gate.
+
+The paging proof seeded 260 projection records with 8 KiB payloads, tied timestamps, and
 both existing sort-suffix forms, plus seventeen activity records. It checks an actual
 service-shortened page, continuation after an empty item-kind-filtered page, ascending/
 descending half-open ranges, and complete ordered parity with memory. Real public units
@@ -589,11 +615,14 @@ The HTTP proof starts the actual loopback router with the guarded LocalStack run
 checks owned/private/unversioned storage at startup, real DynamoDB commands/strong reads/
 bounded projections, actual S3 upload/download bytes, stale conflicts, internal-command and
 ownership denials, metadata redaction, and denial of pending downloads/uncommitted previews.
-It reports `external-workers`; it does not deploy or simulate the later consumer workers.
+Its original result did not claim deployed consumers. The current application gate above
+extends it to the actual worker/Scheduler routes while retaining the ingress negative checks.
+
+### Reset Evidence
 
 `--confirm-reset` is required because the full gate then deletes the owned proof dataset,
 checks that a separately owned sentinel table and its nonce survived, and reprovisions
-and reruns the successful spine. It removes its exact test sentinel after checking owner
+and reruns both the successful spine and real application workflow. It removes its exact test sentinel after checking owner
 and contents. Do not point this resettable harness at application data you want to keep.
 Expect a few minutes, including the real rate tick and visibility/redrive waits.
 
@@ -653,8 +682,11 @@ Docker/service errors are summarized instead of dumping potentially sensitive ou
 
 The feasibility test profile uses 5-second worker/collector timeouts, 30-second source/DLQ
 visibility, three receives before redrive, and maximum concurrency 2. Dispatcher/Scheduler
-functions retain 30-second timeouts. These short test bounds make redrive practical to
-observe; they are not a change to the later application's 30-second/180-second design.
+functions retain 30-second timeouts. These short proof bounds make redrive practical to
+observe. Actual application functions use 30-second timeouts, 180-second queue/DLQ visibility,
+batch size 1, concurrency 2, three source receives, four-day source retention, and fourteen-day
+DLQ retention. Publication roles can read assets and read/write publication objects; only
+jobs can delete asset objects. Materializers/notifications/collectors have no S3 permissions.
 
 The gate verifies local S3/Scheduler/SQS integration, not AWS-equivalent IAM enforcement,
 Scheduler failed-delivery retries, API Gateway/CloudFormation deployment, production auth,

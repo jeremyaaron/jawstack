@@ -18,6 +18,7 @@ import { createUploadService } from "../application/uploads";
 import type { ApiRuntime } from "../application/api-runtime";
 import { createDynamoPersistence } from "./persistence";
 import { createLocalS3ObjectStore } from "./object-store";
+import { applicationTopologyVersion } from "./profile";
 
 export async function createLocalstackApiRuntime(
   options: { labId?: string; clock?: () => Date } = {},
@@ -32,7 +33,11 @@ export async function createLocalstackApiRuntime(
       ),
     ),
   );
-  if (manifest.instanceId !== config.instanceId || manifest.status !== "ready")
+  if (
+    manifest.instanceId !== config.instanceId ||
+    manifest.status !== "ready" ||
+    manifest.applicationVersion !== applicationTopologyVersion
+  )
     throw new Error("A provisioned owned local lab is required.");
   const clients = createClients(config);
   let objects: ReturnType<typeof createLocalS3ObjectStore> | undefined;

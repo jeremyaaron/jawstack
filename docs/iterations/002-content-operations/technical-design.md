@@ -1342,6 +1342,53 @@ the actual Angular client runs in the page and also has separate HTTP-backed uni
 
 ## LocalStack Lab and Infrastructure
 
+### Phase 20 Runtime Decisions
+
+The SDK provisioner now deploys the actual application alongside the proven feasibility
+spine. `src/aws/profile.ts` is a pure declaration of four consumer subscriptions, four
+collectors, the jobs function, bundle exports, queue names, schedules, and shared bounds.
+It is the input for later Phase 21 CDK comparison, not a new public framework API. The
+existing stream dispatcher handles all committed outbox facts; five source/type rules
+route proof and application traffic independently on the same owned table/bus/bucket.
+
+Four application queues each have a fourteen-day DLQ and durable collector. Source retention
+is four days, visibility 180 seconds, maximum receives three, batch size one, function
+timeout 30 seconds, memory 256 MiB, concurrency two, and log retention seven days. Each of
+the nine application functions has a separate execution role. Only publication can read
+assets/read-write publications; only jobs can inspect/delete asset objects. Ingress remains
+the loopback host API, not an API Gateway emulation or a host worker/publisher/job pump.
+
+Four enabled `rate(1 minute)` schedules call fixed allowlisted job names through the shared
+Scheduler adapter. Their delivery DLQ and the jobs function's asynchronous failure destination
+use the same retained service-failure queue. These service envelopes are not content facts:
+no content collector acknowledges them and no generic replay path accepts them. Job-level
+recovery uses persisted leases/checkpoints and the next recurring tick. No second collector
+DLQ chain is created. LocalStack cannot establish AWS-equivalent Scheduler retry fidelity.
+
+Application Lambda entrypoints require their exact owned function name, consumer, local
+stage/runtime and lab ID before constructing clients. LocalStack injects `AWS_ENDPOINT_URL`
+with its private bridge IP and matching `LOCALSTACK_HOSTNAME`; that exact metadata pair is
+accepted but **never used** as a client destination. Only the fixed `localstack:4566` endpoint
+is used in Lambdas; service-specific/public/unmatched overrides are rejected. Host launchers
+and client factories reject inherited AWS settings. The final transport guard still rejects
+any other outgoing host/port. HTTP request timeouts explicitly throw instead of merely warning.
+
+Provisioning preflights all application names before any create. Reset preflights all spine,
+application, role, queue, rule/target, mapping, bucket, and schedule ownership before deleting
+anything. It also discovers unsaved mappings after interrupted provisioning; unknown targets,
+pagination, or foreign tags fail closed. Reset stops schedules and mappings before removing
+functions/objects/table. A ready manifest now includes `applicationVersion: 1`; old labs must
+reset/reprovision. Import, build, synth, and unit discovery remain credential/network free.
+
+`verify:local` now drives actual HTTP/upload/review/scheduled-publication/notification and
+operation-query scenarios through bundled consumers, retains stream/outbox/proof/S3/redrive
+assertions, checks an unrelated reset sentinel, and repeats the actual application workflow
+after reprovision. Earlier direct-service crash/injected-clock scenarios remain historical
+evidence and contract coverage; running them beside real consumers would race the intended
+faults. They are no longer part of this command. The comprehensive deployed fault matrix is
+Phase 22, not implied by a passing Phase 20 happy-path gate. No real-AWS mode or CDK deployment
+has been added.
+
 ### Compatibility Gate and Provisioning Choice
 
 The [Hobby plan matrix](https://www.localstack.cloud/pricing) excludes API Gateway HTTP APIs.

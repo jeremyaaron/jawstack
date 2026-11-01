@@ -45,10 +45,12 @@ pnpm --filter content-operations run seed --runtime localstack
 Startup requires the ready owned lab manifest, table/bucket ownership, private public-access
 block, and disabled bucket versioning. All clients use guarded emulator endpoints and dummy
 credentials; inherited AWS configuration is rejected. No real-AWS fallback exists. LocalStack
-health reports `external-workers`: consumer queue/Lambda/Scheduler deployment is Phase 20,
-so related read models, publication, and due transitions are not currently driven in this
-mode. Seeding creates authoritative intents, not fake completed worker results. Memory is
-the complete interactive workflow today. Stop the API before `local:down` or resetting the lab.
+health reports `external-workers`: real stream/EventBridge/SQS Lambdas materialize related
+resources, publish artifacts, and deliver notifications. Four automatic recurring Scheduler
+targets drive due work and maintenance. Startup requires the current application topology
+version; reset/reprovision older feasibility-only labs. Seeding creates authoritative intents,
+not fake completed worker results; completion is asynchronous. Stop the API before
+`local:down` or resetting the lab. No host worker or job pump runs in LocalStack mode.
 
 Use explicit overrides if necessary; occupied ports fail without choosing another:
 

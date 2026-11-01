@@ -1,4 +1,3 @@
-import { z } from "zod";
 import {
   createSchedulerTargetAdapter,
   DynamoDbRepository,
@@ -7,14 +6,14 @@ import {
 import { createContentJobs } from "../application/jobs";
 import { createContentDispatch } from "../application/dispatch";
 import { jobNames } from "../application/job-store";
-import { createLabConfig } from "../lab/config";
+import { localLambdaConfig } from "./local-context";
 import { createClients, destroyClients } from "../lab/clients";
 import { createDynamoJobStore } from "./job-store";
 import { createDynamoPersistence } from "./persistence";
 import { createLocalS3ObjectStore } from "./object-store";
 
 export async function scheduled(event: SchedulerEvent) {
-  const config = createLabConfig(z.string().min(1).parse(process.env.CONTENT_OPS_LAB_ID), "lambda");
+  const config = localLambdaConfig("jobs");
   const clients = createClients(config);
   let objects: ReturnType<typeof createLocalS3ObjectStore> | undefined;
   try {

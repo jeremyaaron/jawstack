@@ -1,8 +1,8 @@
 # Iteration 2 Implementation Plan: Content Operations
 
-Status: reviewed. Phases 0-19 are complete. Editor operations/trace views, versioned
-publication recovery, visibility-aware polling, desktop/mobile browser workflows, and
-workspace checks passed. Phase 20 is next.
+Status: reviewed. Phases 0-20 are complete. The actual application LocalStack runtime,
+automatic scheduled publication, real worker outcomes, ownership-safe reset/reprovision,
+seed replay, and workspace checks passed. Phase 21 is next.
 
 ## Purpose
 
@@ -97,13 +97,13 @@ work may proceed only after an explicit sequencing decision, without claiming th
 | 11    | Consumer workers           | Recoverable publication execution                         | Complete |
 | 12    | Consumer jobs              | Due work, reminders, time zones and cleanup               | Complete |
 | 13    | Consumer operations        | Failure collection and bounded recovery                   | Complete |
-| 14    | Consumer API               | Loopback HTTP, bounded queries and typed routes           | Planned  |
-| 15    | Consumer UI                | Workbench, drafting and browser boundary                  | Planned  |
-| 16    | Consumer UI                | Review queue, frozen snapshots and activity               | Planned  |
-| 17    | Consumer UI                | Attachments and publication preview                       | Planned  |
-| 18    | Consumer UI                | Scheduling, calendar and agenda                           | Planned  |
-| 19    | Consumer UI                | Operations, outcomes and retry controls                   | Planned  |
-| 20    | Consumer AWS               | Actual app bundles and LocalStack runtime wiring          | Planned  |
+| 14    | Consumer API               | Loopback HTTP, bounded queries and typed routes           | Complete |
+| 15    | Consumer UI                | Workbench, drafting and browser boundary                  | Complete |
+| 16    | Consumer UI                | Review queue, frozen snapshots and activity               | Complete |
+| 17    | Consumer UI                | Attachments and publication preview                       | Complete |
+| 18    | Consumer UI                | Scheduling, calendar and agenda                           | Complete |
+| 19    | Consumer UI                | Operations, outcomes and retry controls                   | Complete |
+| 20    | Consumer AWS               | Actual app bundles and LocalStack runtime wiring          | Complete |
 | 21    | Consumer infrastructure    | CDK composition and topology assertions                   | Planned  |
 | 22    | Integration verification   | Full local workflow, failure and isolation evidence       | Planned  |
 | 23    | Browser/CI verification    | Complete browser acceptance and PR/manual gates           | Planned  |
@@ -1506,6 +1506,52 @@ integration gate, documentation walkthrough, local links, and `git diff --check`
   and browser servers stopped. No dependencies, public framework/template implementations,
   package versions, CI triggers, releases or commits changed. No Docker/LocalStack/real-AWS
   run was needed or claimed for this UI phase. Actual consumer AWS wiring remains Phase 20.
+
+### Phase 20: October 31, 2026
+
+- Added a pure application infrastructure profile and extended the SDK provisioner from
+  four feasibility functions to thirteen total: the existing stream/proof path plus four
+  actual consumer workers, four durable DLQ collectors, and the recurring jobs target.
+  Source/type rules, queue policies, per-function roles, targeted object grants, retention,
+  concurrency, mappings, and all four fixed Scheduler inputs are registered explicitly.
+- Bound existing scoped dispatch, internal identities, DynamoDB operation/notification/failure
+  stores, guarded S3, publisher and jobs to those real entrypoints. The LocalStack API has
+  no host worker/job pump; the domain, public HTTP routes, and browser implementation did
+  not need alternate policies. `dev:api:local` now requires a current ready owned application
+  manifest; seed still writes normal authoritative commands and never overwrites existing IDs.
+- Provisioning refuses collisions before creating anything. Reset preflights every known
+  application/spine resource before deleting anything, discovers unsaved mappings, refuses
+  foreign targets and undeclared group schedules, stops recurring work, and removes all
+  owned application resources. New names fit Lambda/IAM limits for sixteen-character lab IDs.
+  Service-level Scheduler/asynchronous job failures have a retained diagnostic queue, not
+  a no-op collector or arbitrary content replay route.
+- Added strict local function/consumer/stage/runtime guards and negative zero-request tests.
+  The first live attempt exposed LocalStack's injected bridge endpoint metadata; accepting
+  only the matching private metadata pair does not change the fixed SDK destination or final
+  transport allowlist. SDK request deadlines now throw rather than merely warning. Parallel
+  bundle tests exposed a partial-ZIP race; archive replacement now uses atomic rename.
+- `verify:local --confirm-reset` now drives actual HTTP/upload/review/scheduled publication/
+  notification/operation-query scenarios, retaining the proven transaction/stream/outbox/S3/
+  automatic-tick/redrive assertions. The sentinel reset is followed by another actual app
+  workflow after reprovision. Historical injected-clock/direct-call fault scenarios remain
+  recorded and unit/contract-tested, but are no longer raced against live consumers. The
+  broader deployed failure matrix remains Phase 22; CDK composition remains Phase 21.
+- Credential-free verification passed: `pnpm verify:release` includes all 767 workspace unit
+  tests (482 consumer tests), workspace typecheck/lint/build, zero pkg-guard findings, isolated
+  generated-app installation/typecheck/tests/browser+AWS builds/doctor, and six package dry
+  runs. The consumer browser graph remains 230 modules with zero server imports. Final
+  source typecheck/lint and local Markdown file-target checks passed (39 files).
+- The first full actual application gate passed in 309,988 ms on the pinned ARM64 image with
+  user-attested Hobby entitlement, explicit dummy credentials, and guarded local endpoints.
+  A full cold-start repeat passed in 356,869 ms (`2026-11-01T03:38:21.298Z` through
+  `03:44:18.167Z`), including another sentinel reset, zero Lambda containers after reset,
+  and a second complete app workflow. The live seed check created six examples, observed
+  actual Lambda publication, then skipped all six on replay without changing their versions.
+  See [LocalStack evidence](localstack-evidence.md) for transport scope and exclusions.
+  `local:down` then passed with no owned emulator/Lambda containers remaining. Existing
+  memory web 4336 / API 4337 and the review dataset were preserved and remained healthy.
+- No real AWS, CDK deployment, dependency/public framework/template change, version bump,
+  CI trigger change, package publication, automatic commit, or push was performed.
 
 For later phases, append the date, meaningful behavior delivered, commands/results,
 not-run checks, design changes, and remaining limitations. Do not replace observed

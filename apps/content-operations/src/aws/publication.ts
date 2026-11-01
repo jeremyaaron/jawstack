@@ -1,4 +1,3 @@
-import { z } from "zod";
 import {
   DynamoDbRepository,
   DynamoDbWorkerIdempotencyStore,
@@ -10,7 +9,7 @@ import { createContentDispatch } from "../application/dispatch";
 import { createPublisher } from "../application/publisher";
 import { parseContentEvent } from "../shared/events";
 import { validatedDeliveryBatch, deliveryMarkerTtlSeconds } from "./delivery";
-import { createLabConfig } from "../lab/config";
+import { localLambdaConfig } from "./local-context";
 import { createClients, destroyClients } from "../lab/clients";
 import { queueArn } from "../lab/capabilities";
 import { createDynamoPersistence } from "./persistence";
@@ -48,7 +47,7 @@ export function createPublicationSqsHandler(options: {
 }
 
 export async function publisher(event: SqsEvent) {
-  const config = createLabConfig(z.string().min(1).parse(process.env.CONTENT_OPS_LAB_ID), "lambda");
+  const config = localLambdaConfig("publisher");
   const clients = createClients(config);
   let objects: ReturnType<typeof createLocalS3ObjectStore> | undefined;
   try {

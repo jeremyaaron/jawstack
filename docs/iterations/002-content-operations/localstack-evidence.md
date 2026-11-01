@@ -447,7 +447,7 @@ No real AWS resource, dependency, public framework/template implementation, vers
 workflow changed. Consumer worker/Scheduler deployment and Angular screens remain later work;
 the memory result is not evidence of deployed consumer transport or production auth.
 
-## Current Coverage and Exclusions
+## Coverage Through Phase 14
 
 Phases 11-13 add publication, due/maintenance, and durable failure/replay execution with the
 live evidence above. Shared consumer protocols and the separate transport spine have passed,
@@ -476,3 +476,62 @@ The overall feasibility decision is **go**. The documented
 including failed-delivery retry behavior, remain exclusions. The editorial application,
 production security, real-AWS deployment, and broader operational recovery still require
 their own implementation and verification; passing this gate does not establish those outcomes.
+
+## Phase 20: Deployed Application Runtime
+
+The application now has a separate live happy-path gate rather than inferring deployment
+from the historical adapter checks above. It retains the feasibility transport/redrive
+regression and uses the same pinned image, ARM64 host/runtime, Node 22 ESM bundles, and
+user-attested Hobby entitlement. Only guarded local endpoints and dummy SDK credentials
+were used; the token was passed only to the emulator. No real-AWS deployment was performed.
+
+The topology consists of thirteen functions (four feasibility, four application workers,
+four application collectors, one jobs target), one table/stream/bus/private unversioned
+bucket, five rules/schedules, eleven queues including DLQs and a retained service-failure
+destination, twelve execution roles, and seven-day logs. Application queues use 180-second
+visibility, three receives, batch one, four-day source/fourteen-day DLQ retention; functions
+use 30-second timeout, 256 MiB and concurrency two. The proof retains its shorter bounds.
+
+The first complete deployed gate passed from `2026-11-01T03:31:18.880Z` through
+`2026-11-01T03:36:28.868Z` in 309,988 ms. It checked:
+
+- Actual loopback HTTP commands and guarded DynamoDB authority; no host consumer/job pump.
+- Real PNG upload/download and actual asset/review materializer Lambda outcomes.
+- Submitted/approved frozen content scheduled five seconds ahead, then an automatic
+  `rate(1 minute)` due job through stream -> bus -> SQS -> publisher Lambda.
+- Exact immutable publication bytes/digest, one logical artifact, three unique business
+  notifications, one succeeded attempt, published outbox and worker completion markers.
+- HTTP projection queries, stale/ownership/internal-command denials, private metadata
+  redaction, and rejection of pending/uncommitted downloads/previews.
+- The feasibility command transaction, replay, automatic tick, S3 output, actual source
+  receives 1/2/3, durable proof DLQ collector acknowledgement, and an empty proof DLQ.
+- Ownership-safe reset with unrelated sentinel nonce unchanged, all owned service resources
+  absent, zero warm Lambda containers after reset, reprovision, and another actual app flow.
+
+An initial live attempt was interrupted after the new context guard rejected LocalStack's
+injected bridge endpoint metadata. The fix accepts only the matching private emulator metadata
+without using it as a client destination; final transport allowlisting is unchanged. A
+concurrent ZIP-reader unit failure also exposed non-atomic archive replacement; builds now
+publish archives with atomic rename. Neither issue was suppressed or counted as a pass.
+
+The final cold-start repeat also passed from `2026-11-01T03:38:21.298Z` through
+`2026-11-01T03:44:18.167Z` in 356,869 ms, after a full owned Compose teardown/restart and
+reprovision with the final topology/guards. Both application runs again yielded one
+artifact, three unique notifications, and one succeeded attempt. Sentinel ownership/data
+and complete service-resource absence passed; zero warm Lambda containers remained after
+reset, before reprovisioning the second actual app workflow.
+
+An additional live seed check used the actual HTTP seed CLI against an ephemeral loopback
+API: six deterministic examples were created, the publication example completed in the
+real publisher Lambda, and a second seed skipped all six without changing any content
+version. The temporary ingress closed. `local:down` passed after verification; the owned
+emulator/network and all warm Lambda containers were removed, no matching containers
+remained, and images were retained. Existing memory web 4336 / API 4337 stayed healthy
+with the review page and development dataset preserved.
+
+This is Phase 20 evidence, not the complete Phase 22 failure matrix. Actual application
+DLQ/replay/crash/lease/obsolete-generation injection and browser-on-local acceptance are
+not inferred from the separate proof DLQ or memory browser suite. Scheduler failed-delivery
+retry fidelity, IAM enforcement, API Gateway/CloudFormation/CDK deployment, production auth,
+and real AWS remain unverified/excluded. Older direct-call crash/injected-clock live fixtures
+are retained as historical evidence, not run beside asynchronous application consumers.

@@ -38,7 +38,8 @@ rows, counts, workflow outcomes, or review decisions.
 
 The workbench can use `dev:api:local` instead, after owned lab startup/provisioning. Its
 backend must be selected explicitly; there is no auto-detection or AWS fallback. Consumer
-workers are not yet deployed in that mode, so related materialized results remain pending.
+workers, collectors, and recurring jobs are deployed in that mode. Related views and
+publication outcomes update asynchronously through the real stream/bus/queue/Lambda path.
 See [API mode limits](API.md) before using the resettable LocalStack dataset.
 
 For alternate loopback ports, configure both processes consistently:

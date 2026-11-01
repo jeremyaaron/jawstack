@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { applicationProfile } from "../aws/profile";
 
 export const localstackImage =
   "localstack/localstack:2026.10.0@sha256:aa5632e041ca54ff61a0a25e17b1c898b09a1eb7f611bfc05f73ef53b7266872";
@@ -111,7 +112,12 @@ export function localQueueUrl(
     throw new LabError("Unsafe queue URL returned by the emulator.");
   }
   if (
-    ![config.queue, config.dlq].some((name) => name === queueName) ||
+    ![
+      config.queue,
+      config.dlq,
+      applicationProfile(config).schedulerDlq,
+      ...applicationProfile(config).workers.flatMap((worker) => [worker.queue, worker.dlq]),
+    ].some((name) => name === queueName) ||
     url.pathname.split("/").at(-1) !== queueName
   )
     throw new LabError("Unexpected queue name.");
@@ -130,6 +136,7 @@ export const manifestSchema = z
     streamArn: z.string().optional(),
     mappings: z.array(z.string()).default([]),
     capabilitiesVersion: z.literal(1).optional(),
+    applicationVersion: z.literal(1).optional(),
   })
   .strict();
 export type LabManifest = z.infer<typeof manifestSchema>;

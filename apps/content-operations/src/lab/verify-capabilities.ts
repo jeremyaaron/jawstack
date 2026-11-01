@@ -27,6 +27,7 @@ import { missing, waitFor } from "./lifecycle";
 import { preflightCapabilities, setSchedule } from "./capabilities";
 import { proofArtifact, putProofArtifact } from "./artifact";
 import { executeProof } from "./resource";
+import { inspectApplication } from "./application-topology";
 
 async function getRecord(c: LabClients, config: LabConfig, PK: string, SK: string) {
   const result = await c.dynamo.send(
@@ -167,6 +168,9 @@ export async function verifyCapabilities(c: LabClients, config: LabConfig) {
 }
 
 export async function assertResourcesAbsent(c: LabClients, config: LabConfig, ownerId: string) {
+  const application = await inspectApplication(c, config, ownerId);
+  if (Object.values(application).some((items) => items.length))
+    throw new LabError("Owned application resources remain after cleanup.");
   const capabilities = await preflightCapabilities(c, config, ownerId);
   if (
     capabilities.bucket ||

@@ -66,6 +66,11 @@ import {
 } from "./capabilities";
 
 import { missing, waitFor } from "./lifecycle";
+import {
+  cleanupApplication,
+  inspectApplication,
+  provisionApplication,
+} from "./application-topology";
 export { missing, waitFor } from "./lifecycle";
 
 const tags = (ownerId: string) => [{ Key: "jawstack:owner", Value: ownerId }];
@@ -104,6 +109,7 @@ export async function provisionSpine(
       "A named resource already exists. Refusing to adopt or retag it; use ownership-checked reset.",
     );
   await assertCapabilitiesVacant(c, config);
+  await inspectApplication(c, config);
   manifest.status = "provisioning";
   await save();
   await provisionStorageAndDlq(c, config, manifest.ownerId);
@@ -338,6 +344,7 @@ export async function provisionSpine(
       return state.State === "Enabled" ? true : undefined;
     });
   }
+  await provisionApplication(c, config, manifest, save);
   manifest.status = "ready";
   manifest.capabilitiesVersion = 1;
   await save();
@@ -414,7 +421,9 @@ export async function cleanupSpine(
     }
   }
   const capabilities = await preflightCapabilities(c, config, manifest.ownerId);
+  const application = await inspectApplication(c, config, manifest.ownerId);
   await stopCapabilitySchedule(c, config, capabilities.schedule);
+  await cleanupApplication(c, config, application);
   for (const id of mappingIds) {
     await missing(() => c.lambda.send(new DeleteEventSourceMappingCommand({ UUID: id })));
     await waitFor("event mapping deletion", async () =>

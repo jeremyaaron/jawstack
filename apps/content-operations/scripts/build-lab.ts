@@ -1,5 +1,6 @@
 import { build } from "esbuild";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rename, rm, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { zipSync } from "fflate";
 
@@ -21,7 +22,13 @@ export async function buildLab(): Promise<void> {
     });
     const output = result.outputFiles[0];
     if (!output) throw new Error("Lambda build produced no output.");
-    await writeFile(`${root}/dist/${entry}.zip`, zipSync({ "index.mjs": output.contents }));
+    const temp = `${root}/dist/.${entry}-${randomUUID()}.zip`;
+    try {
+      await writeFile(temp, zipSync({ "index.mjs": output.contents }), { flag: "wx" });
+      await rename(temp, `${root}/dist/${entry}.zip`);
+    } finally {
+      await rm(temp, { force: true });
+    }
   }
 }
 
