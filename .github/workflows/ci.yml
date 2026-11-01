@@ -4,23 +4,29 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 10.21.0
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
 
       - name: Install
@@ -28,6 +34,12 @@ jobs:
 
       - name: Typecheck
         run: pnpm typecheck
+
+      - name: Format
+        run: pnpm format:check
+
+      - name: Lint
+        run: pnpm lint
 
       - name: Test
         run: pnpm test
@@ -43,3 +55,43 @@ jobs:
 
       - name: Package dry run
         run: pnpm verify:pack
+
+  browser:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.21.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build packages and enforce browser boundary
+        run: |
+          pnpm --filter './packages/*' run build
+          pnpm --filter content-operations run build
+      - name: Install Chromium
+        run: pnpm --filter content-operations exec playwright install --with-deps chromium
+      - name: Memory browser acceptance
+        run: pnpm --filter content-operations run test:browser
+      - name: Bound diagnostic artifacts
+        id: diagnostics
+        if: always()
+        run: pnpm --filter content-operations run diagnostics:browser memory
+      - name: Browser diagnostics
+        if: always() && steps.diagnostics.outputs.within-budget == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: content-operations-memory
+          path: |
+            apps/content-operations/test-results/memory/
+            apps/content-operations/test-results/memory-results.json
+            apps/content-operations/dist/web/browser-boundary.json
+          retention-days: 7
+          if-no-files-found: warn

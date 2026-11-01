@@ -314,6 +314,48 @@ export type ResourceRepository = Readonly<{
   getIdempotency?(key: string): Promise<IdempotencyRecord | undefined>;
 }>;
 
+export type Page<T> = Readonly<{
+  items: readonly T[];
+  nextCursor?: string;
+}>;
+
+export type ProjectionQuery = Readonly<{
+  projectionName: string;
+  limit?: number;
+  cursor?: string;
+  sortFrom?: string;
+  sortBefore?: string;
+  descending?: boolean;
+}>;
+
+export type ActivityQuery = Readonly<{
+  resourceType: string;
+  resourceId: string;
+  limit?: number;
+  cursor?: string;
+}>;
+
+export type QueryRepository = Readonly<{
+  queryProjection(query: ProjectionQuery): Promise<Page<ProjectionRecord>>;
+  queryActivity(query: ActivityQuery): Promise<Page<ActivityRecord>>;
+}>;
+
+export type PreparedQuery<TQuery> = Readonly<{
+  query: TQuery;
+  after: string | undefined;
+  containsKey(key: string): boolean;
+  cursorAfter(key: string): string;
+}>;
+
+export type PreparedProjectionQuery = PreparedQuery<
+  Omit<ProjectionQuery, "cursor" | "limit" | "descending"> &
+    Readonly<{ limit: number; descending: boolean }>
+>;
+
+export type PreparedActivityQuery = PreparedQuery<
+  Omit<ActivityQuery, "cursor" | "limit"> & Readonly<{ limit: number }>
+>;
+
 export type CommandUnitOfWork = Readonly<{
   commit<TState = unknown, TResponse = unknown>(
     input: CommandCommitInput<TState, TResponse>,
@@ -361,6 +403,7 @@ export type ApiSuccess<T> = Readonly<{
 
 export type RuntimeErrorCode =
   | "command.validation"
+  | "query.invalid"
   | "command.rejected"
   | "auth.missing"
   | "auth.forbidden"
@@ -520,7 +563,7 @@ export class InMemoryStore {
   }
 }
 
-export class InMemoryRepository implements ResourceRepository {
+export class InMemoryRepository implements ResourceRepository, QueryRepository {
   constructor(private readonly store: InMemoryStore = new InMemoryStore()) {}
 
   getStore(): InMemoryStore {
@@ -551,6 +594,36 @@ export class InMemoryRepository implements ResourceRepository {
     return this.store.activity
       .filter((record) => record.resourceType === resourceType && record.resourceId === resourceId)
       .map((record) => cloneValue(record));
+  }
+
+  async queryProjection(query: ProjectionQuery): Promise<Page<ProjectionRecord>> {
+    const prepared = await prepareProjectionQuery(query);
+    const { projectionName, descending, limit } = prepared.query;
+    return queryMemoryPage(
+      [...this.store.projections.values()]
+        .filter((record) => record.projectionName === projectionName)
+        .map((record) => ({
+          record,
+          key: record.sort.endsWith(`#${record.itemId}`)
+            ? record.sort
+            : `${record.sort}#${record.itemId}`,
+        }))
+        .filter(({ key }) => prepared.containsKey(key)),
+      { limit, descending, ...prepared },
+    );
+  }
+
+  async queryActivity(query: ActivityQuery): Promise<Page<ActivityRecord>> {
+    const prepared = await prepareActivityQuery(query);
+    const { resourceType, resourceId, limit } = prepared.query;
+    return queryMemoryPage(
+      this.store.activity
+        .filter(
+          (record) => record.resourceType === resourceType && record.resourceId === resourceId,
+        )
+        .map((record) => ({ record, key: `ACT#${record.occurredAt}#${record.activityId}` })),
+      { limit, descending: false, ...prepared },
+    );
   }
 
   async getOutbox(): Promise<JawStackEvent[]> {
@@ -899,6 +972,7 @@ function headerValue(
 function httpStatusForError(code: RuntimeErrorCode): number {
   switch (code) {
     case "command.validation":
+    case "query.invalid":
       return 400;
     case "auth.missing":
       return 401;
@@ -1175,6 +1249,181 @@ async function handleLocalHttpRequest(
 
 function cloneValue<T>(value: T): T {
   return structuredClone(value);
+}
+
+const queryTextSchema = z.string().refine((value) => Buffer.from(value).toString("utf8") === value);
+const queryLimitSchema = z.number().int().min(1).max(200).default(50);
+const queryCursorTextSchema = z
+  .string()
+  .min(1)
+  .max(4096)
+  .regex(/^[A-Za-z0-9_-]+$/);
+const queryBoundSchema = queryTextSchema.refine((value) => Buffer.byteLength(value) <= 1024);
+const projectionQuerySchema = z.strictObject({
+  projectionName: queryTextSchema.refine(
+    (value) => /^[a-z][A-Za-z0-9]*(\.[A-Za-z0-9_-]+)+$/.exec(value)?.[0] === value,
+  ),
+  limit: queryLimitSchema,
+  cursor: queryCursorTextSchema.optional(),
+  sortFrom: queryBoundSchema.optional(),
+  sortBefore: queryBoundSchema.optional(),
+  descending: z.boolean().default(false),
+});
+const activityQuerySchema = z.strictObject({
+  resourceType: z.string().refine((value) => NAME_PATTERN.exec(value)?.[0] === value),
+  resourceId: queryTextSchema.refine((value) => value.length > 0),
+  limit: queryLimitSchema,
+  cursor: queryCursorTextSchema.optional(),
+});
+const queryCursorSchema = z.strictObject({
+  version: z.literal(1),
+  scope: z.string().regex(/^[a-f0-9]{64}$/),
+  key: z
+    .string()
+    .min(1)
+    .max(1366)
+    .regex(/^[A-Za-z0-9_-]+$/),
+});
+
+function invalidQuery(): JawStackRuntimeError {
+  return new JawStackRuntimeError("query.invalid", "Invalid query or continuation cursor.");
+}
+
+export async function prepareProjectionQuery(
+  query: ProjectionQuery,
+): Promise<PreparedProjectionQuery> {
+  const parsed = projectionQuerySchema.safeParse(query);
+  if (!parsed.success) throw invalidQuery();
+  const { projectionName, sortFrom, sortBefore, descending, limit, cursor } = parsed.data;
+  if (
+    sortFrom !== undefined &&
+    sortBefore !== undefined &&
+    compareQueryKeys(sortFrom, sortBefore) > 0
+  )
+    throw invalidQuery();
+  const [resourceType, ...segments] = projectionName.split(".");
+  const partition = `PROJ#${resourceType}#${segments.join("#")}`;
+  if (Buffer.byteLength(partition) > 2048) throw invalidQuery();
+  const scope = await queryScope([
+    "projection",
+    partition,
+    sortFrom ?? null,
+    sortBefore ?? null,
+    descending,
+  ]);
+  const containsKey = (key: string) =>
+    (sortFrom === undefined || compareQueryKeys(key, sortFrom) >= 0) &&
+    (sortBefore === undefined || compareQueryKeys(key, sortBefore) < 0);
+  return {
+    query: {
+      projectionName,
+      descending,
+      limit,
+      ...(sortFrom === undefined ? {} : { sortFrom }),
+      ...(sortBefore === undefined ? {} : { sortBefore }),
+    },
+    after: readQueryCursor(cursor, scope, containsKey),
+    containsKey,
+    cursorAfter: (key) => {
+      if (!containsKey(key)) throw invalidQuery();
+      return writeQueryCursor(key, scope);
+    },
+  };
+}
+
+export async function prepareActivityQuery(query: ActivityQuery): Promise<PreparedActivityQuery> {
+  const parsed = activityQuerySchema.safeParse(query);
+  if (!parsed.success) throw invalidQuery();
+  const { resourceType, resourceId, limit, cursor } = parsed.data;
+  const partition = `RES#${resourceType}#${resourceId}`;
+  if (Buffer.byteLength(partition) > 2048) throw invalidQuery();
+  const scope = await queryScope(["activity", partition]);
+  const containsKey = (key: string) => /^ACT#.+#.+$/s.test(key);
+  return {
+    query: { resourceType, resourceId, limit },
+    after: readQueryCursor(cursor, scope, containsKey),
+    containsKey,
+    cursorAfter: (key) => {
+      if (!containsKey(key)) throw invalidQuery();
+      return writeQueryCursor(key, scope);
+    },
+  };
+}
+
+function compareQueryKeys(left: string, right: string): number {
+  return Buffer.compare(Buffer.from(left), Buffer.from(right));
+}
+
+async function queryScope(parts: readonly unknown[]): Promise<string> {
+  const bytes = new TextEncoder().encode(JSON.stringify(parts));
+  return Buffer.from(await globalThis.crypto.subtle.digest("SHA-256", bytes)).toString("hex");
+}
+
+function decodeQueryText(value: string): string {
+  const bytes = Buffer.from(value, "base64url");
+  const text = bytes.toString("utf8");
+  if (bytes.toString("base64url") !== value || !Buffer.from(text).equals(bytes))
+    throw invalidQuery();
+  return text;
+}
+
+function readQueryCursor(
+  cursor: string | undefined,
+  scope: string,
+  acceptsKey: (key: string) => boolean,
+): string | undefined {
+  if (cursor === undefined) return undefined;
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(decodeQueryText(cursor));
+  } catch {
+    throw invalidQuery();
+  }
+  const result = queryCursorSchema.safeParse(decoded);
+  if (!result.success || result.data.scope !== scope) throw invalidQuery();
+  const key = decodeQueryText(result.data.key);
+  if (Buffer.byteLength(key) > 1024 || !acceptsKey(key)) throw invalidQuery();
+  return key;
+}
+
+function queryMemoryPage<T>(
+  entries: readonly Readonly<{ record: T; key: string }>[],
+  options: Readonly<{
+    limit: number;
+    descending: boolean;
+    after: string | undefined;
+    cursorAfter(key: string): string;
+  }>,
+): Page<T> {
+  const direction = options.descending ? -1 : 1;
+  const remaining = entries
+    .filter(
+      ({ key }) =>
+        options.after === undefined || compareQueryKeys(key, options.after) * direction > 0,
+    )
+    .sort((left, right) => compareQueryKeys(left.key, right.key) * direction);
+  const selected = remaining.slice(0, options.limit);
+  const last = selected.at(-1);
+  return {
+    items: selected.map(({ record }) => cloneValue(record)),
+    ...(last !== undefined && remaining.length > selected.length
+      ? {
+          nextCursor: options.cursorAfter(last.key),
+        }
+      : {}),
+  };
+}
+
+function writeQueryCursor(key: string, scope: string): string {
+  if (!queryBoundSchema.safeParse(key).success || key.length === 0) throw invalidQuery();
+  // Encoding the key separately bounds the envelope even when JSON would escape every byte.
+  return Buffer.from(
+    JSON.stringify({
+      version: 1,
+      scope,
+      key: Buffer.from(key).toString("base64url"),
+    }),
+  ).toString("base64url");
 }
 
 function resourceKey(resourceType: string, resourceId: string): string {

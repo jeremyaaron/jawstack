@@ -17,7 +17,8 @@ import type {
   CommandDefinition,
   FieldDefinition,
   ProjectionRecord,
-  ResourceDefinition,
+  ResourceViews,
+  StateDefinition,
   ResourceState,
 } from "@jawstack/core";
 
@@ -36,6 +37,39 @@ export type JawStackAuthState = Pick<AuthContext, "subject" | "roles"> &
   Partial<Pick<AuthContext, "displayName" | "tenantId">>;
 
 export type JawStackAuthProvider = () => JawStackAuthState | undefined;
+
+export type CommandUiDefinition = Pick<CommandDefinition, "title" | "roles" | "input" | "create">;
+
+export type ResourceUiDefinition = Readonly<{
+  name: string;
+  title: string;
+  state: StateDefinition;
+  views: ResourceViews;
+  commands: Readonly<Record<string, CommandUiDefinition>>;
+}>;
+
+export type JawStackApiErrorOptions = Readonly<{
+  code: string;
+  status: number;
+  details?: unknown;
+  correlationId?: string;
+}>;
+
+export class JawStackApiError extends Error {
+  readonly code: string;
+  readonly status: number;
+  readonly details: unknown;
+  readonly correlationId: string | undefined;
+
+  constructor(message: string, options: JawStackApiErrorOptions) {
+    super(message);
+    this.name = "JawStackApiError";
+    this.code = options.code;
+    this.status = options.status;
+    this.details = options.details;
+    this.correlationId = options.correlationId;
+  }
+}
 
 export type ListOptions = Readonly<Record<string, unknown>>;
 
@@ -66,7 +100,7 @@ export interface JawStackApiClient {
 
 export type JawStackConfig = Readonly<{
   apiBaseUrl: string;
-  resources: readonly ResourceDefinition[];
+  resources: readonly ResourceUiDefinition[];
   auth?: JawStackAuthProvider;
   apiClient?: JawStackApiClient;
 }>;
@@ -145,14 +179,48 @@ export class FetchJawStackApiClient implements JawStackApiClient {
         ...init.headers,
       },
     });
-    const body = (await response.json()) as { ok?: boolean; data?: T; error?: { message: string } };
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch (error) {
+      if (apiRecord(error)?.name !== "SyntaxError") throw error;
+      throw apiResponseError(response, undefined);
+    }
+    const envelope = apiRecord(body);
 
-    if (!response.ok || body.ok !== true) {
-      throw new Error(body.error?.message ?? `JawStack API request failed: ${response.status}`);
+    if (!response.ok || envelope?.ok !== true) {
+      throw apiResponseError(response, envelope);
     }
 
-    return body.data as T;
+    return envelope.data as T;
   }
+}
+
+function apiRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function apiResponseError(response: Response, body: unknown): JawStackApiError {
+  const envelope = apiRecord(body);
+  const error = apiRecord(envelope?.error);
+  const meta = apiRecord(envelope?.meta);
+  const text = (value: unknown) =>
+    typeof value === "string" && value.trim().length > 0 ? value : undefined;
+  const correlationId = text(meta?.correlationId);
+  return new JawStackApiError(
+    text(error?.message) ??
+      (response.ok
+        ? "JawStack API returned an invalid response."
+        : `JawStack API request failed: ${response.status}`),
+    {
+      code: text(error?.code) ?? (response.ok ? "api.invalid_response" : "http.error"),
+      status: response.status,
+      details: error?.details,
+      ...(correlationId === undefined ? {} : { correlationId }),
+    },
+  );
 }
 
 @Component({
@@ -333,7 +401,7 @@ export class JsResourceListComponent {
   private readonly api = inject(JAWSTACK_API_CLIENT);
   private readonly changeDetector = inject(ChangeDetectorRef);
 
-  @Input({ required: true }) resource!: ResourceDefinition;
+  @Input({ required: true }) resource!: ResourceUiDefinition;
   @Input() viewName = "list";
   @Output() selectResource = new EventEmitter<string>();
   @Output() createResource = new EventEmitter<void>();
@@ -406,7 +474,7 @@ export class JsResourceDetailComponent {
   private readonly api = inject(JAWSTACK_API_CLIENT);
   private readonly changeDetector = inject(ChangeDetectorRef);
 
-  @Input({ required: true }) resource!: ResourceDefinition;
+  @Input({ required: true }) resource!: ResourceUiDefinition;
   @Input({ required: true }) resourceId = "";
 
   loading = false;
@@ -506,7 +574,7 @@ export class JsActivityTimelineComponent {
   private readonly api = inject(JAWSTACK_API_CLIENT);
   private readonly changeDetector = inject(ChangeDetectorRef);
 
-  @Input({ required: true }) resource!: ResourceDefinition;
+  @Input({ required: true }) resource!: ResourceUiDefinition;
   @Input({ required: true }) resourceId = "";
 
   loading = false;
@@ -623,7 +691,7 @@ export class JsActivityTimelineComponent {
   ],
 })
 export class JsResourceFormComponent {
-  @Input({ required: true }) resource!: ResourceDefinition;
+  @Input({ required: true }) resource!: ResourceUiDefinition;
   @Input({ required: true }) commandName = "";
   @Input() initialValue: Record<string, unknown> = {};
   @Input() submitLabel = "Submit";
@@ -633,7 +701,7 @@ export class JsResourceFormComponent {
   error = "";
   model: Record<string, unknown> = {};
 
-  get command(): CommandDefinition | undefined {
+  get command(): CommandUiDefinition | undefined {
     return this.resource.commands[this.commandName];
   }
 
@@ -697,13 +765,13 @@ export class JsResourceFormComponent {
 export class JsCommandButtonComponent {
   private readonly auth = inject(JAWSTACK_AUTH, { optional: true });
 
-  @Input({ required: true }) resource!: ResourceDefinition;
+  @Input({ required: true }) resource!: ResourceUiDefinition;
   @Input() resourceId = "";
   @Input({ required: true }) commandName = "";
   @Input() label = "";
   @Output() pressed = new EventEmitter<void>();
 
-  get command(): CommandDefinition | undefined {
+  get command(): CommandUiDefinition | undefined {
     return this.resource.commands[this.commandName];
   }
 
@@ -767,7 +835,7 @@ export class JsCommandButtonComponent {
 export class JsCommandDialogComponent {
   private readonly api = inject(JAWSTACK_API_CLIENT);
 
-  @Input({ required: true }) resource!: ResourceDefinition;
+  @Input({ required: true }) resource!: ResourceUiDefinition;
   @Input() resourceId: string | undefined;
   @Input({ required: true }) commandName = "";
   @Input() open = false;
@@ -902,7 +970,7 @@ function authHeaders(auth: JawStackAuthState | undefined): Record<string, string
   };
 }
 
-function fieldLabel(resource: ResourceDefinition, fieldName: string): string {
+function fieldLabel(resource: ResourceUiDefinition, fieldName: string): string {
   return resource.state.fields[fieldName]?.label ?? humanize(fieldName);
 }
 
@@ -922,8 +990,8 @@ function errorMessage(error: unknown): string {
 }
 
 function formFieldsForCommand(
-  resource: ResourceDefinition,
-  command: CommandDefinition,
+  resource: ResourceUiDefinition,
+  command: CommandUiDefinition,
 ): readonly FormField[] {
   return Object.entries(zodObjectShape(command.input)).map(([name, schema]) => {
     const stateField = resource.state.fields[name];

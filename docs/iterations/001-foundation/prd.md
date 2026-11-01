@@ -1,5 +1,10 @@
 # JawStack PRD
 
+> Historical planning document for [Iteration 1: Foundation](README.md), which produced
+> the Git-only `v0.0.1` baseline. References to `v0.1` below describe the original target,
+> not the released version or a claim that every proposed capability shipped. See the
+> [current product documentation](../../README.md) for supported behavior.
+
 ## Summary
 
 JawStack is an opinionated TypeScript framework for building event-driven AWS applications with typed resource contracts, predictable generated architecture, and explicit cost guardrails.

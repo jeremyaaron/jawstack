@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import "@angular/compiler";
 
-import { provideZonelessChangeDetection } from "@angular/core";
+import { provideZonelessChangeDetection, signal } from "@angular/core";
 import { TestBed } from "@angular/core/testing";
 import { BrowserTestingModule, platformBrowserTesting } from "@angular/platform-browser/testing";
 import {
@@ -15,6 +15,9 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   JAWSTACK_API_CLIENT,
   JAWSTACK_AUTH,
+  JAWSTACK_CONFIG,
+  FetchJawStackApiClient,
+  JawStackApiError,
   JsActivityTimelineComponent,
   JsCommandButtonComponent,
   JsCommandDialogComponent,
@@ -23,9 +26,12 @@ import {
   JsResourceListComponent,
   describePackage,
   packageName,
+  provideJawStack,
   type ExecuteCommandRequest,
   type JawStackApiClient,
+  type ResourceUiDefinition,
 } from "../src/index";
+import { contentUi } from "./fixtures/presentation";
 
 describe("@jawstack/angular", () => {
   beforeAll(() => {
@@ -212,6 +218,170 @@ describe("@jawstack/angular", () => {
     const button = fixture.nativeElement.querySelector("button") as HTMLButtonElement;
     expect(button.disabled).toBe(true);
     expect(button.textContent).toContain("Assign");
+  });
+
+  it("accepts presentation-only config and keeps full definitions structurally compatible", () => {
+    const full: ResourceUiDefinition = workRequestResource;
+    TestBed.configureTestingModule({
+      providers: [
+        provideZonelessChangeDetection(),
+        provideJawStack({ apiBaseUrl: "/api", resources: [contentUi, full] }),
+      ],
+    });
+    expect(TestBed.inject(JAWSTACK_CONFIG).resources).toEqual([contentUi, workRequestResource]);
+    expect(TestBed.inject(JAWSTACK_API_CLIENT)).toBeInstanceOf(FetchJawStackApiClient);
+    expect(contentUi.commands.create).not.toHaveProperty("decide");
+    expect(contentUi.commands.create).not.toHaveProperty("emits");
+    expect(contentUi).not.toHaveProperty("workers");
+    expect(contentUi).not.toHaveProperty("schedules");
+  });
+
+  it("renders and emits list actions using presentation-only metadata", async () => {
+    const api = new MockJawStackApiClient({
+      listItems: [
+        projection({ itemId: "content_1", data: { title: "Article draft", status: "draft" } }),
+      ],
+    });
+    const fixture = TestBed.configureTestingModule({
+      imports: [JsResourceListComponent],
+      providers: [
+        provideZonelessChangeDetection(),
+        { provide: JAWSTACK_API_CLIENT, useValue: api },
+      ],
+    }).createComponent(JsResourceListComponent);
+    fixture.componentInstance.resource = contentUi;
+    const selected = vi.fn();
+    const create = vi.fn();
+    fixture.componentInstance.selectResource.subscribe(selected);
+    fixture.componentInstance.createResource.subscribe(create);
+    await fixture.componentInstance.load();
+    fixture.detectChanges();
+    expect(api.list).toHaveBeenCalledWith("contentItem", { viewName: "list" });
+    expect(fixture.nativeElement.textContent).toContain("Content Items");
+    expect(fixture.nativeElement.textContent).toContain("Article draft");
+    expect(fixture.nativeElement.textContent).toContain("Draft");
+    fixture.nativeElement.querySelector("tbody tr").click();
+    fixture.nativeElement.querySelector("button").click();
+    expect(selected).toHaveBeenCalledWith("content_1");
+    expect(create).toHaveBeenCalledOnce();
+  });
+
+  it("renders detail fields without a server resource definition", async () => {
+    const api = new MockJawStackApiClient();
+    const fixture = TestBed.configureTestingModule({
+      imports: [JsResourceDetailComponent],
+      providers: [
+        provideZonelessChangeDetection(),
+        { provide: JAWSTACK_API_CLIENT, useValue: api },
+      ],
+    }).createComponent(JsResourceDetailComponent);
+    fixture.componentInstance.resource = contentUi;
+    fixture.componentInstance.resourceId = "content_1";
+    await fixture.componentInstance.load();
+    fixture.detectChanges();
+    expect(api.get).toHaveBeenCalledWith("contentItem", "content_1");
+    expect(fixture.nativeElement.textContent).toContain("Fix checkout");
+    expect(fixture.nativeElement.textContent).toContain("Description");
+  });
+
+  it("renders activity with presentation metadata only", async () => {
+    const api = new MockJawStackApiClient({ activityItems: [activityRecord()] });
+    const fixture = TestBed.configureTestingModule({
+      imports: [JsActivityTimelineComponent],
+      providers: [
+        provideZonelessChangeDetection(),
+        { provide: JAWSTACK_API_CLIENT, useValue: api },
+      ],
+    }).createComponent(JsActivityTimelineComponent);
+    fixture.componentInstance.resource = contentUi;
+    fixture.componentInstance.resourceId = "content_1";
+    await fixture.componentInstance.load();
+    fixture.detectChanges();
+    expect(api.activity).toHaveBeenCalledWith("contentItem", "content_1");
+    expect(fixture.nativeElement.querySelectorAll("li")).toHaveLength(1);
+  });
+
+  it("validates and submits a presentation-only command schema", () => {
+    const fixture = TestBed.configureTestingModule({
+      imports: [JsResourceFormComponent],
+      providers: [provideZonelessChangeDetection()],
+    }).createComponent(JsResourceFormComponent);
+    fixture.componentInstance.resource = contentUi;
+    fixture.componentInstance.commandName = "create";
+    const submitted = vi.fn();
+    fixture.componentInstance.submitted.subscribe(submitted);
+    fixture.detectChanges();
+    fixture.componentInstance.submit({ preventDefault() {} } as Event);
+    expect(fixture.componentInstance.error).toBeTruthy();
+    expect(submitted).not.toHaveBeenCalled();
+    fixture.componentInstance.setValue(fixture.componentInstance.fields[0]!, "Article draft");
+    fixture.componentInstance.submit({ preventDefault() {} } as Event);
+    expect(submitted).toHaveBeenCalledWith({ title: "Article draft" });
+    expect(fixture.componentInstance.error).toBe("");
+    expect(fixture.nativeElement.querySelector("textarea#description")).not.toBeNull();
+  });
+
+  it("checks presentation-only command roles without execution metadata", () => {
+    const roles = signal(["author"]);
+    const fixture = TestBed.configureTestingModule({
+      imports: [JsCommandButtonComponent],
+      providers: [
+        provideZonelessChangeDetection(),
+        { provide: JAWSTACK_AUTH, useValue: () => ({ subject: "author_1", roles: roles() }) },
+      ],
+    }).createComponent(JsCommandButtonComponent);
+    fixture.componentRef.setInput("resource", contentUi);
+    fixture.componentRef.setInput("commandName", "approve");
+    fixture.detectChanges();
+    const button = fixture.nativeElement.querySelector("button") as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    roles.set(["editor"]);
+    fixture.detectChanges();
+    expect(button.disabled).toBe(false);
+    expect(button.textContent).toContain("Approve content");
+  });
+
+  it("executes presentation-only dialogs through the API and keeps Error messages compatible", async () => {
+    const api = new MockJawStackApiClient({ commandResult: { approved: true } });
+    const conflict = new JawStackApiError("Review changed. Refresh before approving.", {
+      code: "resource.conflict",
+      status: 409,
+      details: { revision: 2 },
+      correlationId: "correlation_1",
+    });
+    api.commandMock.mockRejectedValueOnce(conflict);
+    const fixture = TestBed.configureTestingModule({
+      imports: [JsCommandDialogComponent],
+      providers: [
+        provideZonelessChangeDetection(),
+        { provide: JAWSTACK_API_CLIENT, useValue: api },
+      ],
+    }).createComponent(JsCommandDialogComponent);
+    fixture.componentInstance.resource = contentUi;
+    fixture.componentInstance.resourceId = "content_1";
+    fixture.componentInstance.commandName = "approve";
+    fixture.componentInstance.open = true;
+    const completed = vi.fn();
+    const closed = vi.fn();
+    fixture.componentInstance.completed.subscribe(completed);
+    fixture.componentInstance.closed.subscribe(closed);
+    fixture.detectChanges();
+    await fixture.componentInstance.execute({ note: "Ready" });
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain(conflict.message);
+    expect(fixture.componentInstance.open).toBe(true);
+    expect(fixture.componentInstance.loading).toBe(false);
+    expect(completed).not.toHaveBeenCalled();
+    expect(closed).not.toHaveBeenCalled();
+    await fixture.componentInstance.execute({ note: "Ready" });
+    expect(api.commandMock).toHaveBeenLastCalledWith({
+      resourceType: "contentItem",
+      resourceId: "content_1",
+      commandName: "approve",
+      input: { note: "Ready" },
+    });
+    expect(completed).toHaveBeenCalledWith({ approved: true });
+    expect(closed).toHaveBeenCalledOnce();
   });
 });
 

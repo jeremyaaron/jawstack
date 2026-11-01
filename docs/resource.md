@@ -20,7 +20,7 @@ The resource definition is executable TypeScript metadata. It is consumed by loc
 
 ## State
 
-State is the current source of truth in v0.1. It is not event-sourced.
+State is the current source of truth. It is not event-sourced.
 
 For Work Requests, state includes:
 
@@ -41,6 +41,19 @@ The starter resource defines:
 
 List views read projection items. Detail views read current state and activity records.
 
+Paged reads are a separate `QueryRepository` contract, not an automatic change to the
+starter's array-returning routes. Both memory and DynamoDB support bounded projection and
+activity pages. Application queries own authorization, filters, and candidate budgets.
+See [Application Composition](application-composition.md) and the
+[query contract](../packages/core/README.md#paged-reads).
+
+Custom Angular pages can share browser-safe `ResourceUiDefinition` metadata without
+importing server decision factories. Content Operations defines `contentItem`, linked
+`reviewTask`, and `asset` resources; content remains authoritative and the other two
+materialize immutable facts. Its internal snapshot commands are excluded from public ingress.
+
 ## Generated Ownership
 
-Generated app files are user-owned. You can edit resources, command decisions, UI pages, CDK composition, and styles. JawStack does not promise conflict-free regeneration for heavily edited apps in v0.1.
+Generated app files are user-owned. You can edit resources, command decisions, UI pages,
+CDK composition, and styles. JawStack does not promise conflict-free regeneration for
+heavily edited apps before `0.1.0`.

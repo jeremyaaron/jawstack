@@ -1,0 +1,3 @@
+.localstack/
+test-results/
+playwright-report/

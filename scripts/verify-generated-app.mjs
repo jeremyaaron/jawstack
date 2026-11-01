@@ -36,6 +36,7 @@ try {
   validateGeneratedPackage(appDirectory);
 
   run("pnpm", ["install", "--prefer-offline", "--loglevel", "error"], appDirectory);
+  run("pnpm", ["lint"], appDirectory);
   run("pnpm", ["typecheck"], appDirectory);
   run("pnpm", ["test"], appDirectory);
   run("pnpm", ["build"], appDirectory);
