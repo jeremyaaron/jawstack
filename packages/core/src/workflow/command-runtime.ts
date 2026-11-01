@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
-import { z } from "zod";
 import {
   createResourceRegistry,
   executeCommand,
@@ -16,6 +15,7 @@ import {
   type ResourceRepository,
 } from "../index";
 import { assertWorkflowWritable, validateReadOnly } from "./command-context";
+import { captureWorkflowIdentity } from "./identity";
 import { coreIdempotency, storedResource } from "./stored";
 import { component, freeze, instant, jsonCopy, type WorkflowReadonly } from "./validation";
 import type { WorkflowCommandScope } from "./keys";
@@ -38,13 +38,6 @@ export type WorkflowResultValidator = (
   }>,
 ) => void | Promise<void>;
 
-const authSchema = z.strictObject({
-  subject: z.string(),
-  roles: z.array(z.string()),
-  claims: z.record(z.string(), z.unknown()),
-  mode: z.enum(["dev", "test", "external"]),
-  displayName: z.string().max(200).optional(),
-});
 const retryable = new Set(["resource.conflict", "idempotency.conflict", "runtime.unavailable"]);
 
 function failure(error: unknown, meta: CommandExecutionResult["meta"]): ApiError {
@@ -109,16 +102,7 @@ export function createWorkflowCommandDispatch(options: {
       if (captured.resourceId !== undefined) component(captured.resourceId);
       const key = component(captured.idempotencyKey);
       const cleanRequest = freeze(jsonCopy(captured));
-      if ("tenantId" in identity)
-        throw new JawStackRuntimeError(
-          "auth.forbidden",
-          "Tenant-scoped workflow commands are unsupported.",
-        );
-      const auth = jsonCopy(identity);
-      if (!authSchema.safeParse(auth).success)
-        throw new JawStackRuntimeError("auth.missing", "Invalid resolved workflow identity.");
-      component(auth.subject);
-      const resolvedAuth = freeze(auth);
+      const resolvedAuth = captureWorkflowIdentity(identity);
       const scope = freeze({
         resourceType: cleanRequest.resourceType,
         commandName: cleanRequest.commandName,

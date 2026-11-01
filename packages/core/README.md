@@ -148,6 +148,12 @@ application integration points yet. The complete public memory composition remai
 planned for Phase 4; consumers must not deep-import `src/workflow` to use unfinished APIs.
 See [Phase 2 evidence](../../docs/iterations/003-framework-leverage/phase-2-evidence.md).
 
+The internal failure/recovery service now adds durable pending/settled collection, bounded
+history, operator-authorized replay and atomic recovery-outbox writes on that same memory
+backing/lock. It is also not a public integration point yet. Application reconciliation
+remains a separate, repeatable business operation, not part of the ledger transaction.
+See [Phase 3 evidence](../../docs/iterations/003-framework-leverage/phase-3-evidence.md).
+
 `workflowCommitLimits` exposes the shared bounds: 60 normalized actions, 192 KiB per
 logical action, 64 KiB per auxiliary action (including key/owner metadata), 1 MiB for the
 normalized plan, depth 16 and 10,000 JSON nodes. Detached input admission also bounds JSON

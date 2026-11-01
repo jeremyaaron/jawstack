@@ -55,6 +55,7 @@ export function createMemoryWorkflowPersistence(options: {
     projections = store.projections;
   const idempotency = new Map<string, StoredWorkflowIdempotency>();
   const records = new Map<string, Auxiliary>();
+  const failures = new Map<string, unknown>();
   let tail = Promise.resolve();
   const readState = (type: string, id: string) => {
     component(type);
@@ -84,10 +85,8 @@ export function createMemoryWorkflowPersistence(options: {
       "An atomic workflow condition failed.",
     );
   };
-  const commit = async (input: WorkflowCommitPlan) => {
+  const atomic = async (publish: () => undefined) => {
     assertWorkflowWritable();
-    const plan = planner.validate(input);
-    const writes = structuredClone(plan.actions);
     const previous = tail;
     let unlock!: () => void;
     tail = new Promise<void>((resolve) => {
@@ -95,32 +94,48 @@ export function createMemoryWorkflowPersistence(options: {
     });
     await previous;
     try {
-      // Conditions and publication below never yield. Patch only touched entries, not a stale store clone.
-      if (
-        store.resources !== resources ||
-        store.activity !== activity ||
-        store.outbox !== outbox ||
-        store.projections !== projections ||
-        [resources, projections, idempotency, records].some(
-          (map) =>
-            Object.getPrototypeOf(map) !== Map.prototype ||
-            map.set !== Map.prototype.set ||
-            map.delete !== Map.prototype.delete ||
-            map.get !== Map.prototype.get ||
-            map.has !== Map.prototype.has,
-        ) ||
-        [activity, outbox].some(
-          (array) =>
-            Object.getPrototypeOf(array) !== Array.prototype || array.push !== Array.prototype.push,
-        ) ||
-        !Object.isExtensible(activity) ||
-        !Object.isExtensible(outbox) ||
-        !Object.getOwnPropertyDescriptor(activity, "length")?.writable ||
-        !Object.getOwnPropertyDescriptor(outbox, "length")?.writable ||
-        activity.length + writes.filter((w) => w.kind === "activity").length > 0xffffffff ||
-        outbox.length + writes.filter((w) => w.kind === "outbox").length > 0xffffffff
-      )
-        invalidStored();
+      publish();
+    } finally {
+      unlock();
+    }
+  };
+  const assertPublication = (activityCount: number, outboxCount: number) => {
+    // Reject damaged native containers before multi-collection publication.
+    if (
+      store.resources !== resources ||
+      store.activity !== activity ||
+      store.outbox !== outbox ||
+      store.projections !== projections ||
+      [resources, projections, idempotency, records, failures].some(
+        (map) =>
+          Object.getPrototypeOf(map) !== Map.prototype ||
+          map.set !== Map.prototype.set ||
+          map.delete !== Map.prototype.delete ||
+          map.get !== Map.prototype.get ||
+          map.has !== Map.prototype.has,
+      ) ||
+      [activity, outbox].some(
+        (array) =>
+          Object.getPrototypeOf(array) !== Array.prototype || array.push !== Array.prototype.push,
+      ) ||
+      !Object.isExtensible(activity) ||
+      !Object.isExtensible(outbox) ||
+      !Object.getOwnPropertyDescriptor(activity, "length")?.writable ||
+      !Object.getOwnPropertyDescriptor(outbox, "length")?.writable ||
+      activity.length + activityCount > 0xffffffff ||
+      outbox.length + outboxCount > 0xffffffff
+    )
+      invalidStored();
+  };
+  const commit = async (input: WorkflowCommitPlan) => {
+    assertWorkflowWritable();
+    const plan = planner.validate(input);
+    const writes = structuredClone(plan.actions);
+    await atomic(() => {
+      assertPublication(
+        writes.filter((w) => w.kind === "activity").length,
+        writes.filter((w) => w.kind === "outbox").length,
+      );
       const idem = writes.find((w) => w.kind === "idempotency")!;
       if (idem.kind !== "idempotency") invalidStored();
       if (readIdempotency(plan.scope, idem.value.key, plan.now)) conflict("idempotency");
@@ -193,9 +208,7 @@ export function createMemoryWorkflowPersistence(options: {
             break;
         }
       }
-    } finally {
-      unlock();
-    }
+    });
   };
   const factory: WorkflowPersistenceFactory = (inputScope, inputTime) => {
     const scope = freeze(jsonCopy(inputScope));
@@ -228,5 +241,9 @@ export function createMemoryWorkflowPersistence(options: {
     repository: Object.freeze({ getState }),
     idempotency,
     records,
+    // Private adapter composition only: failure and command writers share this lock/backing.
+    atomic,
+    assertPublication,
+    failures,
   });
 }

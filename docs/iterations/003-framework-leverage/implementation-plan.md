@@ -2,7 +2,7 @@
 
 Status: reviewed; Phase 0 and baseline A/B are complete. The
 [baseline review](baseline-review.md) clears the prerequisite with explicit timing
-qualifications. Phases 1-2 are complete; Phases 3-14 and post A/B have not started. Based on the [PRD](prd.md) and
+qualifications. Phases 1-3 are complete; Phases 4-14 and post A/B have not started. Based on the [PRD](prd.md) and
 [technical design](technical-design.md); see [Phase 0 evidence](phase-0-evidence.md).
 
 ## Purpose
@@ -265,6 +265,9 @@ rollback tests, golden rows and legacy executor/repository regressions. Exercise
 engine internally until the full public memory factory is ready in Phase 4.
 
 ## Phase 3: Durable Failure and Recovery Service
+
+Status: complete; see [Phase 3 evidence](phase-3-evidence.md). The service and memory
+adapter remain internal until Phase 4; Content Operations still has one existing writer.
 
 Depends on: Phase 2.
 
@@ -645,7 +648,9 @@ affected live/browser/exercise reruns. Verify clean teardown and reviewable git 
 Phase 0 observations are recorded in [its evidence log](phase-0-evidence.md) and the
 [measurement packet](leverage/README.md); [Phase 1 evidence](phase-1-evidence.md) records
 typed records/plan verification and growth. [Phase 2 evidence](phase-2-evidence.md) records
-scoped execution, atomic memory persistence and its clean release gate. Later phase evidence is not asserted. Update
+scoped execution, atomic memory persistence and its clean release gate.
+[Phase 3 evidence](phase-3-evidence.md) records failure/recovery services, compatible
+memory storage and verification. Later phase evidence is not asserted. Update
 individual phase statuses and append dated observations rather than marking every row
 complete at the end. For each phase record:
 
