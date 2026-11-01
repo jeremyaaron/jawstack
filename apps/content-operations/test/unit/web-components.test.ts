@@ -183,6 +183,38 @@ describe("content workbench components", () => {
     expect(h.fixture.nativeElement.textContent).toContain("Only the owning author");
     expect(h.fixture.nativeElement.textContent).not.toContain("Save draft");
   });
+  it("guards selected files, blocks pending media mutations and retains submission inputs on attachment refresh", async () => {
+    vi.spyOn(ContentOperationsClient.prototype, "getContent").mockResolvedValue({
+      resourceId: id,
+      version: 1,
+      state: {
+        title: "Media",
+        body: "Body",
+        status: "draft",
+        authorId: "author_1",
+        attachments: [],
+      },
+    } as unknown as ContentResource);
+    vi.spyOn(ContentOperationsClient.prototype, "activityPage").mockResolvedValue({ items: [] });
+    const h = setup(ContentDetailComponent, {}, { id });
+    h.fixture.detectChanges();
+    await h.fixture.componentInstance.load();
+    h.fixture.detectChanges();
+    const component = h.fixture.componentInstance;
+    component.submission.controls.assignedEditorId.setValue("editor_2");
+    component.attachments.select(new File(["png bytes"], "proof.png", { type: "image/png" }));
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    expect(component.canLeave()).toBe(false);
+    expect(confirm).toHaveBeenCalledOnce();
+    component.attachments.pending.set(true);
+    expect(component.canLeave()).toBe(false);
+    expect(confirm).toHaveBeenCalledOnce();
+    const event = new Event("beforeunload", { cancelable: true });
+    component.beforeUnload(event as BeforeUnloadEvent);
+    expect(event.defaultPrevented).toBe(true);
+    component.attachments.pending.set(false);
+    expect(component.submission.controls.assignedEditorId.value).toBe("editor_2");
+  });
   it("renders pending authoritative snapshots and dispatches approval through the actual reactive form", async () => {
     const review: ReviewView = {
       reviewId: id,

@@ -24,6 +24,9 @@ import { Workspace } from "./workspace";
 import { DraftEditor, errorMessage } from "./draft-editor";
 import { EditorialAction } from "./editorial-action";
 import { ActivityComponent } from "./activity";
+import { AttachmentSession } from "./attachment-session";
+import { AttachmentsComponent } from "./attachments";
+import { PublicationComponent } from "./publication";
 import { editorIds } from "../shared/identities";
 import { localTimeToUtc } from "../shared/time";
 import { submitInput } from "../shared/contracts";
@@ -43,6 +46,8 @@ import { submitInput } from "../shared/contracts";
     LucideSend,
     LucideUndo2,
     ActivityComponent,
+    AttachmentsComponent,
+    PublicationComponent,
   ],
   template: `
     <a class="back-link" aria-label="Back to content" [routerLink]="backLink()"
@@ -103,7 +108,7 @@ import { submitInput } from "../shared/contracts";
       }
       <div class="editor-layout">
         <form class="draft-form" [formGroup]="editor.form" (ngSubmit)="save()">
-          <fieldset [disabled]="!editor.editable() || editor.pending() || action.pending()">
+          <fieldset [disabled]="!editor.editable() || mutationPending()">
             <label for="content-title">Title</label
             ><input
               id="content-title"
@@ -136,6 +141,8 @@ import { submitInput } from "../shared/contracts";
                 [disabled]="
                   editor.pending() ||
                   action.pending() ||
+                  attachments.pending() ||
+                  publicationBusy() ||
                   editor.conflict() ||
                   (id() && !editor.dirty())
                 "
@@ -161,7 +168,7 @@ import { submitInput } from "../shared/contracts";
               <dt>Updated</dt>
               <dd>{{ row.updatedAt | date: "MMM d, yyyy, HH:mm" }}</dd>
               <dt>Attachments</dt>
-              <dd>{{ row.state.attachments.length }}</dd>
+              <dd>{{ row.state.attachments.filter(activeAttachment).length }}</dd>
             }
           </dl>
           @if (!editor.editable()) {
@@ -174,17 +181,23 @@ import { submitInput } from "../shared/contracts";
             </p>
           }
           @if (id()) {
-            <button
-              class="button"
-              [disabled]="editor.pending() || action.pending()"
-              (click)="refresh()"
-            >
+            <button class="button" [disabled]="mutationPending()" (click)="refresh()">
               <svg lucideRefreshCw aria-hidden="true"></svg>Refresh
             </button>
           }
         </aside>
       </div>
       @if (editor.resource(); as row) {
+        <content-attachments
+          [session]="attachments"
+          [blocked]="
+            editor.dirty() ||
+            editor.pending() ||
+            editor.conflict() ||
+            action.pending() ||
+            publicationBusy()
+          "
+        />
         <section class="review-section" aria-label="Review workflow">
           <header class="section-heading">
             <h2>Review</h2>
@@ -230,7 +243,7 @@ import { submitInput } from "../shared/contracts";
             <form class="submission-form" [formGroup]="submission" (ngSubmit)="submitReview()">
               <fieldset
                 [disabled]="
-                  editor.dirty() || editor.pending() || action.pending() || action.conflict()
+                  editor.dirty() || mutationPending() || action.conflict() || !!attachments.file()
                 "
               >
                 <label
@@ -261,7 +274,7 @@ import { submitInput } from "../shared/contracts";
             <div class="actions">
               <button
                 class="button"
-                [disabled]="action.pending() || action.conflict()"
+                [disabled]="mutationPending() || action.conflict()"
                 (click)="reopen()"
               >
                 <svg lucideUndo2 aria-hidden="true"></svg>Reopen draft
@@ -269,6 +282,12 @@ import { submitInput } from "../shared/contracts";
             </div>
           }
         </section>
+        <content-publication
+          [row]="row"
+          [blocked]="editor.dirty() || mutationPending() || !!attachments.file()"
+          (changed)="editor.accept($event)"
+          (busy)="publicationBusy.set($event)"
+        />
         <content-activity
           [resourceId]="row.resourceId"
           [contentId]="row.resourceId"
@@ -286,6 +305,29 @@ export class ContentDetailComponent {
   private readonly change = inject(ChangeDetectorRef);
   readonly editor = new DraftEditor(this.workspace.client, () => this.workspace.fixture());
   readonly action = new EditorialAction(this.workspace.client, () => this.workspace.fixture());
+  readonly publicationBusy = signal(false);
+  readonly attachments = new AttachmentSession(
+    this.workspace.client,
+    () => this.workspace.fixture(),
+    () => this.editor.resource(),
+    (row) => this.editor.accept(row),
+    () =>
+      this.editor.dirty() ||
+      this.editor.pending() ||
+      this.editor.conflict() ||
+      this.action.pending() ||
+      this.publicationBusy(),
+  );
+  readonly activeAttachment = (slot: { status: string }) =>
+    ["pending", "ready"].includes(slot.status);
+  mutationPending() {
+    return (
+      this.editor.pending() ||
+      this.action.pending() ||
+      this.attachments.pending() ||
+      this.publicationBusy()
+    );
+  }
   readonly editors = editorIds;
   readonly submission = new FormGroup({
     assignedEditorId: new FormControl("editor_1", { nonNullable: true }),
@@ -311,6 +353,7 @@ export class ContentDetailComponent {
       this.sequence++;
       this.request?.abort();
       this.editor.destroy();
+      this.attachments.destroy();
       this.workspace.canLeave = () => true;
     });
   }
@@ -329,15 +372,17 @@ export class ContentDetailComponent {
       this.editor.dirty() ||
       this.editor.pending() ||
       this.action.pending() ||
+      this.attachments.pending() ||
+      !!this.attachments.file() ||
+      this.publicationBusy() ||
       this.submission.dirty
     )
       event.preventDefault();
   }
   canLeave() {
     return (
-      !this.editor.pending() &&
-      !this.action.pending() &&
-      (!(this.editor.dirty() || this.submission.dirty) ||
+      !this.mutationPending() &&
+      (!(this.editor.dirty() || this.submission.dirty || this.attachments.file()) ||
         window.confirm("Discard unsaved changes?"))
     );
   }
@@ -357,6 +402,7 @@ export class ContentDetailComponent {
         : undefined;
       if (sequence !== this.sequence) return;
       this.editor.accept(row);
+      this.attachments.reset();
       this.action.reset();
       this.submission.reset({ assignedEditorId: "editor_1", dueAt: this.defaultDue() });
       this.submissionError.set("");
@@ -368,7 +414,7 @@ export class ContentDetailComponent {
     }
   }
   async save() {
-    if (this.action.pending()) return;
+    if (this.action.pending() || this.attachments.pending() || this.publicationBusy()) return;
     const isNew = !this.id();
     const id = await this.editor.save();
     if (this.editor.validationField())
@@ -392,7 +438,14 @@ export class ContentDetailComponent {
   }
   async submitReview() {
     const row = this.editor.resource();
-    if (!row || this.editor.dirty() || this.editor.pending() || !this.editor.editable()) return;
+    if (
+      !row ||
+      this.editor.dirty() ||
+      this.mutationPending() ||
+      this.attachments.file() ||
+      !this.editor.editable()
+    )
+      return;
     this.submissionError.set("");
     let input;
     try {
@@ -417,6 +470,7 @@ export class ContentDetailComponent {
     const row = this.editor.resource();
     if (
       row &&
+      !this.mutationPending() &&
       this.canReopen() &&
       (await this.action.run("reopenDraft", { expectedVersion: row.version }, row.resourceId))
     ) {

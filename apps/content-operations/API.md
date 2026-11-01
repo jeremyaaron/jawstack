@@ -144,6 +144,13 @@ the explicit archived-status query, not the active list. Operations are redacted
   PDF downloads use attachment disposition. Removed verified assets remain available to
   retained historical references; pending/expired/unverified slots do not grant access.
 
+The Angular client's binary PUT uses XHR for real transfer progress with the same fixed fixture
+header and a 30-second timeout. Completing transfer does not itself make a slot ready. The client
+checks downloaded attachment type/size/SHA-256 against the strong content/snapshot reference.
+The publication endpoint returns a redacted view of a verified **stored** artifact. Its `sha256`
+and `size` describe canonical private stored bytes, not a reserialization of `artifact`. The UI's
+redacted JSON export deliberately retains that distinction; it is not a raw S3 artifact download.
+
 HTTP-only workflow, authorization, conflict, paging, body-limit, private read, seeding, and
 shutdown tests live in `test/unit/http.test.ts` and `test/unit/api-queries.test.ts`.
 The opt-in owned lab gate also executes real HTTP commands/uploads/queries/downloads against

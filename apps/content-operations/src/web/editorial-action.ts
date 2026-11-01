@@ -11,6 +11,7 @@ export class EditorialAction {
   constructor(
     private readonly client: ContentOperationsClient,
     private readonly fixture: () => FixtureId,
+    private readonly conflictMessage = "This review changed. Your input is preserved.",
   ) {}
   reset() {
     this.error.set("");
@@ -29,7 +30,7 @@ export class EditorialAction {
       this.conflict.set(error instanceof JawStackApiError && error.status === 409);
       this.error.set(
         this.conflict()
-          ? "This review changed. Your input is preserved."
+          ? this.conflictMessage
           : error instanceof JawStackApiError && error.status === 403
             ? "This identity cannot perform this action."
             : "The action could not complete. Your input is preserved.",

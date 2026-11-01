@@ -37,6 +37,9 @@ export function browserBoundary(): Plugin {
         "src/web/review-list.ts",
         "src/web/review-detail.ts",
         "src/web/activity.ts",
+        "src/web/attachments.ts",
+        "src/web/verified-attachment.ts",
+        "src/web/publication.ts",
         "src/shared/presentation.ts",
         "packages/angular/src/index.ts",
       ])

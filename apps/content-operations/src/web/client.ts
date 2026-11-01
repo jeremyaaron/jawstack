@@ -19,6 +19,7 @@ import { fixtureIds, editorIds, type FixtureId } from "../shared/identities";
 import { reviewViewSchema, activityViewSchema, type ReviewView } from "../shared/review-views";
 import { idSchema, instantSchema, versionSchema } from "../shared/validation";
 import { contentUi } from "../shared/presentation";
+import { assetViewSchema, publicationViewSchema, type AttachmentView } from "../shared/media-views";
 
 export const contentSummarySchema = z.object({
   title: z.string(),
@@ -36,7 +37,7 @@ export type ContentResource = Omit<ResourceState, "state"> & { state: PublicValu
 export type ContentPage = { items: ContentRow[]; nextCursor?: string | undefined };
 export type CommandName = keyof typeof contentUi.commands;
 export type CommandInput<N extends CommandName> = z.input<(typeof contentUi.commands)[N]["input"]>;
-export type CommandResult = { resourceId: string; version: number };
+export type CommandResult = { resourceId: string; version: number; assetId?: string | undefined };
 export type ReviewResource = Omit<ResourceState, "state"> & { state: ReviewView };
 const reviewRowSchema = z.object({
   projectionName: z.string(),
@@ -86,9 +87,7 @@ const resourceSchema = z.object({
         authorId: z.enum(fixtureIds),
         revisionId: idSchema,
         review: reviewViewSchema.nullable(),
-        attachments: z
-          .array(z.object({ assetId: idSchema, filename: z.string() }).passthrough())
-          .max(32),
+        attachments: z.array(assetViewSchema).max(32),
       })
       .passthrough(),
   }),
@@ -96,7 +95,12 @@ const resourceSchema = z.object({
 
 export class ContentOperationsClient implements JawStackApiClient {
   constructor(
-    private readonly options: { fixture: () => FixtureId; base?: string; fetch?: typeof fetch },
+    private readonly options: {
+      fixture: () => FixtureId;
+      base?: string;
+      fetch?: typeof fetch;
+      xhr?: () => XMLHttpRequest;
+    },
   ) {}
   async request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const headers = new Headers(init.headers);
@@ -109,6 +113,9 @@ export class ContentOperationsClient implements JawStackApiClient {
         : AbortSignal.timeout(30_000),
       headers,
     });
+    return this.decode<T>(response);
+  }
+  private async decode<T>(response: Response): Promise<T> {
     let body: unknown;
     try {
       body = await response.json();
@@ -145,6 +152,93 @@ export class ContentOperationsClient implements JawStackApiClient {
         },
       );
     return envelope.data.data as T;
+  }
+  async upload(
+    contentId: string,
+    assetId: string,
+    file: File,
+    signal: AbortSignal,
+    progress: (percent: number) => void,
+  ) {
+    const path = `/uploads/${idSchema.parse(contentId)}/${idSchema.parse(assetId)}`;
+    signal.throwIfAborted();
+    const response = await new Promise<Response>((resolve, reject) => {
+      const xhr = this.options.xhr?.() ?? new XMLHttpRequest();
+      const abort = () => xhr.abort();
+      const finish = (error?: Error) => {
+        signal.removeEventListener("abort", abort);
+        xhr.onload = xhr.onerror = xhr.onabort = xhr.ontimeout = null;
+        xhr.upload.onprogress = null;
+        if (error) reject(error);
+        else {
+          try {
+            resolve(new Response(xhr.responseText, { status: xhr.status }));
+          } catch {
+            reject(
+              new JawStackApiError("The upload returned an invalid response.", {
+                code: "api.invalid_response",
+                status: xhr.status,
+              }),
+            );
+          }
+        }
+      };
+      xhr.open("PUT", `${this.options.base ?? "/api"}${path}`);
+      xhr.timeout = 30_000;
+      xhr.setRequestHeader("x-content-ops-fixture", this.options.fixture());
+      xhr.setRequestHeader("content-type", file.type);
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable && event.total > 0)
+          progress(Math.min(100, Math.floor((event.loaded / event.total) * 100)));
+      };
+      xhr.onload = () => finish();
+      xhr.onerror = () => finish(new TypeError("Upload interrupted."));
+      xhr.onabort = () => finish(new DOMException("Upload cancelled.", "AbortError"));
+      xhr.ontimeout = () => finish(new DOMException("Upload timed out.", "TimeoutError"));
+      signal.addEventListener("abort", abort, { once: true });
+      try {
+        xhr.send(file);
+      } catch {
+        finish(new TypeError("Upload could not start."));
+      }
+    });
+    const slot = assetViewSchema.parse(await this.decode(response));
+    if (slot.assetId !== assetId || slot.contentId !== contentId || slot.status !== "ready")
+      throw new Error("Upload verification did not return the requested attachment.");
+    return slot;
+  }
+  async attachment(reference: AttachmentView, signal?: AbortSignal): Promise<Blob> {
+    const response = await (this.options.fetch ?? fetch)(
+      `${this.options.base ?? "/api"}/assets/${idSchema.parse(reference.assetId)}/download?contentId=${idSchema.parse(reference.contentId)}`,
+      {
+        headers: { "x-content-ops-fixture": this.options.fixture() },
+        redirect: "error",
+        signal: signal
+          ? AbortSignal.any([signal, AbortSignal.timeout(30_000)])
+          : AbortSignal.timeout(30_000),
+      },
+    );
+    if (!response.ok) return this.decode(response);
+    if (response.headers.get("content-type") !== reference.mediaType)
+      throw new Error("Attachment type did not match its verified reference.");
+    const bytes = await response.arrayBuffer();
+    const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)), (b) =>
+      b.toString(16).padStart(2, "0"),
+    ).join("");
+    if (bytes.byteLength !== reference.size || digest !== reference.sha256)
+      throw new Error("Attachment bytes did not match their verified reference.");
+    return new Blob([bytes], { type: reference.mediaType });
+  }
+  async publication(id: string, signal?: AbortSignal) {
+    const view = publicationViewSchema.parse(
+      await this.request(`/content/${idSchema.parse(id)}/publication`, signal ? { signal } : {}),
+    );
+    if (
+      view.artifact.contentId !== id ||
+      view.artifact.content.attachments.some((asset) => asset.contentId !== id)
+    )
+      throw new Error("Publication target did not match its artifact.");
+    return view;
   }
   async content(query: ContentQuery = {}, signal?: AbortSignal): Promise<ContentPage> {
     const parsed = contentQueryInput.parse(query);
@@ -227,15 +321,17 @@ export class ContentOperationsClient implements JawStackApiClient {
     key: string = crypto.randomUUID(),
   ): Promise<CommandResult> {
     const parsed = contentUi.commands[name].input.parse(input);
-    return z.object({ resourceId: idSchema, version: versionSchema }).parse(
-      await this.command({
-        resourceType: "contentItem",
-        ...(id ? { resourceId: id } : {}),
-        commandName: name,
-        input: parsed,
-        idempotencyKey: key,
-      }),
-    );
+    return z
+      .object({ resourceId: idSchema, version: versionSchema, assetId: idSchema.optional() })
+      .parse(
+        await this.command({
+          resourceType: "contentItem",
+          ...(id ? { resourceId: id } : {}),
+          commandName: name,
+          input: parsed,
+          idempotencyKey: key,
+        }),
+      );
   }
   async list(resourceType: string, options: ListOptions = {}) {
     this.contentOnly(resourceType);

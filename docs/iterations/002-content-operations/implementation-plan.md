@@ -1,7 +1,8 @@
 # Iteration 2 Implementation Plan: Content Operations
 
-Status: reviewed. Phases 0-16 are complete. Review submission/queue/snapshots/decisions,
-paged activity, desktop/mobile memory browser tests, and workspace regressions passed. Phase 17 is next.
+Status: reviewed. Phases 0-17 are complete. Attachment transfer/retry/removal, verified
+thumbnails/downloads, publish-now and committed previews, browser tests, and workspace checks
+passed. Phase 18 is next.
 
 ## Purpose
 
@@ -1330,6 +1331,59 @@ integration gate, documentation walkthrough, local links, and `git diff --check`
 - A fresh seeded review instance runs on web 4336 / API 4337 so the earlier 4326/4327 memory
   dataset was not reset or stopped. No public framework/template implementation, version,
   CI trigger, release, or commit changed. Attachment controls/preview remain Phase 17.
+
+### Phase 17: October 31, 2026
+
+- Added content-owned attachment UI with shared filename/type/size validation, versioned
+  registration/removal, real XHR transfer progress, verification-pending state, cancellation,
+  and same-slot retries. A lost registration response retains its original input/key; a
+  reloaded pending slot accepts matching-file reselection. Failed/rejected uploads never
+  manufacture ready state. Discarding a selection does not remove its domain slot.
+- Dirty text excludes media mutations; pending media/publication commands block other
+  commands, navigation, and fixture changes. Selected files are guarded on leave/unload.
+  Conflicts retain the File, loaded text, and version until explicit refresh. Attachment
+  updates preserve review-assignment/deadline inputs. Successful upload restores file-control
+  keyboard focus. Details count active slots, while retired slots remain visibly retained.
+- Added private fixture-aware binary reads with exact media-type/size/SHA-256 verification,
+  actual PNG/JPEG thumbnails, and PDF downloads without document embeds. Requests and Blob
+  URLs clean up on replacement/identity change/destruction. Decode failures are explicit,
+  without pretending signature verification is full image decoding or malware scanning.
+  Removed verified historical bytes remain downloadable under existing server authority.
+- Added editor publish-now using the loaded version and exact approval review/revision,
+  stable ambiguous-retry keys, real queued/running/failed/stalled/succeeded outcomes, and
+  visible-only strong-authority polling through the existing serialized/backoff helper.
+  Published content stays read-only. Only the existing verified committed-artifact endpoint
+  supplies the frozen preview, with publication identity/digest/size checked against the
+  loaded authority. Redacted JSON export and guarded snapshot attachment downloads work;
+  stored artifact digest/size are labeled separately from the reformatted public export.
+  Operational retry controls remain Phase 19; no raw private-object download route was added.
+- Added 12 unit/component/HTTP/transport tests (446 consumer / 731 workspace total). They
+  cover malicious/oversized/empty/unsupported files, rejected signatures, lost registration
+  and interrupted transfer recovery, cancellation at 100% transferred without readiness,
+  stale version preservation, blocked/foreign mutation, historical byte reads, uncommitted
+  preview denial, published membership lock, corrupted-reference rejection, Blob/request
+  cleanup, text-only previews, metadata mismatch, stable publish retries, and polling cleanup.
+  An initial component test exposed an effect tracking its own preview state; fixture-driven
+  refresh is now untracked and unchanged references reuse their existing verified Blob URL.
+- Expanded Playwright from 10 to 14 desktop/mobile scenarios. Actual generated PNG/PDF
+  fixtures are uploaded through HTTP, rendered, and downloaded byte-for-byte; the author/
+  editor review/publish path ends with a committed preview and usable exported references.
+  Browser checks also cover invalid size/names, interrupted same-slot retry, dirty-text
+  exclusion, removal, stale registration, fixture/discard guards, read-only publication,
+  file-control focus, and long filenames/body/metadata fitting at 1440x900 and 390x844.
+  Screenshots were inspected; publication body wrapping was corrected and asserted. The
+  full 14-scenario suite passed, followed by a final four-scenario media rerun after transport
+  hardening. Isolated test servers stopped; an earlier run interrupted by development reloads
+  was rerun against stable source, without changing timeouts/retries or weakening assertions.
+- `pnpm verify:release` passed formatting, typecheck, all tests, lint, app/workspace builds,
+  zero pkg-guard findings, isolated generated-app verification, and six package dry runs.
+  The browser module-graph gate requires actual attachment/publication modules and still
+  reports zero server imports. Local Markdown links and `git diff --check` passed.
+  Existing web 4336 / API 4337 remain available, with the prior memory dataset preserved;
+  its seeded committed preview/export was checked in Chromium with no page errors.
+- No dependencies, public framework/template implementation, HTTP routes, package versions,
+  CI triggers, releases, or commits changed. No Docker/LocalStack/real-AWS run was needed or
+  claimed for this consumer browser phase. Scheduling/calendar UI remains Phase 18.
 
 For later phases, append the date, meaningful behavior delivered, commands/results,
 not-run checks, design changes, and remaining limitations. Do not replace observed

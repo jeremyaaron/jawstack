@@ -1,7 +1,8 @@
 # Iteration 2: Content Operations
 
-Status: Phases 0-16 complete. Review submission/queue/snapshots/decisions, paged activity,
-desktop/mobile memory browser tests, and workspace regressions passed. Phase 17 is next.
+Status: Phases 0-17 complete. Attachment transfer/retry/removal, verified thumbnails/downloads,
+publish-now and committed previews, desktop/mobile browser tests, and workspace checks passed.
+Phase 18 is next.
 
 ## Documents
 
@@ -85,4 +86,8 @@ primary activity. Decisions carry the loaded content version and exact review/re
 Read-model delay is explicit and visible-only polling never silently advances the decision
 base. Stale reviews cannot approve new revisions; unrecorded notes survive conflicts and
 history remains accessible. Lazy routes keep browser chunks bounded. Phase 17 adds attachment
-controls and committed publication preview UI.
+registration/progress/cancellation/retry/removal, private byte-verified image/PDF downloads,
+and publish-now with visible-only outcome polling and actual committed-artifact previews.
+Selected files and loaded text survive conflicts; publication exports are explicitly redacted
+JSON, not canonical private artifact bytes. Published assets stay read-only. Phase 18 adds
+scheduling/calendar/agenda controls.

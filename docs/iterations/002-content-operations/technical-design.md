@@ -1211,6 +1211,41 @@ prebundles the already-pinned Temporal dependency to avoid an optimizer reload o
 navigation. The module-graph gate requires actual review/activity modules and still forbids
 server/core runtime/AWS/CDK/shim imports. No framework API, package version, or dependency changed.
 
+### Phase 17 Attachment and Preview Decisions
+
+Browser-safe media DTOs reuse field validators but omit storage keys. Attachment rows come
+from the loaded strong content authority, not the eventual asset model. Native file inputs
+validate safe filenames, exact supported types, nonzero size, and 10 MiB before registration.
+The existing server still validates ownership, signatures, deadlines, and verified bytes.
+XHR provides real bounded binary-transfer progress/cancellation; 100% is labeled verifying,
+not ready. A fresh strong content read must confirm ready before a thumbnail appears.
+
+`AttachmentSession` retains its File and registration intent/key after ambiguous errors;
+retries target the same slot. Pending slots support matching-file reselection after reload.
+Explicit discard clears the browser selection, not domain membership; explicit removal uses
+the loaded content version with a stable ambiguous-retry key. A conflict preserves the File,
+text, and base version and requires refresh. Dirty text excludes attachment mutations; pending
+mutations exclude other commands/navigation/identity changes. Submission fields survive media
+updates. Native unload/discard warnings cover selected files, without claiming offline storage.
+
+Private attachment reads carry the fixture header and parent locator. The client checks
+actual returned media type, byte size, and SHA-256 before creating image/download Blob URLs.
+Images are real verified PNG/JPEG bytes; PDF is download-only. Requests/URLs have teardown
+and replacement cleanup. The domain's ready/removed historical reference policy stays intact;
+published membership remains read-only. Safe display text uses interpolation, never HTML.
+
+Publish-now carries the loaded content version and exact approval review/revision; ambiguous
+retries keep the intent key. Strong-authority polling advances only locked publication
+outcomes, not an editable decision base. It uses the existing visible-only serialization,
+2-second/10-second backoff, hidden abort/pause, and settled/destroy cleanup. Failed/stalled
+states stay locked; the operations/retry UI remains Phase 19. The existing preview endpoint
+verifies actual stored bytes and committed metadata before returning its redacted view.
+The UI compares its publication identity/digest/size to loaded committed authority, renders
+plain frozen content plus guarded attachment downloads, and exports redacted JSON. Stored
+artifact digest/size are explicitly labeled: they do not describe the reformatted redacted
+export. No raw object keys, uncommitted preview, executable document embed, or new public
+framework/API route/dependency is required.
+
 ## LocalStack Lab and Infrastructure
 
 ### Compatibility Gate and Provisioning Choice

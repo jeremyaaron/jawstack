@@ -95,4 +95,60 @@ describe("Content Operations client", () => {
     ).rejects.toThrow("not public");
     expect(network).toHaveBeenCalledTimes(2);
   });
+  it("reports actual XHR progress without confusing transferred bytes with verified readiness", async () => {
+    const xhr = {
+      open: vi.fn(),
+      setRequestHeader: vi.fn(),
+      send: vi.fn(),
+      abort: vi.fn(),
+      upload: { onprogress: null as ((event: Partial<ProgressEvent>) => void) | null },
+      timeout: 0,
+      status: 503,
+      responseText: JSON.stringify({
+        ok: false,
+        error: { code: "runtime.unavailable", message: "Interrupted" },
+      }),
+      onload: null as (() => void) | null,
+      onabort: null as (() => void) | null,
+    };
+    const client = new ContentOperationsClient({
+      fixture: () => "author_2",
+      xhr: () => xhr as unknown as XMLHttpRequest,
+    });
+    const controller = new AbortController();
+    const progress = vi.fn();
+    const selected = new File(["proof"], "proof.pdf", { type: "application/pdf" });
+    const pending = client.upload(id, id, selected, controller.signal, progress);
+    expect(xhr.timeout).toBe(30_000);
+    expect(xhr.open).toHaveBeenCalledWith("PUT", `/api/uploads/${id}/${id}`);
+    expect(xhr.setRequestHeader).toHaveBeenCalledWith("x-content-ops-fixture", "author_2");
+    expect(xhr.setRequestHeader).toHaveBeenCalledWith("content-type", "application/pdf");
+    expect(xhr.send).toHaveBeenCalledWith(selected);
+    xhr.upload.onprogress!({ lengthComputable: true, loaded: 2, total: 5 });
+    xhr.upload.onprogress!({ lengthComputable: true, loaded: 5, total: 5 });
+    expect(progress.mock.calls).toEqual([[40], [100]]);
+    xhr.onload!();
+    await expect(pending).rejects.toMatchObject({ status: 503, code: "runtime.unavailable" });
+    expect(xhr.upload.onprogress).toBeNull();
+    controller.abort();
+    expect(xhr.abort).not.toHaveBeenCalled();
+    const cancellation = new AbortController();
+    const cancelled = client.upload(id, id, selected, cancellation.signal, progress);
+    xhr.abort.mockImplementation(() => xhr.onabort?.());
+    cancellation.abort();
+    await expect(cancelled).rejects.toMatchObject({ name: "AbortError" });
+    await expect(
+      client.upload(id, id, selected, cancellation.signal, progress),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    xhr.status = 0;
+    const invalid = client.upload(id, id, selected, new AbortController().signal, progress);
+    xhr.onload!();
+    await expect(invalid).rejects.toMatchObject({ code: "api.invalid_response" });
+    xhr.send.mockImplementationOnce(() => {
+      throw new Error("Cannot send");
+    });
+    await expect(
+      client.upload(id, id, selected, new AbortController().signal, progress),
+    ).rejects.toThrow("could not start");
+  });
 });

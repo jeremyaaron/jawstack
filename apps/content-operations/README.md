@@ -19,8 +19,10 @@ for routes, identity, limits, and runnable examples. Consumer Lambda/queue/Sched
 remain later work. Phase 15 adds the [Angular workbench](WORKBENCH.md), typed fixture-aware
 client, list/board, URL filters/paging, and version-safe draft create/detail/editing. Phase 16
 adds submission, review assignment/overdue/history filters, immutable snapshots, editor
-decisions, read-model pending states, and paged primary activity. Attachment, calendar, and
-operations screens follow in their assigned phases. The live
+decisions, read-model pending states, and paged primary activity. Phase 17 adds real attachment
+registration/transfer/progress/retry/removal, verified thumbnails/downloads, publish-now, and
+committed stored-artifact previews with redacted JSON export. Calendar and operations screens
+follow in their assigned phases. The live
 lab exercises the separate event spine and shared consumer protocols on real local S3/DynamoDB.
 
 ## Credential-Free Checks

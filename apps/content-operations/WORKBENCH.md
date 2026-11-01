@@ -2,8 +2,9 @@
 
 The Angular consumer runs against the real [loopback API](API.md). It supports
 content list/board browsing, URL filters and bounded paging, create/detail, and versioned
-draft editing, submission, review queues/snapshots/decisions, and paged activity. Uploads/
-preview, calendar, and operations screens remain in their assigned later phases; they are
+draft editing, submission, review queues/snapshots/decisions, paged activity, attachment
+uploads/downloads, and committed publication previews. Calendar and operations screens
+remain in their assigned later phases; they are
 not empty navigation destinations here.
 
 ## Run Locally
@@ -101,6 +102,45 @@ snapshot or materialized historical row, the view reports unavailable instead of
 Content/review pages display the primary content activity, five records at a time, with links
 to retained review snapshots. Refresh is explicit; user commands refresh the current version.
 Success focus moves to the review link or recorded decision, and invalid notes focus their field.
+
+## Attachments and Publication
+
+Saved drafts accept nonempty PNG, JPEG, and PDF files up to 10 MiB, subject to the domain's
+10-active/32-retained-slot limits. The native file control validates the shared safe-name,
+media-type, and size contracts before registration. The server also validates signatures,
+ownership, deadlines, and actual streamed bytes; these are not malware scanning guarantees.
+
+Registration and binary transfer are separate operations. Progress is actual XHR transfer
+progress; 100% means verification is still pending. Ready state comes from a fresh strong
+content read, never an eventual asset row or a local file preview. Errors/cancellation retain
+the selected File and pending slot for retry. A lost registration response reuses the exact
+input/key; retrying a registered slot never silently creates another attachment. After a
+reload, a pending slot accepts a reselected file with matching name/type/size; the server
+still verifies its actual bytes. Uploads have a 30-second deadline and support cancellation.
+Discarding a selection does not remove its registered slot. Removal is an explicit versioned
+command; retained tombstones and historical verified bytes follow the existing domain policy.
+
+Dirty text blocks attachment mutations, and pending media mutations block text/review changes,
+navigation, and fixture switching. Selected files trigger the discard guard. A 409 preserves
+both selected file and loaded text/version until explicit refresh; existing submission input
+is not reset by attachment updates. Successful upload returns keyboard focus to the file control.
+
+Image thumbnails and downloads use authenticated private reads, with exact media-type, byte-size,
+and SHA-256 checks against verified references. Blob URLs are revoked when replaced or destroyed;
+requests abort on teardown/identity changes. PDFs are download-only, never embedded documents.
+Published attachment membership and bytes remain read-only; snapshot downloads remain usable.
+
+Editors can publish an approved snapshot with its loaded content version and exact approval
+review/revision. Ambiguous retries retain their command key. Queued/running outcomes poll strong
+authority only while visible, with the shared 2-second/10-second backoff and teardown rules;
+failed/stalled outcomes remain locked and visible, not fake successes. Recovery controls remain
+Phase 19. Only a succeeded, committed publication can load a preview. That endpoint reads and
+verifies the actual stored artifact, not a reconstruction from mutable form text.
+
+`Download redacted JSON` exports that verified artifact's public view, without object keys or
+fencing tokens. Its attachment references use the same guarded downloads. Displayed **stored
+artifact** size/SHA-256 describe the canonical private stored bytes, not the reformatted/redacted
+JSON export; no byte-identical canonical download is exposed to the browser.
 
 ## Verification
 

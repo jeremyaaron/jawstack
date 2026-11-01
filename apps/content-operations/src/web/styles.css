@@ -996,7 +996,8 @@ js-error-panel {
   min-width: 0;
   padding-top: 24px;
 }
-.submitted-snapshot pre {
+.submitted-snapshot pre,
+.snapshot-body {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font: inherit;
@@ -1082,6 +1083,123 @@ js-error-panel {
   background: #a0b7a8;
   border-radius: 50%;
   margin-top: 7px;
+}
+.media-section {
+  border-top: 1px solid #dce3df;
+  padding: 24px 0;
+  min-width: 0;
+}
+.attachment-list {
+  list-style: none;
+  padding: 0;
+  margin: 18px 0 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 16px;
+}
+.attachment-item {
+  border: 1px solid #dce3df;
+  border-radius: 6px;
+  padding: 16px;
+  min-width: 0;
+  align-self: start;
+}
+.attachment-item .section-heading {
+  align-items: start;
+}
+.filename,
+.digest {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.attachment-state {
+  font-size: 12px;
+  color: #705a19;
+  flex-shrink: 0;
+}
+.attachment-state[data-state="ready"],
+.attachment-state[data-state="succeeded"] {
+  color: #1e704e;
+}
+.attachment-state[data-state="failed"],
+.attachment-state[data-state="stalled"] {
+  color: #a53636;
+}
+.attachment-state[data-state="removed"],
+.attachment-state[data-state="expired"] {
+  color: #66746b;
+}
+verified-attachment {
+  display: block;
+  min-width: 0;
+}
+.attachment-image {
+  display: block;
+  width: 100%;
+  height: 160px;
+  object-fit: contain;
+  background: #f4f6f5;
+  margin: 12px 0;
+}
+.media-section .button {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.attachment-item .button {
+  text-align: left;
+}
+.attachment-item .icon-button {
+  margin-top: 12px;
+}
+.file-control {
+  display: grid;
+  gap: 8px;
+  max-width: 480px;
+  overflow-wrap: anywhere;
+}
+.file-control input {
+  max-width: 100%;
+  min-width: 0;
+}
+.transfer-state {
+  padding: 16px 0;
+}
+.transfer-state progress {
+  display: block;
+  width: min(100%, 480px);
+  height: 12px;
+  margin: 12px 0;
+  accent-color: #217453;
+}
+.publication-preview {
+  margin-top: 16px;
+}
+.publication-preview .section-heading {
+  flex-wrap: wrap;
+}
+.publication-preview h3 {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.artifact-metadata {
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr);
+  gap: 8px 16px;
+  font-size: 12px;
+}
+.artifact-metadata dd {
+  margin: 0;
+}
+@media (max-width: 760px) {
+  .artifact-metadata {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+  .artifact-metadata dd {
+    margin-bottom: 8px;
+  }
 }
 @media (max-width: 1050px) {
   .review-row {
