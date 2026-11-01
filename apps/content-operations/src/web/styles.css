@@ -685,6 +685,7 @@ js-error-panel {
   border: 0;
 }
 .skip-link {
+  opacity: 0;
   position: fixed;
   top: -70px;
   left: 12px;
@@ -694,6 +695,7 @@ js-error-panel {
   padding: 8px 16px;
 }
 .skip-link:focus {
+  opacity: 1;
   top: 12px;
 }
 @media (min-width: 1600px) {
@@ -875,5 +877,290 @@ js-error-panel {
 @media (prefers-reduced-motion: reduce) {
   .spinner {
     animation: none;
+  }
+}
+.review-section,
+.activity-section {
+  border-top: 1px solid #e3e9e5;
+  margin-top: 32px;
+  padding-top: 24px;
+}
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.inline-link {
+  color: #166b59;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.review-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  font-size: 12px;
+}
+.decision-note {
+  margin: 18px 0;
+  padding: 12px 18px;
+  border-left: 3px solid #b7cbbf;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.decision-note footer {
+  font-size: 11px;
+  color: #66746b;
+  margin-top: 8px;
+}
+.submission-form {
+  margin-top: 20px;
+}
+.submission-form fieldset {
+  display: flex;
+  gap: 16px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.submission-form label,
+.review-filters > label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+}
+.submission-form .button,
+.decision-form .button {
+  min-width: 160px;
+}
+.submission-form .muted {
+  margin-top: 12px;
+}
+.review-filters {
+  padding-bottom: 20px;
+  border-bottom: 1px solid #e3e9e5;
+  gap: 20px;
+}
+.review-filters .check-label {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding-top: 24px;
+}
+.check-label input {
+  width: 16px;
+  height: 16px;
+  min-height: 0;
+  accent-color: #166b59;
+}
+.review-table {
+  border-top: 1px solid #e3e9e5;
+}
+.review-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 150px 110px 130px;
+  gap: 16px;
+  padding: 18px 12px;
+  align-items: center;
+  border-bottom: 1px solid #e3e9e5;
+  font-size: 12px;
+}
+.review-row.table-header {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+.review-title {
+  font-size: 14px;
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
+.content-reference {
+  display: block;
+  margin-top: 5px;
+}
+.overdue-label {
+  display: block;
+  color: #9b4b30;
+  font-size: 11px;
+}
+.review-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 240px;
+  gap: 32px;
+  border-top: 1px solid #e3e9e5;
+}
+.submitted-snapshot {
+  min-width: 0;
+  padding-top: 24px;
+}
+.submitted-snapshot pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  line-height: 1.9;
+  padding: 20px 0;
+}
+.submitted-snapshot h3 {
+  font-size: 13px;
+  margin-top: 18px;
+}
+.snapshot-assets {
+  list-style: none;
+  padding: 0;
+  font-size: 12px;
+}
+.snapshot-assets li {
+  padding: 10px 0;
+  border-bottom: 1px solid #e3e9e5;
+  overflow-wrap: anywhere;
+}
+.snapshot-assets span {
+  display: block;
+  color: #66746b;
+  font-size: 11px;
+}
+.identifier {
+  overflow-wrap: anywhere;
+  font-family: monospace;
+}
+.sync-state {
+  background: #f5f4eb;
+  border-left: 3px solid #c3ad55;
+  padding: 10px 14px;
+  margin: 0 0 20px;
+  font-size: 12px;
+}
+.decision-form {
+  margin-top: 20px;
+}
+.decision-form label {
+  display: block;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+.decision-form textarea {
+  width: 100%;
+  min-height: 120px;
+  padding: 12px;
+  resize: vertical;
+}
+.decision-form .actions {
+  margin-top: 16px;
+}
+.review-refresh {
+  margin-top: 24px;
+}
+.activity-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 20px;
+}
+.activity-list li {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr);
+  gap: 16px;
+  padding-bottom: 22px;
+  font-size: 12px;
+}
+.activity-list strong {
+  font-weight: 550;
+}
+.activity-list p {
+  margin-top: 4px;
+  color: #66746b;
+  font-size: 11px;
+}
+.activity-list p span {
+  margin: 0 6px;
+}
+.activity-dot {
+  width: 6px;
+  height: 6px;
+  background: #a0b7a8;
+  border-radius: 50%;
+  margin-top: 7px;
+}
+@media (max-width: 1050px) {
+  .review-row {
+    grid-template-columns: minmax(0, 1fr) 130px 110px;
+  }
+  .review-row > :nth-child(3) {
+    display: none;
+  }
+}
+@media (max-width: 760px) {
+  .sidebar {
+    gap: 8px;
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  nav {
+    display: flex;
+    gap: 4px;
+  }
+  nav a {
+    gap: 5px;
+    padding: 8px 6px;
+  }
+  .brand {
+    font-size: 12px;
+    gap: 6px;
+  }
+  .brand svg {
+    width: 18px;
+    height: 18px;
+    flex-basis: 18px;
+  }
+  .review-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+  .review-filters {
+    gap: 12px;
+  }
+  .review-filters > label {
+    flex: 1;
+    min-width: 0;
+  }
+  .review-filters select {
+    width: 100%;
+  }
+  .review-filters .check-label {
+    flex: 1 0 100%;
+    padding-top: 0;
+  }
+  .review-row.table-header {
+    display: none;
+  }
+  .review-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: 16px 0;
+    gap: 12px;
+  }
+  .review-row > :first-child {
+    grid-column: 1 / -1;
+  }
+  .review-row > :last-child {
+    text-align: right;
+  }
+  .submission-form label {
+    width: 100%;
+  }
+  .submission-form select,
+  .submission-form input {
+    width: 100%;
+  }
+  .submission-form .button {
+    width: 100%;
+  }
+  .decision-form .actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .decision-form .button {
+    width: 100%;
   }
 }

@@ -1,7 +1,7 @@
 # Iteration 2 Implementation Plan: Content Operations
 
-Status: reviewed. Phases 0-15 are complete. Angular workbench/draft editing, browser-safe
-client/bundle, desktop/mobile memory browser tests, and workspace regressions passed. Phase 16 is next.
+Status: reviewed. Phases 0-16 are complete. Review submission/queue/snapshots/decisions,
+paged activity, desktop/mobile memory browser tests, and workspace regressions passed. Phase 17 is next.
 
 ## Purpose
 
@@ -1283,6 +1283,53 @@ integration gate, documentation walkthrough, local links, and `git diff --check`
   or rerun for this browser-only phase; no new deployed-worker or real-AWS claim is made.
   The seeded development API and web server remain available on loopback 4327/4326 for review.
   See the [workbench guide](../../../apps/content-operations/WORKBENCH.md).
+
+### Phase 16: October 31, 2026
+
+- Added saved-draft submission with fixed editor selection, future UTC review due time via
+  the shared Temporal conversion, pending/dirty exclusion, and optimistic content versions.
+  Eligible owning authors/editors can explicitly reopen pending/approved content; the
+  existing domain invalidates the prior review/approval and generates the new revision.
+- Added `/reviews` and `/reviews/:id`: URL assignment/status/overdue/content-history filters,
+  bounded paging/empty continuation, linked current content, immutable submitted body and
+  attachment metadata, recorded outcomes, and required-note editor decisions. The content
+  history filter composes existing bounded review partitions/cursor scopes; no new storage
+  index, arbitrary partition input, or unbounded client scan was introduced.
+- Decisions call `contentItem` with the loaded content version plus exact review/revision IDs,
+  never mutate `reviewTask` directly, and retain stable keys for ambiguous retries. Stale
+  conflicts preserve notes and require explicit refresh; historical reviews cannot approve
+  reopened/new revisions. Retained unrecorded notes are visible/copyable/discardable even
+  when a refreshed review is no longer actionable. Navigation/fixture/unload guards apply.
+- Added validated redacted review DTOs and a shared bounded activity DTO. Strong content
+  authority can supply a matching snapshot while its secondary row is missing/behind;
+  pending/synchronizing is explicit. Visible-only serialized polling uses 2-second intervals,
+  10-second backoff after a minute, hidden-tab abort/pause, and settlement/destroy cleanup.
+  It does not refresh the pinned decision version. Missing unmatched history remains unavailable.
+- Added the primary content activity view with five-record pages, retained review links,
+  explicit refresh/load-more, and error/empty states. Keyboard success/validation focus and
+  desktop/mobile fitting are verified. Only functional Content/Reviews destinations appear.
+- Added ten unit/component/HTTP/polling/query tests (434 consumer/719 workspace total),
+  including real lost-response replay without another version, stale reopen/new-review
+  rejection, immutable retained history, 200-candidate content-filter bounds/cursor scoping,
+  actual reactive-form submit handling, pending authority/permissions, activity continuation,
+  hidden polling/backoff/abort and timer cleanup. Extended Playwright from six to ten actual
+  desktop/mobile flows, covering the full author -> editor -> changes -> revised submission
+  -> approval cycle, stale pages, retained notes, history/assignment/overdue filters, activity,
+  and keyboard focus. Screenshots at 1440x900 / 390x844 were inspected; test servers stop.
+  A reactive fixture picker now preserves the displayed persisted identity across reloads
+  and restores it when dirty-work guards reject a switch. Caller cancellation is combined
+  with the client's 30-second deadline, rather than disabling that deadline during polling.
+- Lazy-loaded detail/review routes instead of raising the browser chunk warning threshold.
+  Temporal is explicitly prebundled in development to prevent a discovery-triggered reload
+  during the first lazy navigation. The module-graph guard requires the new real screens
+  and still excludes Node/core runtime/server/AWS/CDK/shims. No dependencies were added.
+- `pnpm verify:release` passed format/typecheck/tests/lint/build, zero pkg-guard findings,
+  isolated generated-app verification, and six package dry runs. The full browser suite,
+  local Markdown links, and `git diff --check` passed. No Docker/LocalStack/live-AWS run was
+  needed or claimed for this UI/query-composition phase. Existing backend regressions pass.
+- A fresh seeded review instance runs on web 4336 / API 4337 so the earlier 4326/4327 memory
+  dataset was not reset or stopped. No public framework/template implementation, version,
+  CI trigger, release, or commit changed. Attachment controls/preview remain Phase 17.
 
 For later phases, append the date, meaningful behavior delivered, commands/results,
 not-run checks, design changes, and remaining limitations. Do not replace observed

@@ -34,6 +34,9 @@ export function browserBoundary(): Plugin {
       for (const required of [
         "src/web/content-list.ts",
         "src/web/content-detail.ts",
+        "src/web/review-list.ts",
+        "src/web/review-detail.ts",
+        "src/web/activity.ts",
         "src/shared/presentation.ts",
         "packages/angular/src/index.ts",
       ])
@@ -74,6 +77,7 @@ export default defineConfig(({ command }) => ({
       ),
     },
   },
+  optimizeDeps: { include: ["@js-temporal/polyfill"] },
   server: {
     host: "127.0.0.1",
     port: webPort,

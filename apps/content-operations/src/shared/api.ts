@@ -18,6 +18,7 @@ export const contentQueryInput = pageInput.extend({
   title: titleFilter.optional(),
 });
 export const reviewQueryInput = pageInput.extend({
+  contentId: idSchema.optional(),
   status: z.enum(reviewStatuses).optional(),
   editorId: z.enum(editorIds).optional(),
   overdue: z.enum(["true", "false"]).default("false"),

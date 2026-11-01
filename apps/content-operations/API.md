@@ -2,7 +2,8 @@
 
 Local development ingress for the private reference consumer, not production authentication
 or a published framework API. The [Angular workbench and typed client](WORKBENCH.md) now
-provide content browsing and version-safe draft editing.
+provide content browsing, version-safe draft editing, review submission/decisions/history,
+and paged primary activity.
 
 ## Start and Seed
 
@@ -100,6 +101,10 @@ artifact, not a reserialization of the redacted HTTP envelope.
 | GET    | `/api/assets/:assetId/download`                    | Optional `contentId` locator if the asset read model is not materialized. Strong content slot authority is always checked.                               |
 | GET    | `/api/content/:id/publication`                     | Verified committed JSON artifact, digest, size, completion time; never an object merely present in storage.                                              |
 | POST   | `/api/development/seed`                            | Editor only, strict `{confirm:true}`; created/skipped IDs. Used by seed CLI.                                                                             |
+
+Review queries additionally accept `contentId` for bounded history filtering. It composes
+with assignment/status/overdue filters and is included in continuation scope; callers still
+cannot choose storage partitions. Empty filtered pages can retain a cursor.
 
 Public commands are `create`, `editDraft`, `submit`, `approve`, `requestChanges`,
 `reopenDraft`, `archive`, `registerAsset`, `removeAsset`, `schedule`, `cancelSchedule`,

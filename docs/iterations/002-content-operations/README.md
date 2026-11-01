@@ -1,7 +1,7 @@
 # Iteration 2: Content Operations
 
-Status: Phases 0-15 complete. Angular workbench/draft editing, browser-safe client/bundle,
-desktop/mobile memory browser tests, and workspace regressions passed. Phase 16 is next.
+Status: Phases 0-16 complete. Review submission/queue/snapshots/decisions, paged activity,
+desktop/mobile memory browser tests, and workspace regressions passed. Phase 17 is next.
 
 ## Documents
 
@@ -79,4 +79,10 @@ unsaved-change guards. Client requests use the fixed fixture header, public shar
 and stable intent keys on ambiguous retries. Vite checks the actual browser module graph
 without a Node shim or server/AWS imports. Isolated Playwright servers exercise desktop/
 mobile memory workflows and produce screenshots without touching the development dataset.
-The next phase implements review submission, snapshots/decisions, and paged activity.
+Phase 16 adds review submission with editor selection and explicit UTC deadlines, assignment/
+overdue/content-history filters, immutable snapshots, editor decisions with notes, and paged
+primary activity. Decisions carry the loaded content version and exact review/revision IDs.
+Read-model delay is explicit and visible-only polling never silently advances the decision
+base. Stale reviews cannot approve new revisions; unrecorded notes survive conflicts and
+history remains accessible. Lazy routes keep browser chunks bounded. Phase 17 adds attachment
+controls and committed publication preview UI.

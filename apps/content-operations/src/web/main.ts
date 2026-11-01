@@ -1,21 +1,41 @@
 import { bootstrapApplication } from "@angular/platform-browser";
-import { provideRouter } from "@angular/router";
+import { provideRouter, type CanDeactivateFn } from "@angular/router";
 import { inject } from "@angular/core";
 import { provideJawStack, JAWSTACK_API_CLIENT, JAWSTACK_AUTH } from "@jawstack/angular";
 import { AppComponent } from "./app";
 import { ContentListComponent } from "./content-list";
-import { ContentDetailComponent, draftGuard } from "./content-detail";
 import { Workspace } from "./workspace";
 import { contentUi, assetUi, reviewUi } from "../shared/presentation";
 import "./styles.css";
+const unsavedGuard: CanDeactivateFn<{ canLeave(): boolean }> = (component) => component.canLeave();
 
 bootstrapApplication(AppComponent, {
   providers: [
     provideRouter([
       { path: "", pathMatch: "full", redirectTo: "content" },
       { path: "content", component: ContentListComponent },
-      { path: "content/new", component: ContentDetailComponent, canDeactivate: [draftGuard] },
-      { path: "content/:id", component: ContentDetailComponent, canDeactivate: [draftGuard] },
+      {
+        path: "content/new",
+        loadComponent: () =>
+          import("./content-detail").then((module) => module.ContentDetailComponent),
+        canDeactivate: [unsavedGuard],
+      },
+      {
+        path: "content/:id",
+        loadComponent: () =>
+          import("./content-detail").then((module) => module.ContentDetailComponent),
+        canDeactivate: [unsavedGuard],
+      },
+      {
+        path: "reviews",
+        loadComponent: () => import("./review-list").then((module) => module.ReviewListComponent),
+      },
+      {
+        path: "reviews/:id",
+        loadComponent: () =>
+          import("./review-detail").then((module) => module.ReviewDetailComponent),
+        canDeactivate: [unsavedGuard],
+      },
       { path: "**", redirectTo: "content" },
     ]),
     provideJawStack({ apiBaseUrl: "/api", resources: [contentUi, assetUi, reviewUi] }),

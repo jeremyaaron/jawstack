@@ -1,6 +1,14 @@
 import { CommonModule } from "@angular/common";
-import { Component, DestroyRef, HostListener, effect, inject, signal } from "@angular/core";
-import { ReactiveFormsModule } from "@angular/forms";
+import {
+  Component,
+  ChangeDetectorRef,
+  DestroyRef,
+  HostListener,
+  effect,
+  inject,
+  signal,
+} from "@angular/core";
+import { FormControl, FormGroup, ReactiveFormsModule } from "@angular/forms";
 import { ActivatedRoute, Router, RouterLink, type CanDeactivateFn } from "@angular/router";
 import { takeUntilDestroyed } from "@angular/core/rxjs-interop";
 import { JsErrorPanelComponent, JsStatusBadgeComponent } from "@jawstack/angular";
@@ -9,9 +17,16 @@ import {
   LucideSave,
   LucideRefreshCw,
   LucideGitCompareArrows,
+  LucideSend,
+  LucideUndo2,
 } from "@lucide/angular";
 import { Workspace } from "./workspace";
 import { DraftEditor, errorMessage } from "./draft-editor";
+import { EditorialAction } from "./editorial-action";
+import { ActivityComponent } from "./activity";
+import { editorIds } from "../shared/identities";
+import { localTimeToUtc } from "../shared/time";
+import { submitInput } from "../shared/contracts";
 
 @Component({
   standalone: true,
@@ -25,6 +40,9 @@ import { DraftEditor, errorMessage } from "./draft-editor";
     LucideSave,
     LucideRefreshCw,
     LucideGitCompareArrows,
+    LucideSend,
+    LucideUndo2,
+    ActivityComponent,
   ],
   template: `
     <a class="back-link" aria-label="Back to content" [routerLink]="backLink()"
@@ -85,7 +103,7 @@ import { DraftEditor, errorMessage } from "./draft-editor";
       }
       <div class="editor-layout">
         <form class="draft-form" [formGroup]="editor.form" (ngSubmit)="save()">
-          <fieldset [disabled]="!editor.editable() || editor.pending()">
+          <fieldset [disabled]="!editor.editable() || editor.pending() || action.pending()">
             <label for="content-title">Title</label
             ><input
               id="content-title"
@@ -115,7 +133,12 @@ import { DraftEditor, errorMessage } from "./draft-editor";
               <button
                 type="submit"
                 class="button primary"
-                [disabled]="editor.pending() || editor.conflict() || (id() && !editor.dirty())"
+                [disabled]="
+                  editor.pending() ||
+                  action.pending() ||
+                  editor.conflict() ||
+                  (id() && !editor.dirty())
+                "
               >
                 <svg lucideSave aria-hidden="true"></svg
                 >{{ editor.pending() ? "Saving" : id() ? "Save draft" : "Create content" }}
@@ -151,12 +174,107 @@ import { DraftEditor, errorMessage } from "./draft-editor";
             </p>
           }
           @if (id()) {
-            <button class="button" [disabled]="editor.pending()" (click)="refresh()">
+            <button
+              class="button"
+              [disabled]="editor.pending() || action.pending()"
+              (click)="refresh()"
+            >
               <svg lucideRefreshCw aria-hidden="true"></svg>Refresh
             </button>
           }
         </aside>
       </div>
+      @if (editor.resource(); as row) {
+        <section class="review-section" aria-label="Review workflow">
+          <header class="section-heading">
+            <h2>Review</h2>
+            <a
+              class="inline-link"
+              routerLink="/reviews"
+              [queryParams]="{ contentId: row.resourceId, status: 'all' }"
+              >Review history</a
+            >
+          </header>
+          @if (action.error()) {
+            <js-error-panel title="Review action failed" [message]="action.error()" />
+          }
+          @if (submissionError()) {
+            <p class="validation" role="alert">{{ submissionError() }}</p>
+          }
+          @if (row.state.review; as review) {
+            <div class="review-summary">
+              <js-status-badge [value]="review.status" /><span>{{
+                review.assignedEditorId.replace("_", " ")
+              }}</span
+              ><time [dateTime]="review.dueAt"
+                >Due {{ review.dueAt | date: "MMM d, yyyy, HH:mm" : "UTC" }} UTC</time
+              ><a
+                class="inline-link"
+                [routerLink]="['/reviews', review.reviewId]"
+                [queryParams]="{ contentId: row.resourceId }"
+                id="open-review"
+                >Open review</a
+              >
+            </div>
+            @if (review.decision) {
+              <blockquote class="decision-note">
+                {{ review.decision.note ?? "Review superseded" }}
+                <footer>
+                  {{ review.decision.actorId.replace("_", " ") }} ·
+                  {{ review.decision.at | date: "MMM d, HH:mm" }}
+                </footer>
+              </blockquote>
+            }
+          }
+          @if (editor.editable()) {
+            <form class="submission-form" [formGroup]="submission" (ngSubmit)="submitReview()">
+              <fieldset
+                [disabled]="
+                  editor.dirty() || editor.pending() || action.pending() || action.conflict()
+                "
+              >
+                <label
+                  >Assigned editor<select
+                    aria-label="Assigned editor"
+                    formControlName="assignedEditorId"
+                  >
+                    @for (editorId of editors; track editorId) {
+                      <option [value]="editorId">{{ editorId.replace("_", " ") }}</option>
+                    }
+                  </select></label
+                ><label
+                  >Review due (UTC)<input
+                    aria-label="Review due (UTC)"
+                    type="datetime-local"
+                    formControlName="dueAt"
+                    required /></label
+                ><button class="button primary" type="submit">
+                  <svg lucideSend aria-hidden="true"></svg
+                  >{{ action.pending() ? "Submitting" : "Submit for review" }}
+                </button>
+              </fieldset>
+              @if (editor.dirty()) {
+                <p class="muted">Draft has unsaved changes</p>
+              }
+            </form>
+          } @else if (canReopen()) {
+            <div class="actions">
+              <button
+                class="button"
+                [disabled]="action.pending() || action.conflict()"
+                (click)="reopen()"
+              >
+                <svg lucideUndo2 aria-hidden="true"></svg>Reopen draft
+              </button>
+            </div>
+          }
+        </section>
+        <content-activity
+          [resourceId]="row.resourceId"
+          [contentId]="row.resourceId"
+          [version]="row.version"
+        />
+      }
     }
   `,
 })
@@ -165,7 +283,15 @@ export class ContentDetailComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly destroy = inject(DestroyRef);
+  private readonly change = inject(ChangeDetectorRef);
   readonly editor = new DraftEditor(this.workspace.client, () => this.workspace.fixture());
+  readonly action = new EditorialAction(this.workspace.client, () => this.workspace.fixture());
+  readonly editors = editorIds;
+  readonly submission = new FormGroup({
+    assignedEditorId: new FormControl("editor_1", { nonNullable: true }),
+    dueAt: new FormControl(this.defaultDue(), { nonNullable: true }),
+  });
+  readonly submissionError = signal("");
   readonly id = signal<string | undefined>(undefined);
   readonly loading = signal(false);
   readonly loadError = signal("");
@@ -199,17 +325,27 @@ export class ContentDetailComponent {
   }
   @HostListener("window:beforeunload", ["$event"])
   beforeUnload(event: BeforeUnloadEvent) {
-    if (this.editor.dirty() || this.editor.pending()) event.preventDefault();
+    if (
+      this.editor.dirty() ||
+      this.editor.pending() ||
+      this.action.pending() ||
+      this.submission.dirty
+    )
+      event.preventDefault();
   }
   canLeave() {
     return (
-      !this.editor.pending() && (!this.editor.dirty() || window.confirm("Discard unsaved changes?"))
+      !this.editor.pending() &&
+      !this.action.pending() &&
+      (!(this.editor.dirty() || this.submission.dirty) ||
+        window.confirm("Discard unsaved changes?"))
     );
   }
   refresh() {
     if (this.canLeave()) void this.load();
   }
   async load() {
+    if (this.destroy.destroyed) return;
     const sequence = ++this.sequence;
     this.request?.abort();
     this.request = new AbortController();
@@ -221,6 +357,9 @@ export class ContentDetailComponent {
         : undefined;
       if (sequence !== this.sequence) return;
       this.editor.accept(row);
+      this.action.reset();
+      this.submission.reset({ assignedEditorId: "editor_1", dueAt: this.defaultDue() });
+      this.submissionError.set("");
     } catch (error) {
       if (sequence === this.sequence && !this.request.signal.aborted)
         this.loadError.set(errorMessage(error));
@@ -229,6 +368,7 @@ export class ContentDetailComponent {
     }
   }
   async save() {
+    if (this.action.pending()) return;
     const isNew = !this.id();
     const id = await this.editor.save();
     if (this.editor.validationField())
@@ -237,6 +377,58 @@ export class ContentDetailComponent {
   }
   bytes() {
     return new TextEncoder().encode(this.editor.form.controls.body.value).length;
+  }
+  defaultDue() {
+    return new Date(Date.now() + 86_400_000).toISOString().slice(0, 16);
+  }
+  canReopen() {
+    const row = this.editor.resource();
+    return (
+      !!row &&
+      ["inReview", "approved"].includes(row.state.status) &&
+      (row.state.authorId === this.workspace.fixture() ||
+        this.workspace.fixture().startsWith("editor"))
+    );
+  }
+  async submitReview() {
+    const row = this.editor.resource();
+    if (!row || this.editor.dirty() || this.editor.pending() || !this.editor.editable()) return;
+    this.submissionError.set("");
+    let input;
+    try {
+      const value = this.submission.getRawValue();
+      input = submitInput.parse({
+        expectedVersion: row.version,
+        assignedEditorId: value.assignedEditorId,
+        dueAt: localTimeToUtc(value.dueAt, "UTC"),
+      });
+      if (Date.parse(input.dueAt) <= Date.now()) throw new Error();
+    } catch {
+      this.submissionError.set("Select an editor and a future review due time in UTC.");
+      return;
+    }
+    if (await this.action.run("submit", input, row.resourceId)) {
+      this.submission.markAsPristine();
+      await this.load();
+      this.focusResult("open-review");
+    }
+  }
+  async reopen() {
+    const row = this.editor.resource();
+    if (
+      row &&
+      this.canReopen() &&
+      (await this.action.run("reopenDraft", { expectedVersion: row.version }, row.resourceId))
+    ) {
+      await this.load();
+      this.focusResult("content-title");
+    }
+  }
+  private focusResult(id: string) {
+    if (!this.destroy.destroyed) {
+      this.change.detectChanges();
+      document.getElementById(id)?.focus();
+    }
   }
 }
 export const draftGuard: CanDeactivateFn<ContentDetailComponent> = (component) =>

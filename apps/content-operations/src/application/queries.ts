@@ -30,6 +30,7 @@ import { eventIdentitySchema } from "../shared/events";
 import { notificationSchema } from "./notifications";
 import { publicationOperationSchema } from "./publication-operations";
 import { failureSummarySchema } from "./failure-records";
+import { activityViewSchema } from "../shared/review-views";
 
 const contentData = z.object({
   title: z.string().max(160),
@@ -52,21 +53,6 @@ const reviewData = z.object({
   assignedEditorId: z.enum(editorIds),
   dueAt: instantSchema,
   sourceVersion: versionSchema,
-});
-const activityData = z.object({
-  activityId: eventIdentitySchema,
-  resourceType: z.enum(["contentItem", "reviewTask", "asset"]),
-  resourceId: idSchema,
-  activityType: eventIdentitySchema,
-  title: z.string().max(220),
-  summary: z.string().max(1000).optional(),
-  data: z.object({ revisionId: idSchema.optional(), reviewId: idSchema.optional() }).optional(),
-  actor: z
-    .object({ subject: eventIdentitySchema, displayName: z.string().max(200).optional() })
-    .optional(),
-  correlationId: eventIdentitySchema,
-  causationId: eventIdentitySchema.optional(),
-  occurredAt: instantSchema,
 });
 
 export function requireFixture(auth: AuthContext, editor = false) {
@@ -229,7 +215,12 @@ export function createContentQueries(options: {
         auth,
         "reviews",
         q,
-        { editorId: q.editorId ?? null, status: q.status ?? null, overdue: q.overdue },
+        {
+          contentId: q.contentId ?? null,
+          editorId: q.editorId ?? null,
+          status: q.status ?? null,
+          overdue: q.overdue,
+        },
         {
           projectionName: q.editorId
             ? `reviewTask.editor.${q.editorId}`
@@ -238,6 +229,7 @@ export function createContentQueries(options: {
               : "reviewTask.list",
         },
         (row, cutoff) =>
+          (!q.contentId || row.data.contentId === q.contentId) &&
           (!q.status || row.data.status === q.status) &&
           (q.overdue === "false" ||
             (row.data.status === "pending" && String(row.data.dueAt) <= cutoff!)),
@@ -321,7 +313,7 @@ export function createContentQueries(options: {
       return {
         ...page,
         items: page.items.map((row) => {
-          const parsed = activityData.safeParse(row);
+          const parsed = activityViewSchema.safeParse(row);
           if (!parsed.success || parsed.data.resourceId !== id || parsed.data.resourceType !== type)
             throw new JawStackRuntimeError(
               "resource.invalid_state",

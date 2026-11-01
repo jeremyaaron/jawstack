@@ -9,6 +9,7 @@ export class Workspace {
   readonly client = new ContentOperationsClient({ fixture: () => this.fixture() });
   readonly runtime = signal("Connecting");
   listUrl = "/content";
+  reviewsUrl = "/reviews";
   canLeave: () => boolean = () => true;
   changeFixture(value: string) {
     if (!fixtureIds.includes(value as FixtureId) || value === this.fixture() || !this.canLeave())

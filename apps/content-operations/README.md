@@ -17,8 +17,10 @@ Phase 14 adds a loopback HTTP API, bounded application queries, private download
 previews, deterministic seed, and explicit memory/LocalStack launchers. See the [API guide](API.md)
 for routes, identity, limits, and runnable examples. Consumer Lambda/queue/Scheduler deployment
 remain later work. Phase 15 adds the [Angular workbench](WORKBENCH.md), typed fixture-aware
-client, list/board, URL filters/paging, and version-safe draft create/detail/editing. Review,
-attachment, calendar, and operations screens follow in their assigned phases. The live
+client, list/board, URL filters/paging, and version-safe draft create/detail/editing. Phase 16
+adds submission, review assignment/overdue/history filters, immutable snapshots, editor
+decisions, read-model pending states, and paged primary activity. Attachment, calendar, and
+operations screens follow in their assigned phases. The live
 lab exercises the separate event spine and shared consumer protocols on real local S3/DynamoDB.
 
 ## Credential-Free Checks

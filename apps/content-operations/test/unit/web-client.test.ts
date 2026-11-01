@@ -77,7 +77,12 @@ describe("Content Operations client", () => {
     const fault = new TypeError("offline");
     const network = vi.fn<typeof fetch>().mockRejectedValue(fault);
     const client = new ContentOperationsClient({ fixture: () => "author_1", fetch: network });
-    await expect(client.content()).rejects.toBe(fault);
+    const controller = new AbortController();
+    await expect(client.content({}, controller.signal)).rejects.toBe(fault);
+    const signal = network.mock.calls[0]![1]!.signal!;
+    expect(signal).not.toBe(controller.signal);
+    controller.abort();
+    expect(signal.aborted).toBe(true);
     const stream = new DOMException("aborted", "AbortError");
     network.mockResolvedValueOnce({
       ok: true,

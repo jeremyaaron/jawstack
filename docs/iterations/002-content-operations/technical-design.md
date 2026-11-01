@@ -1170,6 +1170,47 @@ existing servers, owns teardown, and runs desktop/mobile screenshots and actual 
 It remains opt-in rather than joining unit discovery; a later phase owns dedicated CI jobs.
 The [workbench guide](../../../apps/content-operations/WORKBENCH.md) is the current run contract.
 
+### Phase 16 Review Decisions
+
+Review routes are `/reviews` and `/reviews/:id`. The queue supports URL status, assignment,
+overdue, content-history, limit, and cursor filters. `status=all` is a browser alias for no API
+status restriction. The server's new optional content filter uses existing known review
+partitions and the same conservative 200-candidate budget; it adds no storage index or
+caller-selected partition. Its content ID joins the normalized cursor scope. History can
+return an empty continued page and must not be mistaken for complete results.
+
+`ReviewSession` loads the materialized review plus strong content authority. A link may
+carry a validated content locator to recover the exact matching authoritative snapshot while
+the row is missing. For the current review, newer authoritative data wins over an older
+materialization, with an explicit pending/synchronizing state. Unmatched missing history is
+unavailable, never manufactured. Old materialized snapshots remain inspectable after new
+revisions. The HTTP DTO reuses shared field validators but excludes private object references;
+the raw domain schemas and cross-reference checks still govern all server writes.
+
+Editor decisions dispatch only to content, carrying its loaded version, review UUID, and
+submitted revision. That authority is pinned until explicit refresh, not silently advanced
+by read-model polling. Any editor may decide a current review; assignment is routing, not
+exclusive authorization. Required notes, duplicate-submit exclusion, stable intent keys,
+structured stale/permission errors, and unsaved-note guards apply. Historical reviews cannot
+approve another revision. Unrecorded notes stay visible/copyable and explicitly discardable
+after a refresh makes the form ineligible. Pending/approved content can explicitly reopen
+through its existing domain command. Body editing and submission are separate saved intents.
+
+Visible pending rows poll every two seconds, back off to ten after a minute, abort/pause
+while hidden, and stop on settlement or destruction. The serialized poll never rereads or
+adopts a new content decision version. Primary activity is a separate five-record paged
+view with retained review links; it does not claim all history was loaded. Route, success,
+and validation focus are explicit. The review form uses a real reactive form group, ensuring
+native submission invokes the decision command rather than reloading the document.
+The fixture picker also uses an Angular form control so persisted identity is written after
+its options register, and rejected dirty-work switches restore the displayed active fixture.
+Caller abort signals combine with the existing 30-second client deadline for bounded polling.
+
+Detail/review routes are lazy-loaded to keep production chunks bounded. Development explicitly
+prebundles the already-pinned Temporal dependency to avoid an optimizer reload on first lazy
+navigation. The module-graph gate requires actual review/activity modules and still forbids
+server/core runtime/AWS/CDK/shim imports. No framework API, package version, or dependency changed.
+
 ## LocalStack Lab and Infrastructure
 
 ### Compatibility Gate and Provisioning Choice

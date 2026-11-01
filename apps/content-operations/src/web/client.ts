@@ -6,9 +6,17 @@ import {
 } from "@jawstack/angular";
 import type { ResourceState, ProjectionRecord, ActivityRecord } from "@jawstack/core";
 import { z } from "zod";
-import { contentQueryInput, type ContentQuery, type PublicValue } from "../shared/api";
-import { contentStatuses, type ContentState } from "../shared/contracts";
-import { fixtureIds, type FixtureId } from "../shared/identities";
+import {
+  contentQueryInput,
+  reviewQueryInput,
+  pageInput,
+  type ContentQuery,
+  type ReviewQuery,
+  type PublicValue,
+} from "../shared/api";
+import { contentStatuses, reviewStatuses, type ContentState } from "../shared/contracts";
+import { fixtureIds, editorIds, type FixtureId } from "../shared/identities";
+import { reviewViewSchema, activityViewSchema, type ReviewView } from "../shared/review-views";
 import { idSchema, instantSchema, versionSchema } from "../shared/validation";
 import { contentUi } from "../shared/presentation";
 
@@ -29,6 +37,26 @@ export type ContentPage = { items: ContentRow[]; nextCursor?: string | undefined
 export type CommandName = keyof typeof contentUi.commands;
 export type CommandInput<N extends CommandName> = z.input<(typeof contentUi.commands)[N]["input"]>;
 export type CommandResult = { resourceId: string; version: number };
+export type ReviewResource = Omit<ResourceState, "state"> & { state: ReviewView };
+const reviewRowSchema = z.object({
+  projectionName: z.string(),
+  itemId: idSchema,
+  sort: z.string(),
+  data: z.object({
+    contentId: idSchema,
+    title: z.string().max(160),
+    status: z.enum(reviewStatuses),
+    assignedEditorId: z.enum(editorIds),
+    dueAt: instantSchema,
+    sourceVersion: versionSchema,
+  }),
+});
+export type ReviewRow = z.infer<typeof reviewRowSchema>;
+export type ReviewPage = { items: ReviewRow[]; nextCursor?: string | undefined };
+export type ActivityPage = {
+  items: z.infer<typeof activityViewSchema>[];
+  nextCursor?: string | undefined;
+};
 const pageSchema = z.object({
   items: z.array(
     z.object({
@@ -57,6 +85,7 @@ const resourceSchema = z.object({
         status: z.enum(contentStatuses),
         authorId: z.enum(fixtureIds),
         revisionId: idSchema,
+        review: reviewViewSchema.nullable(),
         attachments: z
           .array(z.object({ assetId: idSchema, filename: z.string() }).passthrough())
           .max(32),
@@ -75,7 +104,9 @@ export class ContentOperationsClient implements JawStackApiClient {
     const response = await (this.options.fetch ?? fetch)(`${this.options.base ?? "/api"}${path}`, {
       ...init,
       redirect: "error",
-      signal: init.signal ?? AbortSignal.timeout(30_000),
+      signal: init.signal
+        ? AbortSignal.any([init.signal, AbortSignal.timeout(30_000)])
+        : AbortSignal.timeout(30_000),
       headers,
     });
     let body: unknown;
@@ -133,6 +164,62 @@ export class ContentOperationsClient implements JawStackApiClient {
       });
     return data.resource as ContentResource;
   }
+  async reviews(query: ReviewQuery = {}, signal?: AbortSignal): Promise<ReviewPage> {
+    const params = new URLSearchParams(
+      Object.entries(reviewQueryInput.parse(query)).map(([key, value]) => [key, String(value)]),
+    );
+    return z
+      .object({ items: z.array(reviewRowSchema), nextCursor: z.string().optional() })
+      .parse(await this.request(`/reviews?${params}`, signal ? { signal } : {}));
+  }
+  async getReview(id: string, signal?: AbortSignal): Promise<ReviewResource> {
+    const data = z
+      .object({
+        resource: z.object({
+          resourceType: z.literal("reviewTask"),
+          resourceId: idSchema,
+          version: versionSchema,
+          createdAt: instantSchema,
+          updatedAt: instantSchema,
+          createdBy: z.string(),
+          updatedBy: z.string(),
+          state: reviewViewSchema,
+        }),
+      })
+      .parse(
+        await this.request(`/resources/reviewTask/${idSchema.parse(id)}`, signal ? { signal } : {}),
+      );
+    if (data.resource.resourceId !== id || data.resource.state.reviewId !== id)
+      throw new JawStackApiError("The API returned a different review.", {
+        code: "api.invalid_response",
+        status: 200,
+      });
+    return data.resource;
+  }
+  async activityPage(
+    type: "contentItem" | "reviewTask",
+    id: string,
+    input: { limit?: number; cursor?: string } = {},
+    signal?: AbortSignal,
+  ): Promise<ActivityPage> {
+    const params = new URLSearchParams(
+      Object.entries(pageInput.parse(input)).map(([key, value]) => [key, String(value)]),
+    );
+    const page = z
+      .object({ items: z.array(activityViewSchema), nextCursor: z.string().optional() })
+      .parse(
+        await this.request(
+          `/resources/${type}/${idSchema.parse(id)}/activity?${params}`,
+          signal ? { signal } : {},
+        ),
+      );
+    if (page.items.some((row) => row.resourceType !== type || row.resourceId !== id))
+      throw new JawStackApiError("The API returned different activity.", {
+        code: "api.invalid_response",
+        status: 200,
+      });
+    return page;
+  }
   async mutate<N extends CommandName>(
     name: N,
     input: CommandInput<N>,
@@ -161,9 +248,26 @@ export class ContentOperationsClient implements JawStackApiClient {
   async activity(
     resourceType: string,
     id: string,
-  ): Promise<{ items: ActivityRecord[]; nextCursor?: string }> {
+  ): Promise<{ items: ActivityRecord[]; nextCursor?: string | undefined }> {
     this.contentOnly(resourceType);
-    return this.request(`/resources/contentItem/${idSchema.parse(id)}/activity`);
+    const page = await this.activityPage("contentItem", id);
+    return {
+      ...page,
+      items: page.items.map(({ summary, data, actor, causationId, ...item }) => ({
+        ...item,
+        ...(summary === undefined ? {} : { summary }),
+        ...(data === undefined ? {} : { data }),
+        ...(causationId === undefined ? {} : { causationId }),
+        ...(actor === undefined
+          ? {}
+          : {
+              actor: {
+                subject: actor.subject,
+                ...(actor.displayName === undefined ? {} : { displayName: actor.displayName }),
+              },
+            }),
+      })),
+    };
   }
   async command<TInput, TOutput>(request: ExecuteCommandRequest<TInput>): Promise<TOutput> {
     this.contentOnly(request.resourceType);

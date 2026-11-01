@@ -2,13 +2,22 @@ import { Component, ElementRef, ViewChild, inject } from "@angular/core";
 import { Router, NavigationEnd, RouterLink, RouterLinkActive, RouterOutlet } from "@angular/router";
 import { takeUntilDestroyed } from "@angular/core/rxjs-interop";
 import { filter } from "rxjs";
-import { LucideFiles, LucideLayers } from "@lucide/angular";
+import { FormControl, ReactiveFormsModule } from "@angular/forms";
+import { LucideFiles, LucideLayers, LucideClipboardCheck } from "@lucide/angular";
 import { Workspace } from "./workspace";
 
 @Component({
   selector: "content-operations",
   standalone: true,
-  imports: [RouterLink, RouterLinkActive, RouterOutlet, LucideFiles, LucideLayers],
+  imports: [
+    RouterLink,
+    RouterLinkActive,
+    RouterOutlet,
+    LucideFiles,
+    LucideLayers,
+    LucideClipboardCheck,
+    ReactiveFormsModule,
+  ],
   template: `
     <a class="skip-link" href="#main">Skip to content</a>
     <div class="workspace">
@@ -25,6 +34,9 @@ import { Workspace } from "./workspace";
           <a routerLink="/content" routerLinkActive="active"
             ><svg lucideFiles aria-hidden="true"></svg>Content</a
           >
+          <a routerLink="/reviews" routerLinkActive="active"
+            ><svg lucideClipboardCheck aria-hidden="true"></svg>Reviews</a
+          >
         </nav>
         <div class="sidebar-footer">
           <span class="connection-dot"></span>{{ workspace.runtime()
@@ -35,11 +47,7 @@ import { Workspace } from "./workspace";
         <header class="topbar">
           <span class="workspace-name">JawStack <span>/</span> Editorial</span
           ><label class="identity"
-            >Identity<select
-              aria-label="Fixture identity"
-              [value]="workspace.fixture()"
-              (change)="changeFixture($event)"
-            >
+            >Identity<select aria-label="Fixture identity" [formControl]="identity">
               @for (identity of workspace.fixtures; track identity.subject) {
                 <option [value]="identity.subject">
                   {{ identity.displayName }} · {{ identity.roles[0] }}
@@ -55,8 +63,13 @@ import { Workspace } from "./workspace";
 })
 export class AppComponent {
   readonly workspace = inject(Workspace);
+  readonly identity = new FormControl(this.workspace.fixture(), { nonNullable: true });
   @ViewChild("mainRegion") main?: ElementRef<HTMLElement>;
   constructor() {
+    this.identity.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
+      if (!this.workspace.changeFixture(value))
+        this.identity.setValue(this.workspace.fixture(), { emitEvent: false });
+    });
     void this.workspace.client
       .request<{ runtime: string; processing: string }>("/health")
       .then((health) =>
@@ -76,9 +89,5 @@ export class AppComponent {
           queueMicrotask(() => this.main?.nativeElement.focus());
         }
       });
-  }
-  changeFixture(event: Event) {
-    const select = event.target as HTMLSelectElement;
-    if (!this.workspace.changeFixture(select.value)) select.value = this.workspace.fixture();
   }
 }

@@ -144,4 +144,47 @@ describe("application paging and filters", () => {
     ).rejects.toThrow();
     expect(spy).not.toHaveBeenCalled();
   });
+  it("bounds content-history post-filtering and binds its cursor to content and assignment", async () => {
+    const h = harness();
+    for (let n = 1; n <= 260; n++) {
+      const row = {
+        projectionName: "reviewTask.editor.editor_2",
+        itemId: uuid(n),
+        sort: `${instant}#${uuid(n)}`,
+        data: {
+          contentId: n === 250 ? uuid(900) : uuid(901),
+          title: "Historical review",
+          status: "approved",
+          assignedEditorId: "editor_2",
+          dueAt: instant,
+          sourceVersion: 3,
+        },
+      };
+      h.store.projections.set(
+        JSON.stringify(projectionKey({ ...row, resourceType: "reviewTask" })),
+        row,
+      );
+    }
+    const query = vi.spyOn(h.repository, "queryProjection");
+    const filters = { contentId: uuid(900), editorId: "editor_2", status: "approved", limit: 50 };
+    const first = await h.queries.reviews(fixtureAuth("editor_1"), filters);
+    expect(first.items).toEqual([]);
+    expect(first.nextCursor).toBeDefined();
+    expect(query.mock.calls.reduce((sum, [q]) => sum + q.limit!, 0)).toBe(200);
+    const next = await h.queries.reviews(fixtureAuth("editor_1"), {
+      ...filters,
+      cursor: first.nextCursor,
+    });
+    expect(next.items.map((row) => row.itemId)).toEqual([uuid(250)]);
+    await expect(
+      h.queries.reviews(fixtureAuth("editor_1"), {
+        ...filters,
+        contentId: uuid(901),
+        cursor: first.nextCursor,
+      }),
+    ).rejects.toMatchObject({ code: "query.invalid" });
+    await expect(
+      h.queries.reviews(fixtureAuth("editor_1"), { projectionName: "arbitrary" }),
+    ).rejects.toThrow();
+  });
 });
