@@ -239,7 +239,11 @@ pnpm verify:release
 ```
 
 `vitest.config.ts` includes only `test/unit/**/*.test.ts`. Playwright discovers only
-`test/browser/**/*.spec.ts` and owns separate seeded memory/Vite servers on 4437/4436.
+`test/browser/**/*.spec.ts`. Unit tests resolve JawStack public source entrypoints,
+including Angular, with aliases matching the app's TypeScript paths; they do not need a
+package build first. Compiled package exports and browser boundaries are independently
+checked by builds and isolated generated-app/package verification. Playwright
+owns separate seeded memory/Vite servers on 4437/4436.
 It refuses occupied ports, runs 1440x900 desktop and 390x844 mobile workflows, and gracefully
 stops its child servers. Optional `CONTENT_OPS_E2E_API_PORT` / `CONTENT_OPS_E2E_WEB_PORT`
 choose another explicit pair. This default memory suite does not use Docker, tokens, or AWS.

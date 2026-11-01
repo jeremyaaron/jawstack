@@ -31,6 +31,18 @@ const workflow = async (name: string) =>
   parse(await readFile(new URL(name, workflows), "utf8")) as Workflow;
 
 describe("browser and integration gate boundaries", () => {
+  it("resolves all declared JawStack source paths without prebuilt package output", async () => {
+    const configUrl = new URL("../../tsconfig.json", import.meta.url);
+    const config = JSON.parse(await readFile(configUrl, "utf8")) as {
+      compilerOptions: { paths: Record<string, string[]> };
+    };
+    for (const [name, paths] of Object.entries(config.compilerOptions.paths)) {
+      expect(paths).toHaveLength(1);
+      const source = fileURLToPath(new URL(paths[0]!, configUrl));
+      expect(source).toMatch(/[/\\]packages[/\\][^/\\]+[/\\]src[/\\]index\.ts$/);
+      expect(unitConfig.resolve?.alias).toMatchObject({ [name]: source });
+    }
+  });
   it("separates owned memory/local ports and rejects unsafe settings", () => {
     expect(unitConfig.test?.include).toEqual(["test/unit/**/*.test.ts"]);
     expect(browserSettings("memory")).toMatchObject({ apiPort: 4437, webPort: 4436 });
