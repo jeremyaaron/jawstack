@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": [],
+    "noEmit": false,
+    "declaration": false,
+    "paths": { "@jawstack/angular": ["../../packages/angular/src/index.ts"] }
+  },
+  "angularCompilerOptions": { "strictTemplates": true },
+  "include": ["src/web/**/*.ts", "src/shared/**/*.ts", "../../packages/angular/src/**/*.ts"]
+}

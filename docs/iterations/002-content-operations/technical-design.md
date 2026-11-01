@@ -1136,6 +1136,40 @@ management, accessible calendar/list alternatives, and fit checks at 1440x900 an
 Use a maintained Angular-compatible Lucide package for tool icons. Asset thumbnails come
 from actual uploads/seed assets; do not substitute decorative imagery for operational data.
 
+### Phase 15 Workbench Decisions
+
+The implemented browser entrypoint is `src/web/main.ts`; Vite compiles Angular with strict
+templates and an explicit emit-enabled browser tsconfig. The server/test tsconfig remains
+no-emit. Only `@jawstack/angular` is aliased, not the core runtime or a Node HTTP shim. The
+build rejects forbidden package and resolved-path imports in resolution/module loading and
+the final graph, requires actual workbench/editor/shared metadata, and writes
+`dist/web/browser-boundary.json`. The client/auth injection tokens resolve the same fixture
+workspace. Client content result types represent redacted HTTP DTOs, not raw storage state.
+
+`/content` implements list/board with URL title/status/author/view/limit/cursor, bounded
+load-more, empty continued pages, and loaded counts rather than totals. Returning from a
+detail preserves the query; view changes preserve already loaded rows. Active filters are
+validated before requests; identity changes reset fixture-bound continuations. Requests
+use abort signals and sequence fencing so stale responses cannot replace another view.
+
+`DraftEditor` owns reactive form/dirty/pending/conflict/intent state, separate from routing.
+Create/save validate shared inputs and preserve body bytes. An unchanged actor/target/input
+intent retains its idempotency key on ambiguous retries. A 409 does not adopt a new version
+or overwrite text; explicit comparison fetches a separate server value, and the user chooses
+server adoption or local retention on the displayed base. New concurrent edits can conflict
+again. Committed saves are recognized even if their follow-up strong read fails. Navigation,
+refresh, and fixture switching protect dirty forms; pending saves block leaving, and native
+unload warnings are enabled. The current phase treats other lifecycle states as read-only;
+review submission, snapshots/decisions, and activity follow in Phase 16.
+
+The shell uses one functional Content destination, a persisted fixed fixture selector,
+landmark focus on route changes, labeled controls, native tooltips, and selected standalone
+icons from [Lucide Angular](https://lucide.dev/guide/angular). No illustration substitutes
+for operational content. Playwright has separate seeded memory/Vite processes, refuses
+existing servers, owns teardown, and runs desktop/mobile screenshots and actual commands.
+It remains opt-in rather than joining unit discovery; a later phase owns dedicated CI jobs.
+The [workbench guide](../../../apps/content-operations/WORKBENCH.md) is the current run contract.
+
 ## LocalStack Lab and Infrastructure
 
 ### Compatibility Gate and Provisioning Choice

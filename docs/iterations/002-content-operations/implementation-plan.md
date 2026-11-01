@@ -1,7 +1,7 @@
 # Iteration 2 Implementation Plan: Content Operations
 
-Status: reviewed. Phases 0-14 are complete. Loopback HTTP workflows, bounded queries,
-private reads, explicit runtime/seed launchers, and workspace regressions passed. Phase 15 is next.
+Status: reviewed. Phases 0-15 are complete. Angular workbench/draft editing, browser-safe
+client/bundle, desktop/mobile memory browser tests, and workspace regressions passed. Phase 16 is next.
 
 ## Purpose
 
@@ -1230,6 +1230,59 @@ integration gate, documentation walkthrough, local links, and `git diff --check`
   tests/lint/build, zero pkg-guard findings, generated-app verification, and six package dry runs.
   No dependencies, public framework/template implementation, versions, workflows, real AWS
   resources, release, or commit changed. Angular screens/typed client remain Phase 15.
+
+### Phase 15: October 31, 2026
+
+- Added the Angular/Vite workbench at `/content`, `/content/new`, and `/content/:id`, with
+  real list/board data, URL-backed title/status/author/view/limit/cursor inputs, bounded
+  load-more continuation, explicit empty/loading/error states, loaded-row counts, and
+  fixture selection. View changes retain loaded pages; return links preserve filters;
+  stale requests are aborted/fenced. Only the functional Content destination is navigable.
+- Added the browser-safe `ContentOperationsClient` implementing relevant JawStack client
+  methods with typed content inputs/results and public shared command schemas. Fixed fixture
+  headers are resolved per request, errors preserve structured code/status/details/correlation,
+  raw invalid responses are not displayed, and network/abort failures remain distinguishable.
+  Angular's client/auth providers use the same workspace rather than generic subject headers.
+- Added reactive draft create/detail/edit with shared title/UTF-8 validation, live byte count,
+  server versions, owning-author/editor permissions, pending-save exclusion, and stable keys
+  for unchanged ambiguous retries. Conflicts retain local text and block saves until an
+  explicit latest comparison/server adoption/local retention. Navigation/refresh/fixture
+  changes protect dirty drafts; pending commands block leaving, native unload warnings apply.
+  Non-drafts are read-only; review submission/decisions intentionally remain Phase 16.
+- Added standalone Lucide icons, clear operational layout, keyboard labels/focus/skip link,
+  mobile list/board/editor arrangements, and long-title/button/document fit checks. No
+  decorative hero, fake totals, placeholder destinations, or simulated backend data was added.
+- Added isolated Playwright discovery/managed seeded memory API and Vite on 4437/4436, with
+  occupied-port refusal and graceful teardown. Six real desktop/mobile flows at 1440x900 and
+  390x844 cover browse/filter/page/view/create/save/reload, ownership/editor switching, real
+  concurrent conflicts/reconciliation, dirty navigation/identity guards, return URLs, and
+  invalid filters. List/board/editor/long-title screenshots were inspected; no browser-test
+  servers remained. Normal unit discovery remains restricted to `test/unit/**/*.test.ts`.
+  A concurrent-build stress run exposed cold Angular compilation exceeding the first
+  navigation's budget; readiness now waits for the transformed entrypoint (60-second
+  startup bound), and Vite caches are isolated by command/port. Trace inspection also showed
+  cold browser dependency optimization consuming about 25 seconds before the first full
+  walkthrough; that scenario has a 60-second bound, other scenarios retain 30 seconds, and
+  retries remain disabled. No assertion or API/runtime timeout was weakened.
+  All six scenarios also passed on fresh alternate-port caches (4447/4446); the first
+  desktop walkthrough took 23.2 seconds and the complete cold run took 54.2 seconds.
+- Added 11 unit/component/client/boundary tests (424 consumer/709 workspace total). Every
+  Vite build now rejects Node/core/server/domain/AWS/Smithy/CDK/shim imports at resolution and
+  in the compiled graph, requires actual screen/presentation modules, and emits browser
+  evidence under `dist/web/`. The initial empty-output build was caught and corrected by
+  disabling inherited `noEmit` for the Angular compilation only. Non-loopback CLI host
+  override was tested and rejected before bind. The build also retains all four lab ZIPs.
+- Added private consumer Angular/Vite/browser-test dependencies aligned with the existing
+  Angular 21.2.17 demo; pinned standalone Lucide/Playwright. Aligned consumer Vitest 4.1.9 with
+  Angular build peers. New browser artifacts are Git/Prettier ignored without dropping lab
+  exclusions. No public framework/template implementation, version, CI trigger, release,
+  or commit changed. Browser CI orchestration remains its planned later phase.
+- `pnpm verify:release` passed format/typecheck/tests/lint/build, zero pkg-guard findings,
+  isolated generated-app checks, and six package dry runs. `test:browser` passed all six
+  scenarios; local Markdown links and `git diff --check` passed. LocalStack was not started
+  or rerun for this browser-only phase; no new deployed-worker or real-AWS claim is made.
+  The seeded development API and web server remain available on loopback 4327/4326 for review.
+  See the [workbench guide](../../../apps/content-operations/WORKBENCH.md).
 
 For later phases, append the date, meaningful behavior delivered, commands/results,
 not-run checks, design changes, and remaining limitations. Do not replace observed

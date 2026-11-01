@@ -16,7 +16,9 @@ records, resumable collection, publication reconciliation, and bounded targeted 
 Phase 14 adds a loopback HTTP API, bounded application queries, private downloads/committed
 previews, deterministic seed, and explicit memory/LocalStack launchers. See the [API guide](API.md)
 for routes, identity, limits, and runnable examples. Consumer Lambda/queue/Scheduler deployment
-and Angular UI remain later work. The live
+remain later work. Phase 15 adds the [Angular workbench](WORKBENCH.md), typed fixture-aware
+client, list/board, URL filters/paging, and version-safe draft create/detail/editing. Review,
+attachment, calendar, and operations screens follow in their assigned phases. The live
 lab exercises the separate event spine and shared consumer protocols on real local S3/DynamoDB.
 
 ## Credential-Free Checks
@@ -34,7 +36,8 @@ pnpm --filter content-operations run build
 ```
 
 These commands do not start Docker, load the token file, resolve AWS credentials, or
-connect to any AWS service. The build creates bundled Node 22 `spine.zip`, `publication.zip`, `jobs.zip`, and `recovery.zip`
+connect to any AWS service. The build creates a guarded browser bundle under `dist/web/`
+and bundled Node 22 `spine.zip`, `publication.zip`, `jobs.zip`, and `recovery.zip`
 Lambda archives under `dist/`; only the spine is provisioned by the current lab.
 Build the workspace once so the harness can bundle installed public package entrypoints.
 Unit tests are explicitly restricted to `test/unit/**/*.test.ts`; live integration is a

@@ -1,7 +1,7 @@
 # Iteration 2: Content Operations
 
-Status: Phases 0-14 complete. Loopback HTTP workflows, bounded queries, private reads,
-explicit runtime/seed launchers, and workspace regressions passed. Phase 15 is next.
+Status: Phases 0-15 complete. Angular workbench/draft editing, browser-safe client/bundle,
+desktop/mobile memory browser tests, and workspace regressions passed. Phase 16 is next.
 
 ## Documents
 
@@ -28,9 +28,9 @@ ownership-safe reset/reprovisioning; production-parity exclusions are recorded e
 The [consumer README](../../../apps/content-operations/README.md) describes the current
 harness and headless editorial domain. Shared handlers and an explicit memory pump now
 materialize related resources and deliver notifications; live consumer transport
-orchestration and editorial screens remain unimplemented.
+orchestration and later editorial screens remain unimplemented.
 Angular components now accept browser-safe presentation definitions and the fetch client
-exposes structured API errors; these contracts do not implement the editorial screens.
+exposes structured API errors. Phase 15 consumes these contracts in the workbench/editor.
 Named CDK worker/scheduler bindings now support application-owned grants and DLQ collectors
 without construct-tree inspection. The consumer now supports draft/review/approval decisions
 through public core commands with invocation-scoped memory/DynamoDB dispatch, logical
@@ -70,4 +70,13 @@ uploads/downloads, and verified committed publication previews. Explicit memory 
 managed handlers/jobs; explicit LocalStack mode checks owned DynamoDB/private S3 and does not
 substitute host calls for undeployed consumer workers. The deterministic seed preserves
 existing edits. HTTP-only workflow, transport/security/limits, query-budget, shutdown, and
-live HTTP service-boundary checks pass. Angular workbench/client implementation is Phase 15.
+live HTTP service-boundary checks pass.
+
+Phase 15 adds the [Angular workbench](../../../apps/content-operations/WORKBENCH.md): real
+content list/board, URL status/title/author filters, bounded continuation, fixture selection,
+create/detail and reactive draft forms, structured version-conflict comparison, and explicit
+unsaved-change guards. Client requests use the fixed fixture header, public shared schemas,
+and stable intent keys on ambiguous retries. Vite checks the actual browser module graph
+without a Node shim or server/AWS imports. Isolated Playwright servers exercise desktop/
+mobile memory workflows and produce screenshots without touching the development dataset.
+The next phase implements review submission, snapshots/decisions, and paged activity.

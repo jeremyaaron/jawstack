@@ -1,7 +1,8 @@
 # Content Operations API
 
 Local development ingress for the private reference consumer, not production authentication
-or a published framework API. Angular screens and their typed client follow in Phase 15.
+or a published framework API. The [Angular workbench and typed client](WORKBENCH.md) now
+provide content browsing and version-safe draft editing.
 
 ## Start and Seed
 
@@ -56,8 +57,9 @@ pnpm --filter content-operations run seed --runtime memory --port 4337
 pnpm --filter content-operations run dev:api:local --lab dev --port 4337 --web-port 4336
 ```
 
-No frontend server exists yet. The web port reserves the future same-origin proxy's exact
-Host/Origin. Settings may also use `CONTENT_OPS_API_PORT`, `CONTENT_OPS_WEB_PORT`, and
+`pnpm --filter content-operations run dev:web` starts the workbench on 4326 with a same-origin
+API proxy. The configured web port is its exact allowed Host/Origin. Settings may also use
+`CONTENT_OPS_API_PORT`, `CONTENT_OPS_WEB_PORT`, and
 `CONTENT_OPS_LAB_ID`; the launchers still select `memory` or `localstack` explicitly.
 
 ## Identity and Envelopes
