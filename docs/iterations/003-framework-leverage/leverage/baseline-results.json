@@ -1,0 +1,168 @@
+{
+  "schemaVersion": 1,
+  "status": "baseline-observations-reviewed",
+  "reviewedOn": "2026-11-01",
+  "scope": "Sanitized baseline observations only; no post-extraction evidence or productivity verdict.",
+  "checkoutCommit": "3e11f152113cafe5411dbe5a2d112821047b7538",
+  "frozenRuntimeCommit": "ae3268551bdda01592c6bdc08a76954e6eb1e02e",
+  "frozenBaselineSha256": "3a2f24dcff65b877291944730b68016879285d45f955b0b427fa22a196f8537c",
+  "interSessionOverlapMs": 155000,
+  "model": {
+    "label": "GPT-6.1 Sol",
+    "reasoningSetting": "High",
+    "source": "Both session records and the user's explicit confirmation; not independent hidden-model telemetry.",
+    "coordinatorModel": "User reports the same selection for the coordinator chat.",
+    "clientVersion": "unavailable",
+    "tokens": null
+  },
+  "tools": {
+    "node": "v24.16.0",
+    "pnpm": "10.21.0",
+    "commonUsedCapabilities": ["shell", "filesystem", "apply_patch", "visible timing"],
+    "agentsAutomaticallySpawned": false,
+    "externalServicesUsed": false
+  },
+  "sessions": [
+    {
+      "task": "a",
+      "result": "passed",
+      "startedAt": "2026-11-01T21:05:49Z",
+      "endedAt": "2026-11-01T21:09:10Z",
+      "reportedActiveElapsedMs": 201000,
+      "excludedInstallWaitMs": 0,
+      "withinDeclaredBudget": true,
+      "correctionRounds": 1,
+      "neutralAcceptancePassed": 4,
+      "appTestsPassed": 512,
+      "typecheck": "passed after one adapter correction",
+      "lint": "passed",
+      "changedFiles": 3,
+      "changedRuntimeFiles": 2,
+      "modifiedExistingRuntimeFiles": 1,
+      "newRuntimeFiles": 1,
+      "newTestAdapterPhysicalLines": 158,
+      "existingRuntimePhysicalDiff": { "added": 12, "deleted": 2 },
+      "wholeChangedRuntimeTokenLineNetGrowth": 58,
+      "frameworkPackageEdits": false,
+      "frozenInputsUnchanged": true,
+      "recordedSourceHashesMatchRetainedFiles": true,
+      "patchReverseCheck": "passed without applying",
+      "sessionRecordSha256": "dd3b8002e9bdaabc7741e1e4b28c4439b18bf03e26261fe3232196d4fc478d06",
+      "featurePatchSha256": "e90a9813292a4583a319d37a12d910dcee67872de3fcf8688d3cd2b2a26efdaf",
+      "runtimeTokenLines": [
+        {
+          "path": "apps/content-operations/src/application/persistence.ts",
+          "before": 137,
+          "after": 147
+        },
+        {
+          "path": "apps/content-operations/src/application/approval-receipt.ts",
+          "before": 0,
+          "after": 48
+        }
+      ],
+      "integrationClassification": "One existing app planner/record-registration surface; new helper is domain receipt validation/construction. Existing memory/Dynamo atomic auxiliary mechanics were reused.",
+      "retainedWorktree": "../jawstack-leverage-baseline-a",
+      "rawSessionRecord": "docs/iterations/003-framework-leverage/leverage/raw/baseline-a-session.json",
+      "rawFeaturePatch": "docs/iterations/003-framework-leverage/leverage/raw/baseline-a-feature.patch"
+    },
+    {
+      "task": "b",
+      "result": "passed",
+      "startedAt": "2026-11-01T21:06:35Z",
+      "endedAt": "2026-11-01T21:12:25Z",
+      "reportedActiveElapsedMs": 350000,
+      "excludedInstallWaitMs": 0,
+      "withinDeclaredBudget": true,
+      "correctionRounds": 3,
+      "neutralAcceptancePassed": 4,
+      "appTestsPassed": 518,
+      "typecheck": "passed after recorded metadata/adapter/test corrections",
+      "lint": "passed",
+      "changedFiles": 15,
+      "changedRuntimeFiles": 10,
+      "modifiedExistingRuntimeFiles": 7,
+      "newRuntimeFiles": 3,
+      "newTestAdapterPhysicalLines": 235,
+      "existingRuntimePhysicalDiff": { "added": 43, "deleted": 8 },
+      "wholeChangedRuntimeTokenLineNetGrowth": 199,
+      "frameworkPackageEdits": false,
+      "frozenInputsUnchanged": true,
+      "recordedSourceHashesMatchRetainedFiles": true,
+      "patchReverseCheck": "passed without applying",
+      "sessionRecordSha256": "5ffdfaa3e81dcceb6aece94574b299b2f838b63a4eaec7277dcc951508e3b1eb",
+      "featurePatchSha256": "d568dc6efac8d14dfcbf87a2d2197539471eb93e741368f6a44c4c8fd8e2d93d",
+      "runtimeTokenLines": [
+        {
+          "path": "apps/content-operations/src/application/workers.ts",
+          "before": 160,
+          "after": 174
+        },
+        { "path": "apps/content-operations/src/aws/delivery.ts", "before": 72, "after": 73 },
+        { "path": "apps/content-operations/src/domain/resources.ts", "before": 776, "after": 778 },
+        {
+          "path": "apps/content-operations/src/domain/subscriptions.ts",
+          "before": 44,
+          "after": 50
+        },
+        { "path": "apps/content-operations/src/shared/contracts.ts", "before": 613, "after": 615 },
+        { "path": "apps/content-operations/src/shared/events.ts", "before": 105, "after": 114 },
+        {
+          "path": "apps/content-operations/src/shared/operation-views.ts",
+          "before": 95,
+          "after": 96
+        },
+        {
+          "path": "apps/content-operations/src/application/publication-receipts.ts",
+          "before": 0,
+          "after": 86
+        },
+        {
+          "path": "apps/content-operations/src/domain/publication-receipt-resource.ts",
+          "before": 0,
+          "after": 63
+        },
+        {
+          "path": "apps/content-operations/src/shared/publication-receipts.ts",
+          "before": 0,
+          "after": 15
+        }
+      ],
+      "integrationClassification": "Seven existing runtime registration/validation/dispatch surfaces, plus domain resource/schema and a mixed domain/business-deduplication/dispatch helper. Three existing composition-test files changed; six focused domain tests were added. No new generic SDK transaction, collector or replay algorithm.",
+      "retainedWorktree": "../jawstack-leverage-baseline-b",
+      "rawSessionRecord": "docs/iterations/003-framework-leverage/leverage/raw/baseline-b-session.json",
+      "rawFeaturePatch": "docs/iterations/003-framework-leverage/leverage/raw/baseline-b.patch"
+    }
+  ],
+  "coordinatorVerification": {
+    "neutralAcceptance": { "a": "4/4 passed", "b": "4/4 passed" },
+    "appTests": { "a": "512/512 passed; 36 files", "b": "518/518 passed; 37 files" },
+    "typecheck": { "a": "passed", "b": "passed" },
+    "lint": { "a": "passed", "b": "passed" },
+    "trackedWhitespace": { "a": "passed", "b": "passed" },
+    "allFrozenInputHashes": { "a": "matched", "b": "matched" },
+    "savedPatchHashes": { "a": "matched", "b": "matched" },
+    "recordedSourceFileHashes": { "a": "matched", "b": "matched" },
+    "savedPatchReverseChecks": { "a": "passed", "b": "passed" },
+    "recordedHeadUnchanged": true,
+    "stagedChanges": false,
+    "rawRecordsAndImplementationsEditedDuringReview": false,
+    "timingOfTheseChecks": "Independent coordinator reruns after both recorded attempts; excluded from neither agent's interval and not retroactively added to it."
+  },
+  "limitations": [
+    "Timed intervals overlap by 155000 ms, contrary to the requested sequential setup; possible shared-machine contention. Preserve as a confounder, do not subtract it or rerun to select favorable times.",
+    "Reported intervals begin after settings agreement and initial packet reading; these are not complete client-session or total task-effort telemetry. Whole-second precision only.",
+    "Dependencies/preflight were prepared by the coordinator outside both timers. Use equivalent post setup and disclose it.",
+    "Tokens, exact client version and per-category durations are unavailable. Source inspection requirements/correction rounds are observations, not inferred thinking time.",
+    "Whole-file token-line net growth includes domain code and configuration, is not changed-line churn, and is not the frozen 1589-line protocol retirement metric. Physical diff counts include formatting/type/registration changes.",
+    "Functional evidence uses memory and narrow transactional/marker SDK doubles; normal AWS composition is tested by declarations/synthesis, not live deployment.",
+    "Only baseline A/B are complete. Functional/structural/post-exercise criteria and any reduced-integration claim remain pending."
+  ],
+  "gate": {
+    "baselineObservations": "accepted for functional and generic-integration comparison with explicit timing limitations",
+    "phase1Prerequisite": "cleared",
+    "phase1ImplementedAtBaselineReview": false,
+    "postExercises": "not run",
+    "leverageVerdict": "not established"
+  }
+}

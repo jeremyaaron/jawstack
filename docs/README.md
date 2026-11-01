@@ -35,8 +35,8 @@ are planning identifiers, not framework versions.
 - [Iteration 2: Content Operations](iterations/002-content-operations/README.md): plans,
   [acceptance outcome](iterations/002-content-operations/outcome.md), and observed local evidence.
 - [Iteration 3: Framework Leverage](iterations/003-framework-leverage/README.md): reviewed
-  plan and completed baseline/measurement tooling; fresh baseline exercises precede
-  implementation of shared command/worker capabilities and measured agent leverage.
+  baselines and typed record/commit-plan primitives; scoped execution, storage, consumer
+  migration and post-extraction leverage evidence remain planned.
 
 ## Internal Notes
 

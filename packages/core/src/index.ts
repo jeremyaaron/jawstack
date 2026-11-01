@@ -2,6 +2,26 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 
 import { z } from "zod";
 
+export { defineAtomicRecord } from "./workflow/records";
+export type {
+  AtomicRecordDefinition,
+  AtomicRecordCreate,
+  AtomicRecordOwner,
+} from "./workflow/records";
+export { createWorkflowCommitPlanner } from "./workflow/commit-plan";
+export type {
+  WorkflowCommitPlan,
+  WorkflowCommitWrite,
+  WorkflowCommitContributor,
+  WorkflowCommitPlanner,
+  WorkflowCommitStore,
+  WorkflowCommandInvocation,
+} from "./workflow/commit-plan";
+export { workflowRecordKeys } from "./workflow/keys";
+export type { WorkflowRecordKey, WorkflowCommandScope } from "./workflow/keys";
+export { workflowCommitLimits } from "./workflow/validation";
+export type { WorkflowReadonly } from "./workflow/validation";
+
 export const packageName = "@jawstack/core";
 
 const NAME_PATTERN = /^[a-z][A-Za-z0-9]*$/;

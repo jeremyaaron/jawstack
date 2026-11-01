@@ -77,3 +77,73 @@ same normalization and version-1 cursor validation used by memory. They return t
 query scope. Adapters reconstruct their own known partition rather than accepting a raw
 database request from a caller. These helpers use native Web Crypto for SHA-256; the
 existing version-1 cursor format and fingerprints remain compatible.
+
+## Atomic Record Definitions
+
+`defineAtomicRecord` declares a typed, create-only auxiliary record. It does not write
+or change existing resource/persistence behavior. Collection names are bounded and may
+not use framework-reserved namespaces. Schemas must be Zod object schemas; registration
+enforces strict unknown-field handling, and schemas must be stable under revalidation.
+
+```ts
+import { z } from "zod";
+import { defineAtomicRecord } from "@jawstack/core";
+
+const receipt = defineAtomicRecord({
+  name: "approvalReceipt",
+  schema: z.strictObject({ contentId: z.string(), reviewId: z.string() }),
+  key: (value) => `${value.contentId}#${value.reviewId}`,
+  owner: (value) => ({ resourceType: "contentItem", resourceId: value.contentId }),
+});
+
+const contribution = receipt.create({ contentId: "content_1", reviewId: "review_1" });
+```
+
+Contributions are opaque, detached and tied to the exact registered definition. Casting,
+copying or JSON roundtripping does not create a valid contribution. The planner rechecks
+schema, UTF-8 key (1-1,024 bytes) and owner against the command root. Values are finite
+plain JSON, not dates, binary values, custom prototypes, accessors, sparse arrays or
+functions. `PK`, `SK`, `itemKind` and `tenantId` cannot be top-level record data. Key/owner
+functions must be pure; they receive frozen data, not runtime clients.
+
+## Workflow Adapter Contract
+
+`createWorkflowCommitPlanner` is a **backend adapter-author API**, not a command endpoint,
+raw transaction builder or a ready-made workflow runtime. Memory/Dynamo workflow execution
+and the higher-level application composition are not implemented by this planner. Existing
+executors, repositories and transaction builders retain their defaults.
+
+Configure `workflowName`, expected event `source`, explicit `idempotencyTtlSeconds` (1
+through 604,800), optional `records`, optional `maxActions` (1-60), and an optional pure
+`contribute({ invocation, commit })`. The invocation supplies captured
+`{ scope: { resourceType, commandName, subject }, now }`, with a canonical UTC ISO instant.
+The contribution hook receives detached recursively frozen core commit data and returns
+only registered `records` and additional `projections`. It must be synchronous; the
+contract does not sandbox side effects performed by application closures.
+
+`planner.plan(invocation, coreCommit)` validates a successful scoped core commit and
+produces an immutable opaque `WorkflowCommitPlan`. It resolves known key families,
+coalesces identical projection puts/exact delete-put pairs (put wins), and rejects other
+physical collisions. It preserves core response/fingerprint data and event property order.
+Create/update versions, actor/time/target/source and response metadata must agree; tenant
+metadata and command-authored recovery delivery metadata are unsupported.
+
+`WorkflowCommitStore.commit(plan)` is the minimal storage interface for adapters. Before
+effects, an implementation must use its **bound** `planner.validate(plan)`: plans from a
+different planner, plain objects, casts and cloned/deserialized plans reject. This producer
+identity is not an authorization system or protection from arbitrary trusted backend code.
+Do not expose a store/planner as a public HTTP write API.
+
+Actions carry backend-neutral `partition`/`sort` identities from `workflowRecordKeys`,
+not SDK requests. Primary writes require absence or exact version; activity, outbox and
+auxiliary creates require absence, including when a row already exists in storage.
+Scoped idempotency requires absence or logical expiry at the captured instant. Adapters
+must enforce every condition atomically, classify idempotency versus other conflicts,
+and never split the plan into separate commits. No new storage adapter is shipped here.
+
+`workflowCommitLimits` exposes the shared bounds: 60 normalized actions, 192 KiB per
+logical action, 64 KiB per auxiliary action (including key/owner metadata), 1 MiB for the
+normalized plan, depth 16 and 10,000 JSON nodes. Detached input admission also bounds JSON
+work/bytes before normalization. Limits are checked before storage; duplicate coalescing
+cannot bypass record limits. Service compilers must still check their encoded request
+limits. These opt-in rules do not change legacy APIs or provision stores/queues/collectors.

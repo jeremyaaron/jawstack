@@ -1,8 +1,8 @@
 # Iteration 3 Implementation Plan: Framework Leverage
 
-Status: reviewed; Phase 0 complete. Phases 1-14 and the four coordinated
-fresh-session exercises have not started. Baseline A/B remain required before Phase 1.
-Based on the [PRD](prd.md) and
+Status: reviewed; Phase 0 and baseline A/B are complete. The
+[baseline review](baseline-review.md) clears the prerequisite with explicit timing
+qualifications. Phase 1 is complete; Phases 2-14 and post A/B have not started. Based on the [PRD](prd.md) and
 [technical design](technical-design.md); see [Phase 0 evidence](phase-0-evidence.md).
 
 ## Purpose
@@ -146,7 +146,7 @@ Planning approval does not authorize remote environment changes, secret setup or
 | Phase | Primary Owner              | Deliverable                                                     | Status   |
 | ----- | -------------------------- | --------------------------------------------------------------- | -------- |
 | 0     | Measurement/tooling        | Frozen inventory, golden fixtures and baseline exercise packets | Complete |
-| 1     | Core                       | Typed records and normalized adapter-neutral commit plans       | Planned  |
+| 1     | Core                       | Typed records and normalized adapter-neutral commit plans       | Complete |
 | 2     | Core                       | Scoped command execution and atomic memory persistence          | Planned  |
 | 3     | Core                       | Durable failure collection, inspection and replay decisions     | Planned  |
 | 4     | Core                       | Validated delivery, bounded memory pump and public composition  | Planned  |
@@ -640,7 +640,8 @@ affected live/browser/exercise reruns. Verify clean teardown and reviewable git 
 ## Evidence Recording
 
 Phase 0 observations are recorded in [its evidence log](phase-0-evidence.md) and the
-[measurement packet](leverage/README.md). Later phase evidence is not asserted. Update
+[measurement packet](leverage/README.md); [Phase 1 evidence](phase-1-evidence.md) records
+typed records/plan verification and growth. Later phase evidence is not asserted. Update
 individual phase statuses and append dated observations rather than marking every row
 complete at the end. For each phase record:
 

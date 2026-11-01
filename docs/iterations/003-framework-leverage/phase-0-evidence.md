@@ -1,7 +1,9 @@
 # Phase 0 Evidence: Frozen Baseline and Exercise Packets
 
-Status: Phase 0 complete. Baseline inputs/packets are frozen and fresh baseline/candidate
-release gates passed. Baseline A/B have not run and Phase 1 is not authorized.
+Status: historical Phase 0 evidence. Baseline inputs/packets are frozen and fresh baseline/
+candidate release gates passed. At Phase 0 completion baseline A/B had not run; the later
+[baseline review](baseline-review.md) now clears that prerequisite. Observations below
+remain the Phase 0 record, not a claim that the later exercises ran during Phase 0.
 
 ## Source and Deliverables
 

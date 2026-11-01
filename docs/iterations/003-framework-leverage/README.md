@@ -1,7 +1,7 @@
 # Iteration 3: Framework Leverage
 
-Status: Phase 0 complete; framework extraction has not started.
-Fresh-session baseline A/B exercises and their review are required before Phase 1.
+Status: Phases 0-1 and the reviewed baseline A/B gate are complete. Phases 2-14 remain planned.
+Baseline timings have explicit qualifications; post-extraction leverage is not yet established.
 
 ## Documents
 
@@ -10,6 +10,9 @@ Fresh-session baseline A/B exercises and their review are required before Phase 
 - [Implementation Plan](implementation-plan.md)
 - [Measurement Packet and Session Handoff](leverage/README.md)
 - [Phase 0 Evidence](phase-0-evidence.md)
+- [Prepared Baseline Worktrees and Fresh-Session Handoffs](baseline-session-handoffs.md)
+- [Baseline Exercise Review](baseline-review.md)
+- [Phase 1 Evidence](phase-1-evidence.md)
 
 ## Intended Outcome
 
