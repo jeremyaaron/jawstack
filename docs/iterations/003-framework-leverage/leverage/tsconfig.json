@@ -1,0 +1,4 @@
+{
+  "extends": "../../../../apps/content-operations/tsconfig.json",
+  "include": ["*.ts"]
+}

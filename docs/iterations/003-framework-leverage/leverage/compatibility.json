@@ -1,0 +1,1030 @@
+{
+  "fixtureVersion": 1,
+  "commandInput": {
+    "resource": {
+      "resourceType": "contentItem",
+      "resourceId": "00000000-0000-4000-8000-000000000901",
+      "create": true,
+      "next": {
+        "resourceType": "contentItem",
+        "resourceId": "00000000-0000-4000-8000-000000000901",
+        "version": 1,
+        "state": {
+          "title": "Fixture"
+        },
+        "createdAt": "2026-11-01T12:00:00.000Z",
+        "updatedAt": "2026-11-01T12:00:00.000Z",
+        "createdBy": "author_1",
+        "updatedBy": "author_1"
+      }
+    },
+    "activity": [
+      {
+        "activityId": "activity-1",
+        "resourceType": "contentItem",
+        "resourceId": "00000000-0000-4000-8000-000000000901",
+        "activityType": "created",
+        "title": "Created",
+        "correlationId": "correlation-1",
+        "occurredAt": "2026-11-01T12:00:00.000Z"
+      }
+    ],
+    "outbox": [
+      {
+        "envelopeVersion": 1,
+        "eventId": "event-review-1",
+        "eventType": "contentItem.reviewRequested",
+        "schemaVersion": 1,
+        "source": "content-operations",
+        "resourceType": "contentItem",
+        "resourceId": "00000000-0000-4000-8000-000000000901",
+        "correlationId": "correlation-1",
+        "occurredAt": "2026-11-01T12:00:00.000Z",
+        "payload": {
+          "reviewId": "00000000-0000-4000-8000-000000000904",
+          "contentId": "00000000-0000-4000-8000-000000000901",
+          "assignedEditorId": "editor_1",
+          "dueAt": "2026-11-02T12:00:00.000Z",
+          "lastReminderDay": null,
+          "submitted": {
+            "contentId": "00000000-0000-4000-8000-000000000901",
+            "revisionId": "00000000-0000-4000-8000-000000000905",
+            "authorId": "author_1",
+            "title": "Frozen compatibility",
+            "body": "Fixture body",
+            "attachments": [],
+            "submittedAt": "2026-11-01T12:00:00.000Z"
+          },
+          "status": "pending",
+          "sourceVersion": 2,
+          "decision": null
+        },
+        "actor": {
+          "subject": "author_1",
+          "displayName": "Author One"
+        },
+        "causationId": "request-1"
+      }
+    ],
+    "projections": [
+      {
+        "projectionName": "contentItem.list",
+        "itemId": "00000000-0000-4000-8000-000000000901",
+        "sort": "2026-11-01T12:00:00.000Z",
+        "data": {
+          "title": "Fixture"
+        }
+      }
+    ],
+    "response": {
+      "fixture": true
+    },
+    "idempotency": {
+      "key": "fixture-key",
+      "fingerprint": "fixture-fingerprint",
+      "response": {
+        "ok": true,
+        "data": {
+          "fixture": true
+        },
+        "meta": {
+          "requestId": "request-1",
+          "correlationId": "correlation-1"
+        }
+      }
+    }
+  },
+  "transaction": [
+    {
+      "Put": {
+        "TableName": "compatibility-table",
+        "Item": {
+          "PK": {
+            "S": "RES#contentItem#00000000-0000-4000-8000-000000000901"
+          },
+          "SK": {
+            "S": "STATE"
+          },
+          "itemKind": {
+            "S": "RESOURCE_STATE"
+          },
+          "resourceType": {
+            "S": "contentItem"
+          },
+          "resourceId": {
+            "S": "00000000-0000-4000-8000-000000000901"
+          },
+          "version": {
+            "N": "1"
+          },
+          "state": {
+            "M": {
+              "title": {
+                "S": "Fixture"
+              }
+            }
+          },
+          "createdAt": {
+            "S": "2026-11-01T12:00:00.000Z"
+          },
+          "updatedAt": {
+            "S": "2026-11-01T12:00:00.000Z"
+          },
+          "createdBy": {
+            "S": "author_1"
+          },
+          "updatedBy": {
+            "S": "author_1"
+          }
+        },
+        "ConditionExpression": "attribute_not_exists(PK)"
+      }
+    },
+    {
+      "Put": {
+        "TableName": "compatibility-table",
+        "Item": {
+          "PK": {
+            "S": "RES#contentItem#00000000-0000-4000-8000-000000000901"
+          },
+          "SK": {
+            "S": "ACT#2026-11-01T12:00:00.000Z#activity-1"
+          },
+          "itemKind": {
+            "S": "ACTIVITY"
+          },
+          "activityId": {
+            "S": "activity-1"
+          },
+          "resourceType": {
+            "S": "contentItem"
+          },
+          "resourceId": {
+            "S": "00000000-0000-4000-8000-000000000901"
+          },
+          "activityType": {
+            "S": "created"
+          },
+          "title": {
+            "S": "Created"
+          },
+          "correlationId": {
+            "S": "correlation-1"
+          },
+          "occurredAt": {
+            "S": "2026-11-01T12:00:00.000Z"
+          }
+        }
+      }
+    },
+    {
+      "Put": {
+        "TableName": "compatibility-table",
+        "Item": {
+          "PK": {
+            "S": "OUTBOX#event-review-1"
+          },
+          "SK": {
+            "S": "EVENT"
+          },
+          "GSI1PK": {
+            "S": "OUTBOX#PENDING"
+          },
+          "GSI1SK": {
+            "S": "2026-11-01T12:00:00.000Z#event-review-1"
+          },
+          "itemKind": {
+            "S": "OUTBOX_EVENT"
+          },
+          "eventId": {
+            "S": "event-review-1"
+          },
+          "status": {
+            "S": "PENDING"
+          },
+          "event": {
+            "M": {
+              "envelopeVersion": {
+                "N": "1"
+              },
+              "eventId": {
+                "S": "event-review-1"
+              },
+              "eventType": {
+                "S": "contentItem.reviewRequested"
+              },
+              "schemaVersion": {
+                "N": "1"
+              },
+              "source": {
+                "S": "content-operations"
+              },
+              "resourceType": {
+                "S": "contentItem"
+              },
+              "resourceId": {
+                "S": "00000000-0000-4000-8000-000000000901"
+              },
+              "correlationId": {
+                "S": "correlation-1"
+              },
+              "occurredAt": {
+                "S": "2026-11-01T12:00:00.000Z"
+              },
+              "payload": {
+                "M": {
+                  "reviewId": {
+                    "S": "00000000-0000-4000-8000-000000000904"
+                  },
+                  "contentId": {
+                    "S": "00000000-0000-4000-8000-000000000901"
+                  },
+                  "assignedEditorId": {
+                    "S": "editor_1"
+                  },
+                  "dueAt": {
+                    "S": "2026-11-02T12:00:00.000Z"
+                  },
+                  "lastReminderDay": {
+                    "NULL": true
+                  },
+                  "submitted": {
+                    "M": {
+                      "contentId": {
+                        "S": "00000000-0000-4000-8000-000000000901"
+                      },
+                      "revisionId": {
+                        "S": "00000000-0000-4000-8000-000000000905"
+                      },
+                      "authorId": {
+                        "S": "author_1"
+                      },
+                      "title": {
+                        "S": "Frozen compatibility"
+                      },
+                      "body": {
+                        "S": "Fixture body"
+                      },
+                      "attachments": {
+                        "L": []
+                      },
+                      "submittedAt": {
+                        "S": "2026-11-01T12:00:00.000Z"
+                      }
+                    }
+                  },
+                  "status": {
+                    "S": "pending"
+                  },
+                  "sourceVersion": {
+                    "N": "2"
+                  },
+                  "decision": {
+                    "NULL": true
+                  }
+                }
+              },
+              "actor": {
+                "M": {
+                  "subject": {
+                    "S": "author_1"
+                  },
+                  "displayName": {
+                    "S": "Author One"
+                  }
+                }
+              },
+              "causationId": {
+                "S": "request-1"
+              }
+            }
+          },
+          "attempts": {
+            "N": "0"
+          },
+          "createdAt": {
+            "S": "2026-11-01T12:00:00.000Z"
+          },
+          "updatedAt": {
+            "S": "2026-11-01T12:00:00.000Z"
+          }
+        }
+      }
+    },
+    {
+      "Put": {
+        "TableName": "compatibility-table",
+        "Item": {
+          "PK": {
+            "S": "PROJ#contentItem#list"
+          },
+          "SK": {
+            "S": "2026-11-01T12:00:00.000Z#00000000-0000-4000-8000-000000000901"
+          },
+          "itemKind": {
+            "S": "PROJECTION_ITEM"
+          },
+          "resourceType": {
+            "S": "contentItem"
+          },
+          "projectionName": {
+            "S": "contentItem.list"
+          },
+          "itemId": {
+            "S": "00000000-0000-4000-8000-000000000901"
+          },
+          "sort": {
+            "S": "2026-11-01T12:00:00.000Z#00000000-0000-4000-8000-000000000901"
+          },
+          "data": {
+            "M": {
+              "title": {
+                "S": "Fixture"
+              }
+            }
+          },
+          "resourceId": {
+            "S": "00000000-0000-4000-8000-000000000901"
+          },
+          "updatedAt": {
+            "S": "2026-11-01T12:00:00.000Z"
+          }
+        }
+      }
+    },
+    {
+      "Put": {
+        "TableName": "compatibility-table",
+        "Item": {
+          "PK": {
+            "S": "IDEMP#contentItem#create#author_1"
+          },
+          "SK": {
+            "S": "fixture-key"
+          },
+          "itemKind": {
+            "S": "IDEMPOTENCY_RECORD"
+          },
+          "resourceType": {
+            "S": "contentItem"
+          },
+          "commandName": {
+            "S": "create"
+          },
+          "subject": {
+            "S": "author_1"
+          },
+          "idempotencyKey": {
+            "S": "fixture-key"
+          },
+          "payloadHash": {
+            "S": "fixture-fingerprint"
+          },
+          "resourceId": {
+            "S": "00000000-0000-4000-8000-000000000901"
+          },
+          "response": {
+            "M": {
+              "ok": {
+                "BOOL": true
+              },
+              "data": {
+                "M": {
+                  "fixture": {
+                    "BOOL": true
+                  }
+                }
+              },
+              "meta": {
+                "M": {
+                  "requestId": {
+                    "S": "request-1"
+                  },
+                  "correlationId": {
+                    "S": "correlation-1"
+                  }
+                }
+              }
+            }
+          },
+          "statusCode": {
+            "N": "200"
+          },
+          "createdAt": {
+            "S": "2026-11-01T12:00:00.000Z"
+          },
+          "expiresAt": {
+            "N": "1794139200"
+          }
+        },
+        "ConditionExpression": "attribute_not_exists(PK) OR expiresAt <= :now",
+        "ExpressionAttributeValues": {
+          ":now": {
+            "N": "1793534400"
+          }
+        }
+      }
+    },
+    {
+      "Put": {
+        "TableName": "compatibility-table",
+        "Item": {
+          "PK": {
+            "S": "OPS#commandReceipt"
+          },
+          "SK": {
+            "S": "contentItem#00000000-0000-4000-8000-000000000901#1"
+          },
+          "itemKind": {
+            "S": "APP_OPERATION"
+          },
+          "kind": {
+            "S": "commandReceipt"
+          },
+          "resourceType": {
+            "S": "contentItem"
+          },
+          "resourceId": {
+            "S": "00000000-0000-4000-8000-000000000901"
+          },
+          "commandName": {
+            "S": "create"
+          },
+          "subject": {
+            "S": "author_1"
+          },
+          "version": {
+            "N": "1"
+          },
+          "committedAt": {
+            "S": "2026-11-01T12:00:00.000Z"
+          }
+        },
+        "ConditionExpression": "attribute_not_exists(PK)"
+      }
+    }
+  ],
+  "decodedRows": [
+    {
+      "PK": "RES#contentItem#00000000-0000-4000-8000-000000000901",
+      "SK": "STATE",
+      "itemKind": "RESOURCE_STATE",
+      "resourceType": "contentItem",
+      "resourceId": "00000000-0000-4000-8000-000000000901",
+      "version": 1,
+      "state": {
+        "title": "Fixture"
+      },
+      "createdAt": "2026-11-01T12:00:00.000Z",
+      "updatedAt": "2026-11-01T12:00:00.000Z",
+      "createdBy": "author_1",
+      "updatedBy": "author_1"
+    },
+    {
+      "PK": "RES#contentItem#00000000-0000-4000-8000-000000000901",
+      "SK": "ACT#2026-11-01T12:00:00.000Z#activity-1",
+      "itemKind": "ACTIVITY",
+      "activityId": "activity-1",
+      "resourceType": "contentItem",
+      "resourceId": "00000000-0000-4000-8000-000000000901",
+      "activityType": "created",
+      "title": "Created",
+      "correlationId": "correlation-1",
+      "occurredAt": "2026-11-01T12:00:00.000Z"
+    },
+    {
+      "PK": "OUTBOX#event-review-1",
+      "SK": "EVENT",
+      "GSI1PK": "OUTBOX#PENDING",
+      "GSI1SK": "2026-11-01T12:00:00.000Z#event-review-1",
+      "itemKind": "OUTBOX_EVENT",
+      "eventId": "event-review-1",
+      "status": "PENDING",
+      "event": {
+        "envelopeVersion": 1,
+        "eventId": "event-review-1",
+        "eventType": "contentItem.reviewRequested",
+        "schemaVersion": 1,
+        "source": "content-operations",
+        "resourceType": "contentItem",
+        "resourceId": "00000000-0000-4000-8000-000000000901",
+        "correlationId": "correlation-1",
+        "occurredAt": "2026-11-01T12:00:00.000Z",
+        "payload": {
+          "reviewId": "00000000-0000-4000-8000-000000000904",
+          "contentId": "00000000-0000-4000-8000-000000000901",
+          "assignedEditorId": "editor_1",
+          "dueAt": "2026-11-02T12:00:00.000Z",
+          "lastReminderDay": null,
+          "submitted": {
+            "contentId": "00000000-0000-4000-8000-000000000901",
+            "revisionId": "00000000-0000-4000-8000-000000000905",
+            "authorId": "author_1",
+            "title": "Frozen compatibility",
+            "body": "Fixture body",
+            "attachments": [],
+            "submittedAt": "2026-11-01T12:00:00.000Z"
+          },
+          "status": "pending",
+          "sourceVersion": 2,
+          "decision": null
+        },
+        "actor": {
+          "subject": "author_1",
+          "displayName": "Author One"
+        },
+        "causationId": "request-1"
+      },
+      "attempts": 0,
+      "createdAt": "2026-11-01T12:00:00.000Z",
+      "updatedAt": "2026-11-01T12:00:00.000Z"
+    },
+    {
+      "PK": "PROJ#contentItem#list",
+      "SK": "2026-11-01T12:00:00.000Z#00000000-0000-4000-8000-000000000901",
+      "itemKind": "PROJECTION_ITEM",
+      "resourceType": "contentItem",
+      "projectionName": "contentItem.list",
+      "itemId": "00000000-0000-4000-8000-000000000901",
+      "sort": "2026-11-01T12:00:00.000Z#00000000-0000-4000-8000-000000000901",
+      "data": {
+        "title": "Fixture"
+      },
+      "resourceId": "00000000-0000-4000-8000-000000000901",
+      "updatedAt": "2026-11-01T12:00:00.000Z"
+    },
+    {
+      "PK": "IDEMP#contentItem#create#author_1",
+      "SK": "fixture-key",
+      "itemKind": "IDEMPOTENCY_RECORD",
+      "resourceType": "contentItem",
+      "commandName": "create",
+      "subject": "author_1",
+      "idempotencyKey": "fixture-key",
+      "payloadHash": "fixture-fingerprint",
+      "resourceId": "00000000-0000-4000-8000-000000000901",
+      "response": {
+        "ok": true,
+        "data": {
+          "fixture": true
+        },
+        "meta": {
+          "requestId": "request-1",
+          "correlationId": "correlation-1"
+        }
+      },
+      "statusCode": 200,
+      "createdAt": "2026-11-01T12:00:00.000Z",
+      "expiresAt": 1794139200
+    },
+    {
+      "PK": "OPS#commandReceipt",
+      "SK": "contentItem#00000000-0000-4000-8000-000000000901#1",
+      "itemKind": "APP_OPERATION",
+      "kind": "commandReceipt",
+      "resourceType": "contentItem",
+      "resourceId": "00000000-0000-4000-8000-000000000901",
+      "commandName": "create",
+      "subject": "author_1",
+      "version": 1,
+      "committedAt": "2026-11-01T12:00:00.000Z"
+    }
+  ],
+  "publicationAttempt": {
+    "record": {
+      "kind": "publicationAttempt",
+      "contentId": "00000000-0000-4000-8000-000000000901",
+      "publicationId": "00000000-0000-4000-8000-000000000904",
+      "attempt": {
+        "generation": 1,
+        "claim": {
+          "attemptId": "00000000-0000-4000-8000-000000000905",
+          "startedAt": "2026-11-01T12:00:00.000Z",
+          "leaseUntil": "2026-11-01T12:01:30.000Z"
+        },
+        "status": "claimed",
+        "finishedAt": null,
+        "failureCode": null,
+        "sourceEventId": "event-publication-1",
+        "correlationId": "correlation-1"
+      },
+      "transitionEventId": "event-claim-1",
+      "causationId": "event-publication-1"
+    },
+    "key": {
+      "PK": "OPS#publicationAttempt",
+      "SK": "00000000-0000-4000-8000-000000000901#00000000-0000-4000-8000-000000000904#00000000-0000-4000-8000-000000000905#claimed"
+    }
+  },
+  "wireJson": "{\"envelopeVersion\":1,\"eventId\":\"event-review-1\",\"eventType\":\"contentItem.reviewRequested\",\"schemaVersion\":1,\"source\":\"content-operations\",\"resourceType\":\"contentItem\",\"resourceId\":\"00000000-0000-4000-8000-000000000901\",\"correlationId\":\"correlation-1\",\"occurredAt\":\"2026-11-01T12:00:00.000Z\",\"payload\":{\"reviewId\":\"00000000-0000-4000-8000-000000000904\",\"contentId\":\"00000000-0000-4000-8000-000000000901\",\"assignedEditorId\":\"editor_1\",\"dueAt\":\"2026-11-02T12:00:00.000Z\",\"lastReminderDay\":null,\"submitted\":{\"contentId\":\"00000000-0000-4000-8000-000000000901\",\"revisionId\":\"00000000-0000-4000-8000-000000000905\",\"authorId\":\"author_1\",\"title\":\"Frozen compatibility\",\"body\":\"Fixture body\",\"attachments\":[],\"submittedAt\":\"2026-11-01T12:00:00.000Z\"},\"status\":\"pending\",\"sourceVersion\":2,\"decision\":null},\"actor\":{\"subject\":\"author_1\",\"displayName\":\"Author One\"},\"causationId\":\"request-1\"}",
+  "fingerprint": "120a506ac153b86d4054a718897c7b17eb366273f81195ee56005467dec9af68",
+  "wireJsonSha256": "120a506ac153b86d4054a718897c7b17eb366273f81195ee56005467dec9af68",
+  "failure": {
+    "record": {
+      "id": "3044ee6c11a50c7060ca0c16df7ac0763fb3b43957e57ff5f9ac5f00f3096dd2",
+      "version": 3,
+      "consumer": "deliverNotification",
+      "original": {
+        "envelopeVersion": 1,
+        "eventId": "event-review-1",
+        "eventType": "contentItem.reviewRequested",
+        "schemaVersion": 1,
+        "source": "content-operations",
+        "resourceType": "contentItem",
+        "resourceId": "00000000-0000-4000-8000-000000000901",
+        "correlationId": "correlation-1",
+        "occurredAt": "2026-11-01T12:00:00.000Z",
+        "payload": {
+          "reviewId": "00000000-0000-4000-8000-000000000904",
+          "contentId": "00000000-0000-4000-8000-000000000901",
+          "assignedEditorId": "editor_1",
+          "dueAt": "2026-11-02T12:00:00.000Z",
+          "lastReminderDay": null,
+          "submitted": {
+            "contentId": "00000000-0000-4000-8000-000000000901",
+            "revisionId": "00000000-0000-4000-8000-000000000905",
+            "authorId": "author_1",
+            "title": "Frozen compatibility",
+            "body": "Fixture body",
+            "attachments": [],
+            "submittedAt": "2026-11-01T12:00:00.000Z"
+          },
+          "status": "pending",
+          "sourceVersion": 2,
+          "decision": null
+        },
+        "actor": {
+          "subject": "author_1",
+          "displayName": "Author One"
+        },
+        "causationId": "request-1"
+      },
+      "fingerprint": "120a506ac153b86d4054a718897c7b17eb366273f81195ee56005467dec9af68",
+      "firstCollectedAt": "2026-11-01T12:00:00.000Z",
+      "collections": [
+        {
+          "generation": 0,
+          "eventId": "event-review-1",
+          "collectedAt": "2026-11-01T12:00:00.000Z",
+          "reconciledAt": "2026-11-01T12:00:00.000Z",
+          "resolution": "notApplicable"
+        }
+      ],
+      "recoveries": [
+        {
+          "generation": 1,
+          "eventId": "event-replay-1",
+          "requestedAt": "2026-11-01T12:01:00.000Z",
+          "requestedBy": "editor_1",
+          "requestId": "00000000-0000-4000-8000-000000000902"
+        }
+      ],
+      "resolvedGeneration": null
+    },
+    "key": {
+      "PK": "FAILURE#3044ee6c11a50c7060ca0c16df7ac0763fb3b43957e57ff5f9ac5f00f3096dd2",
+      "SK": "DELIVERY"
+    },
+    "summary": {
+      "id": "3044ee6c11a50c7060ca0c16df7ac0763fb3b43957e57ff5f9ac5f00f3096dd2",
+      "version": 3,
+      "consumer": "deliverNotification",
+      "originalEventId": "event-review-1",
+      "correlationId": "correlation-1",
+      "eventType": "contentItem.reviewRequested",
+      "resourceType": "contentItem",
+      "resourceId": "00000000-0000-4000-8000-000000000901",
+      "firstCollectedAt": "2026-11-01T12:00:00.000Z",
+      "generation": 1,
+      "status": "replayQueued",
+      "resolution": null,
+      "recoveries": [
+        {
+          "generation": 1,
+          "eventId": "event-replay-1",
+          "requestedAt": "2026-11-01T12:01:00.000Z",
+          "requestedBy": "editor_1",
+          "requestId": "00000000-0000-4000-8000-000000000902"
+        }
+      ],
+      "collections": [
+        {
+          "generation": 0,
+          "eventId": "event-review-1",
+          "collectedAt": "2026-11-01T12:00:00.000Z",
+          "reconciledAt": "2026-11-01T12:00:00.000Z",
+          "resolution": "notApplicable"
+        }
+      ]
+    },
+    "projectionItem": {
+      "PK": {
+        "S": "PROJ#contentItem#failures"
+      },
+      "SK": {
+        "S": "2026-11-01T12:00:00.000Z#3044ee6c11a50c7060ca0c16df7ac0763fb3b43957e57ff5f9ac5f00f3096dd2"
+      },
+      "itemKind": {
+        "S": "PROJECTION_ITEM"
+      },
+      "resourceType": {
+        "S": "contentItem"
+      },
+      "projectionName": {
+        "S": "contentItem.failures"
+      },
+      "itemId": {
+        "S": "3044ee6c11a50c7060ca0c16df7ac0763fb3b43957e57ff5f9ac5f00f3096dd2"
+      },
+      "sort": {
+        "S": "2026-11-01T12:00:00.000Z#3044ee6c11a50c7060ca0c16df7ac0763fb3b43957e57ff5f9ac5f00f3096dd2"
+      },
+      "data": {
+        "M": {
+          "id": {
+            "S": "3044ee6c11a50c7060ca0c16df7ac0763fb3b43957e57ff5f9ac5f00f3096dd2"
+          },
+          "version": {
+            "N": "3"
+          },
+          "consumer": {
+            "S": "deliverNotification"
+          },
+          "originalEventId": {
+            "S": "event-review-1"
+          },
+          "correlationId": {
+            "S": "correlation-1"
+          },
+          "eventType": {
+            "S": "contentItem.reviewRequested"
+          },
+          "resourceType": {
+            "S": "contentItem"
+          },
+          "resourceId": {
+            "S": "00000000-0000-4000-8000-000000000901"
+          },
+          "firstCollectedAt": {
+            "S": "2026-11-01T12:00:00.000Z"
+          },
+          "generation": {
+            "N": "1"
+          },
+          "status": {
+            "S": "replayQueued"
+          },
+          "resolution": {
+            "NULL": true
+          },
+          "recoveries": {
+            "L": [
+              {
+                "M": {
+                  "generation": {
+                    "N": "1"
+                  },
+                  "eventId": {
+                    "S": "event-replay-1"
+                  },
+                  "requestedAt": {
+                    "S": "2026-11-01T12:01:00.000Z"
+                  },
+                  "requestedBy": {
+                    "S": "editor_1"
+                  },
+                  "requestId": {
+                    "S": "00000000-0000-4000-8000-000000000902"
+                  }
+                }
+              }
+            ]
+          },
+          "collections": {
+            "L": [
+              {
+                "M": {
+                  "generation": {
+                    "N": "0"
+                  },
+                  "eventId": {
+                    "S": "event-review-1"
+                  },
+                  "collectedAt": {
+                    "S": "2026-11-01T12:00:00.000Z"
+                  },
+                  "reconciledAt": {
+                    "S": "2026-11-01T12:00:00.000Z"
+                  },
+                  "resolution": {
+                    "S": "notApplicable"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "resourceId": {
+        "S": "00000000-0000-4000-8000-000000000901"
+      },
+      "updatedAt": {
+        "S": "2026-11-01T12:00:00.000Z"
+      }
+    }
+  },
+  "replayJson": "{\"envelopeVersion\":1,\"eventId\":\"event-replay-1\",\"eventType\":\"contentItem.reviewRequested\",\"schemaVersion\":1,\"source\":\"content-operations\",\"resourceType\":\"contentItem\",\"resourceId\":\"00000000-0000-4000-8000-000000000901\",\"correlationId\":\"correlation-1\",\"occurredAt\":\"2026-11-01T12:01:00.000Z\",\"payload\":{\"reviewId\":\"00000000-0000-4000-8000-000000000904\",\"contentId\":\"00000000-0000-4000-8000-000000000901\",\"assignedEditorId\":\"editor_1\",\"dueAt\":\"2026-11-02T12:00:00.000Z\",\"lastReminderDay\":null,\"submitted\":{\"contentId\":\"00000000-0000-4000-8000-000000000901\",\"revisionId\":\"00000000-0000-4000-8000-000000000905\",\"authorId\":\"author_1\",\"title\":\"Frozen compatibility\",\"body\":\"Fixture body\",\"attachments\":[],\"submittedAt\":\"2026-11-01T12:00:00.000Z\"},\"status\":\"pending\",\"sourceVersion\":2,\"decision\":null,\"delivery\":{\"originalEventId\":\"event-review-1\",\"generation\":1,\"consumer\":\"deliverNotification\",\"failureId\":\"3044ee6c11a50c7060ca0c16df7ac0763fb3b43957e57ff5f9ac5f00f3096dd2\"}},\"actor\":{\"subject\":\"author_1\",\"displayName\":\"Author One\"},\"causationId\":\"event-review-1\"}",
+  "replayOutboxItem": {
+    "PK": {
+      "S": "OUTBOX#event-replay-1"
+    },
+    "SK": {
+      "S": "EVENT"
+    },
+    "GSI1PK": {
+      "S": "OUTBOX#PENDING"
+    },
+    "GSI1SK": {
+      "S": "2026-11-01T12:01:00.000Z#event-replay-1"
+    },
+    "itemKind": {
+      "S": "OUTBOX_EVENT"
+    },
+    "eventId": {
+      "S": "event-replay-1"
+    },
+    "status": {
+      "S": "PENDING"
+    },
+    "event": {
+      "M": {
+        "envelopeVersion": {
+          "N": "1"
+        },
+        "eventId": {
+          "S": "event-replay-1"
+        },
+        "eventType": {
+          "S": "contentItem.reviewRequested"
+        },
+        "schemaVersion": {
+          "N": "1"
+        },
+        "source": {
+          "S": "content-operations"
+        },
+        "resourceType": {
+          "S": "contentItem"
+        },
+        "resourceId": {
+          "S": "00000000-0000-4000-8000-000000000901"
+        },
+        "correlationId": {
+          "S": "correlation-1"
+        },
+        "occurredAt": {
+          "S": "2026-11-01T12:01:00.000Z"
+        },
+        "payload": {
+          "M": {
+            "reviewId": {
+              "S": "00000000-0000-4000-8000-000000000904"
+            },
+            "contentId": {
+              "S": "00000000-0000-4000-8000-000000000901"
+            },
+            "assignedEditorId": {
+              "S": "editor_1"
+            },
+            "dueAt": {
+              "S": "2026-11-02T12:00:00.000Z"
+            },
+            "lastReminderDay": {
+              "NULL": true
+            },
+            "submitted": {
+              "M": {
+                "contentId": {
+                  "S": "00000000-0000-4000-8000-000000000901"
+                },
+                "revisionId": {
+                  "S": "00000000-0000-4000-8000-000000000905"
+                },
+                "authorId": {
+                  "S": "author_1"
+                },
+                "title": {
+                  "S": "Frozen compatibility"
+                },
+                "body": {
+                  "S": "Fixture body"
+                },
+                "attachments": {
+                  "L": []
+                },
+                "submittedAt": {
+                  "S": "2026-11-01T12:00:00.000Z"
+                }
+              }
+            },
+            "status": {
+              "S": "pending"
+            },
+            "sourceVersion": {
+              "N": "2"
+            },
+            "decision": {
+              "NULL": true
+            },
+            "delivery": {
+              "M": {
+                "originalEventId": {
+                  "S": "event-review-1"
+                },
+                "generation": {
+                  "N": "1"
+                },
+                "consumer": {
+                  "S": "deliverNotification"
+                },
+                "failureId": {
+                  "S": "3044ee6c11a50c7060ca0c16df7ac0763fb3b43957e57ff5f9ac5f00f3096dd2"
+                }
+              }
+            }
+          }
+        },
+        "actor": {
+          "M": {
+            "subject": {
+              "S": "author_1"
+            },
+            "displayName": {
+              "S": "Author One"
+            }
+          }
+        },
+        "causationId": {
+          "S": "event-review-1"
+        }
+      }
+    },
+    "attempts": {
+      "N": "0"
+    },
+    "createdAt": {
+      "S": "2026-11-01T12:01:00.000Z"
+    },
+    "updatedAt": {
+      "S": "2026-11-01T12:01:00.000Z"
+    }
+  },
+  "markers": [
+    {
+      "PK": {
+        "S": "WORKER#deliverNotification#PROCESSED"
+      },
+      "SK": {
+        "S": "event-review-1"
+      },
+      "itemKind": {
+        "S": "WORKER_IDEMPOTENCY"
+      },
+      "workerName": {
+        "S": "deliverNotification"
+      },
+      "eventId": {
+        "S": "event-review-1"
+      },
+      "processedAt": {
+        "S": "2026-11-01T12:00:00.000Z"
+      },
+      "expiresAt": {
+        "N": "1794139200"
+      }
+    },
+    {
+      "PK": {
+        "S": "WORKER#collectFailure.deliverNotification#PROCESSED"
+      },
+      "SK": {
+        "S": "event-review-1"
+      },
+      "itemKind": {
+        "S": "WORKER_IDEMPOTENCY"
+      },
+      "workerName": {
+        "S": "collectFailure.deliverNotification"
+      },
+      "eventId": {
+        "S": "event-review-1"
+      },
+      "processedAt": {
+        "S": "2026-11-01T12:00:00.000Z"
+      },
+      "expiresAt": {
+        "N": "1794139200"
+      }
+    }
+  ]
+}

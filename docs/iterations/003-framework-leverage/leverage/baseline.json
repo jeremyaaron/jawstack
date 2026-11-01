@@ -1,0 +1,1736 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-11-01T20:27:56.668Z",
+  "sourceCommit": "ae3268551bdda01592c6bdc08a76954e6eb1e02e",
+  "trackedPatchSha256": "b58f380de51cecd52aab4492f85cc2d9e70a1254d4c44f92c3f6de6461ad6495",
+  "node": "v24.16.0",
+  "typescript": "5.9.3",
+  "pnpm": "10.21.0",
+  "gitStatus": [
+    "M .gitignore",
+    " M .prettierignore",
+    " M docs/README.md",
+    " M docs/iterations/README.md",
+    " M eslint.config.js",
+    " M package.json",
+    "?? apps/content-operations/test/support/leverage-compatibility.ts",
+    "?? docs/iterations/003-framework-leverage/",
+    "?? scripts/leverage-exercise.mjs",
+    "?? scripts/measure-leverage.mjs",
+    "?? scripts/test/"
+  ],
+  "exerciseSettings": {
+    "sessions": "Four fresh user-mediated sessions: baseline A, baseline B, post A, post B; no automatic agents or paid model API.",
+    "activeElapsedSeconds": 1800,
+    "installWaitCeilingSeconds": 300,
+    "serviceWaitCeilingSeconds": 0,
+    "functionalMode": "Memory and narrow DynamoDB/marker SDK contract doubles; no Docker/live service required by these paired task suites. Iteration live acceptance is separate.",
+    "modelId": null,
+    "modelPolicy": "Phase-0 client does not expose an exact model/settings identifier. Before baseline A, record the user-agreed visible model label, reasoning setting and tool access; use the same for all four where possible and disclose deviations.",
+    "toolPolicy": "Same Codex client/tool access, Node/pnpm/lockfile, task fixtures and active budget; record actual versions/settings in each session result.",
+    "timing": "Visible session start/end minus union of recorded bounded install waits; ordinary test/tool duration remains active. No inferred thinking/CPU time.",
+    "tokens": "Unavailable unless client exposes actual usage; never estimate.",
+    "coordination": "Packet readiness is not baseline completion. Freeze agreed visible session settings and review both baseline observations before Phase 1."
+  },
+  "rules": {
+    "version": 1,
+    "primary": "Unique physical lines containing nontrivia TypeScript tokens inside selected AST spans, minus excluded subtrees; shared lines count once.",
+    "formatting": "Repository Prettier; freeze formatting before counting. Types and punctuation inside selected runtime modules count, imports count only when the file is selected.",
+    "contextualTokens": "Installed TypeScript scanner with parser-provided regex/template/JSX token boundaries; whitespace-only token lines do not count.",
+    "excluded": "Tests, docs, comments, whitespace, build output and explicitly identified domain subtrees. App-maintained generated runtime source counts.",
+    "post": "All remaining/renamed/moved generic protocol code plus replacing thin composition across the whole consumer, not just old filenames. Review generated code and app-to-app copies.",
+    "denominator": "selected-protocol only; separate-lab is disclosed separately and cannot inflate the 50% protocol retirement gate.",
+    "threshold": 0.5,
+    "apiGrowth": "Freeze all framework src hashes/token-lines, package export maps and declared index export names/statements. This is not a semantic concept count; manually review star exports, new subpaths and concept burden at final audit."
+  },
+  "inputHashes": {
+    "docs/iterations/003-framework-leverage/prd.md": "92a40a829b1ea75e0f002716c903a241043beba2fba8f7caa728d0531299dee1",
+    "docs/iterations/003-framework-leverage/technical-design.md": "d774f292dee73d5fc60ca3a3a7dcd917954f5c5e0e85541dd344ae57475e0308",
+    "docs/iterations/003-framework-leverage/leverage/task-a.md": "0e143d2b38fae3186cb37d7114a4d2d46d37c82c209e84b89a99e96233c69a9a",
+    "docs/iterations/003-framework-leverage/leverage/task-b.md": "41706de5324f29a6cd561e630e2959e0410d563b9b0594fd408db63c3e236c44",
+    "docs/iterations/003-framework-leverage/leverage/contracts.ts": "ca4e7bddcf8005a46f819e2d50498a0f679fdd017b69efa53034e4fdf828d8a1",
+    "docs/iterations/003-framework-leverage/leverage/candidate.d.ts": "339f0fce4e1fe53ad897dbaec6f7b98b1be020ee22a35a2faa3c365d4bbe5182",
+    "docs/iterations/003-framework-leverage/leverage/task-a.acceptance.ts": "2801e1cedee89584f3e9e2e1d852ab2f1dc2e5f7d130dc6aff61dae207ef8b8b",
+    "docs/iterations/003-framework-leverage/leverage/task-b.acceptance.ts": "920d3031e8fad8ac3dc6fd676fdad1922b46fa4507046d442d141164788daa52",
+    "docs/iterations/003-framework-leverage/leverage/vitest.config.ts": "9b30207930b1b102f94542d1d82865fdf58ff2c02272dfef42364e38b0fc1c5a",
+    "docs/iterations/003-framework-leverage/leverage/compatibility-input.ts": "ed26813bc3b12f0b4c3e2ab93a2860d3c8c716fc57ad455a4687435dcb361d3e",
+    "docs/iterations/003-framework-leverage/leverage/compatibility.acceptance.ts": "cb1205161e62f2244275b237428489e2c768b8830da1354ba76abb30d08bb851",
+    "docs/iterations/003-framework-leverage/leverage/compatibility.json": "45e7187105ad8041e46bc3286faec5a95e0e991a9c2edebb671c0c8ba3a863fd",
+    "apps/content-operations/test/support/leverage-compatibility.ts": "40840572f21b81c309bc56ade72733672e3c6cbb47c551cdabcd9498efd37cff",
+    "scripts/measure-leverage.mjs": "f967cd34ab3d0fcc1980d0fcea846fce26778f110469de34fd49d9a37b149ab1",
+    "scripts/leverage-exercise.mjs": "56666caebfa2a65f1065b7cbe5fb1d7fbbf3554064b4291dc3596f2968976755",
+    "scripts/test/measure-leverage.test.mjs": "5eb928272b92659ac1602f17eab8c500a984d96c4736085f0fd18300b10d9ad8",
+    "scripts/test/leverage-exercise.test.mjs": "ed63a64f418cbae3d0cab3d298164ec2343b52a850ecc56ef81367e2f8b23265",
+    "docs/iterations/003-framework-leverage/leverage/tsconfig.json": "e17c520073efc7b9cd632d0914d07003d213228754bd818362d77add761589ea",
+    "package.json": "eacc1667d311aef8a77dcbd5f8fc3f2669875db2fe23e59fe4a2dae6b6e7aa1a",
+    "pnpm-lock.yaml": "4abe7989e75ce4cc1cf6fa4c970059025929a1472823abb7a4ae2a0dbe23dd22",
+    ".nvmrc": "a8f8f7ba69d43285857a0ea34017ef8dadd3ba012404bb7dd188fc773cf63ee2",
+    "pnpm-workspace.yaml": "8362581c46f1e8477e5b96f5ab8ac2de4b3b5afa29d0b7d52fc0c286d1d5dabe"
+  },
+  "inventorySpecSha256": "01e1f0843e4841f4663f28252d9d6763befae339c6a0bba393bf54b8002d4e5c",
+  "protocolTokenLines": 1589,
+  "separateLabTokenLines": 1552,
+  "files": [
+    {
+      "path": "apps/content-operations/src/application/dispatch.ts",
+      "classification": "selected-protocol",
+      "reason": "Invocation scope, bounded winner lookup and pinned core replay. Registry/source and calls to the domain claim validator are thin composition, counted before and after; validator implementation is excluded by not selecting its file.",
+      "sourceSha256": "345d8970857b8407c2e0929283b549f7ba5492c2fa1d4b39bf3cf8b81fe82feb",
+      "includes": [
+        {
+          "symbol": "$file",
+          "start": 0,
+          "end": 3710,
+          "kind": "SourceFile",
+          "startLine": 1,
+          "endLine": 107,
+          "sha256": "345d8970857b8407c2e0929283b549f7ba5492c2fa1d4b39bf3cf8b81fe82feb"
+        }
+      ],
+      "excludes": [],
+      "tokenLines": 102,
+      "tokens": 606,
+      "countedLines": [
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 19, 20, 21, 22, 24, 25, 26, 27,
+        28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50,
+        51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 75, 76,
+        77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99,
+        100, 101, 102, 103, 104, 105, 106, 107
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/application/persistence.ts",
+      "classification": "selected-protocol",
+      "reason": "Scope validation, normalized projection/transaction planning, logical expiry and atomic auxiliary mechanics. Fixed command receipt schema/key/construction and publication attempt decisions remain app-owned; their integration calls are counted as composition.",
+      "sourceSha256": "7e0bfe7166a418f3307907c26de4acf98d356255bbecf09f85663b9c2cb8b8bd",
+      "includes": [
+        {
+          "symbol": "$file",
+          "start": 0,
+          "end": 5295,
+          "kind": "SourceFile",
+          "startLine": 1,
+          "endLine": 142,
+          "sha256": "7e0bfe7166a418f3307907c26de4acf98d356255bbecf09f85663b9c2cb8b8bd"
+        }
+      ],
+      "excludes": [
+        {
+          "symbol": "receiptSchema",
+          "reason": "App record schema.",
+          "start": 1202,
+          "end": 1470,
+          "kind": "VariableDeclaration",
+          "startLine": 42,
+          "endLine": 50,
+          "sha256": "a3077797d89bc8c4024eefd1d24497cdca713f46de1f1d803a01289913c907ae"
+        },
+        {
+          "symbol": "operationKey",
+          "reason": "App record key policy.",
+          "start": 1811,
+          "end": 2071,
+          "kind": "FunctionDeclaration",
+          "startLine": 59,
+          "endLine": 65,
+          "sha256": "71039642a76539461b3bbc7f22b720d488a584ff7b6bb286fab55c1a3403b20c"
+        },
+        {
+          "symbol": "prepareTransaction/attempts",
+          "reason": "Domain attempt contribution invocation.",
+          "start": 2476,
+          "end": 2534,
+          "kind": "VariableDeclaration",
+          "startLine": 82,
+          "endLine": 82,
+          "sha256": "d7f7eb315c56079e3902bd17f69b10d3c077e2d4de636825ed8fa0bd1dd25f2d"
+        },
+        {
+          "symbol": "prepareTransaction/parsed",
+          "reason": "App command receipt construction.",
+          "start": 3359,
+          "end": 3563,
+          "kind": "VariableDeclaration",
+          "startLine": 97,
+          "endLine": 103,
+          "sha256": "07d3aa58409148f3dab99067e988e07667ff621de85ab35c7d1d22fa6e84f5ac"
+        }
+      ],
+      "tokenLines": 118,
+      "tokens": 833,
+      "countedLines": [
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 19, 20, 21, 22, 23, 24, 25, 26,
+        27, 28, 29, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 50, 51, 53, 54, 55, 56, 57, 67,
+        68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90,
+        91, 92, 93, 94, 95, 96, 97, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115,
+        116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133,
+        134, 135, 136, 137, 138, 139, 140, 141, 142
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/application/memory.ts",
+      "classification": "selected-protocol",
+      "reason": "Scoped idempotency, serialized staging/atomic publication and auxiliary collisions; includes thin record-type composition.",
+      "sourceSha256": "1f4dae1949ac3315528b4f233d12dde50a16a267f1c8509b99cc323555c6060a",
+      "includes": [
+        {
+          "symbol": "$file",
+          "start": 0,
+          "end": 3773,
+          "kind": "SourceFile",
+          "startLine": 1,
+          "endLine": 95,
+          "sha256": "1f4dae1949ac3315528b4f233d12dde50a16a267f1c8509b99cc323555c6060a"
+        }
+      ],
+      "excludes": [],
+      "tokenLines": 93,
+      "tokens": 709,
+      "countedLines": [
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
+        27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49,
+        50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72,
+        73, 74, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/aws/persistence.ts",
+      "classification": "selected-protocol",
+      "reason": "Strong scoped lookups, logical TTL, transaction submission and conflict classification.",
+      "sourceSha256": "fe9395df7483de3c36fdb5ea4f528192f788259ecc207f9fe8b1bf5a418a2cf5",
+      "includes": [
+        {
+          "symbol": "$file",
+          "start": 0,
+          "end": 2958,
+          "kind": "SourceFile",
+          "startLine": 1,
+          "endLine": 76,
+          "sha256": "fe9395df7483de3c36fdb5ea4f528192f788259ecc207f9fe8b1bf5a418a2cf5"
+        }
+      ],
+      "excludes": [],
+      "tokenLines": 75,
+      "tokens": 468,
+      "countedLines": [
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
+        27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49,
+        50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72,
+        73, 74, 75, 76
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/application/failure-records.ts",
+      "classification": "selected-protocol",
+      "reason": "Failure history schema, IDs/fingerprints, replay construction, CAS invariants, projection/query and atomic memory failure/outbox storage. Consumer names/source/projection settings count as composition.",
+      "sourceSha256": "11da673914c87121d8b397d9b4df71fba3bd8228e79eb18f00ac575ae7fa9e01",
+      "includes": [
+        {
+          "symbol": "$file",
+          "start": 0,
+          "end": 10226,
+          "kind": "SourceFile",
+          "startLine": 1,
+          "endLine": 273,
+          "sha256": "11da673914c87121d8b397d9b4df71fba3bd8228e79eb18f00ac575ae7fa9e01"
+        }
+      ],
+      "excludes": [],
+      "tokenLines": 271,
+      "tokens": 1996,
+      "countedLines": [
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 24, 25, 26,
+        27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49,
+        50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72,
+        73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95,
+        96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114,
+        115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132,
+        133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150,
+        151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168,
+        169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186,
+        187, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 203, 204,
+        205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222,
+        223, 224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239, 240,
+        241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 256, 257, 258,
+        259, 260, 261, 262, 263, 264, 265, 267, 268, 269, 270, 271, 272, 273
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/application/failures.ts",
+      "classification": "selected-protocol",
+      "reason": "Durable collection/authorization/inspection/replay orchestration excluding editor identity policy, publication reconciliation and publisher retry restriction. Hook call sites remain composition.",
+      "sourceSha256": "6bd54b01edab2f01ce079b726acd64f10274b554a1aabb5e623a9befcd1fa930",
+      "includes": [
+        {
+          "symbol": "$file",
+          "start": 0,
+          "end": 13632,
+          "kind": "SourceFile",
+          "startLine": 1,
+          "endLine": 351,
+          "sha256": "6bd54b01edab2f01ce079b726acd64f10274b554a1aabb5e623a9befcd1fa930"
+        }
+      ],
+      "excludes": [
+        {
+          "symbol": "createFailureService/editor",
+          "reason": "Resolved editorial operator authorization.",
+          "start": 1287,
+          "end": 1684,
+          "kind": "VariableDeclaration",
+          "startLine": 37,
+          "endLine": 48,
+          "sha256": "7db48cbb324af2239f70692f0555c1ea68f87e4ff1c72ecf4e7f45fc3fb14ed9"
+        },
+        {
+          "symbol": "createFailureService/reconcile",
+          "reason": "Publication authority, leases and domain reconciliation command.",
+          "start": 3417,
+          "end": 6493,
+          "kind": "VariableDeclaration",
+          "startLine": 99,
+          "endLine": 174,
+          "sha256": "b9adefb1adddd3375a05d3f00a4488f2c2d41c34a1568d3743b5add35a1a2408"
+        },
+        {
+          "kind": "IfStatement",
+          "contains": "old.consumer === \"publishContent\"",
+          "reason": "Application-only publication recovery restriction.",
+          "start": 12123,
+          "end": 12329,
+          "startLine": 316,
+          "endLine": 320,
+          "sha256": "8f1455414a70abf2a629d914ff8ef18c41985db8640c9bb77759549bb4698416"
+        }
+      ],
+      "tokenLines": 261,
+      "tokens": 1706,
+      "countedLines": [
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
+        27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59,
+        60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82,
+        83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 174, 175, 176, 177, 178,
+        179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196,
+        197, 198, 199, 200, 201, 202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214,
+        215, 216, 217, 218, 219, 220, 221, 222, 223, 224, 225, 226, 227, 228, 229, 230, 231, 232,
+        233, 234, 235, 236, 237, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250,
+        251, 252, 253, 254, 255, 256, 257, 258, 259, 260, 261, 262, 263, 264, 265, 266, 267, 268,
+        269, 270, 271, 272, 273, 274, 275, 276, 277, 278, 279, 280, 281, 282, 283, 284, 285, 286,
+        287, 288, 289, 290, 291, 292, 293, 294, 295, 296, 297, 298, 299, 300, 301, 302, 303, 304,
+        305, 306, 307, 308, 309, 310, 311, 312, 313, 314, 315, 321, 322, 323, 324, 325, 326, 327,
+        328, 329, 330, 331, 332, 333, 334, 335, 336, 337, 338, 339, 340, 341, 342, 343, 344, 345,
+        346, 347, 348, 349, 350, 351
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/application/pump.ts",
+      "classification": "selected-protocol",
+      "reason": "Bounded fanout/retry, marker cache, terminal collection and admission/cursor mechanics.",
+      "sourceSha256": "f473fce48bfe42e6e462111db00cddc6dc42721526cb70371b65afadeba7c8fc",
+      "includes": [
+        {
+          "symbol": "$file",
+          "start": 0,
+          "end": 7687,
+          "kind": "SourceFile",
+          "startLine": 1,
+          "endLine": 198,
+          "sha256": "f473fce48bfe42e6e462111db00cddc6dc42721526cb70371b65afadeba7c8fc"
+        }
+      ],
+      "excludes": [],
+      "tokenLines": 194,
+      "tokens": 1580,
+      "countedLines": [
+        1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 22, 23, 24, 25, 26, 27,
+        28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50,
+        51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73,
+        74, 75, 76, 77, 78, 79, 80, 81, 82, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97,
+        98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116,
+        117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 134, 135,
+        136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153,
+        154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171,
+        172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189,
+        190, 191, 192, 193, 194, 195, 196, 197, 198
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/aws/failures.ts",
+      "classification": "selected-protocol",
+      "reason": "Durable failure row validation, CAS, projection and atomic recovery outbox transaction.",
+      "sourceSha256": "b498dc559a7d7bad93d0c51c03a042f6a45ca646e4c25746219dc8436c096765",
+      "includes": [
+        {
+          "symbol": "$file",
+          "start": 0,
+          "end": 4316,
+          "kind": "SourceFile",
+          "startLine": 1,
+          "endLine": 122,
+          "sha256": "b498dc559a7d7bad93d0c51c03a042f6a45ca646e4c25746219dc8436c096765"
+        }
+      ],
+      "excludes": [],
+      "tokenLines": 121,
+      "tokens": 647,
+      "countedLines": [
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 21, 22, 23, 24, 25, 26,
+        27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49,
+        50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72,
+        73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95,
+        96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114,
+        115, 116, 117, 118, 119, 120, 121, 122
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/aws/delivery.ts",
+      "classification": "selected-protocol",
+      "reason": "Whole-batch fixed-ARN/identity validation and normalization; current queue suffix map counts as thin composition and its replacement must count too.",
+      "sourceSha256": "a0b530f30717ca79fb589ebf57b3201ae70ab4b4c7704ad46befe21d45ba8a2c",
+      "includes": [
+        {
+          "symbol": "$file",
+          "start": 0,
+          "end": 2750,
+          "kind": "SourceFile",
+          "startLine": 1,
+          "endLine": 73,
+          "sha256": "a0b530f30717ca79fb589ebf57b3201ae70ab4b4c7704ad46befe21d45ba8a2c"
+        }
+      ],
+      "excludes": [],
+      "tokenLines": 72,
+      "tokens": 493,
+      "countedLines": [
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
+        27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49,
+        50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72,
+        73
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/aws/recovery.ts",
+      "classification": "selected-protocol",
+      "reason": "Transport binding/pre-marker validation/authorization, excluding app-specific Lambda composition and entrypoints.",
+      "sourceSha256": "2ea0c7051442b10f32dedc426a19f2c427c3e3293843b93276927f9a12ed5976",
+      "includes": [
+        {
+          "symbol": "TransportOptions",
+          "start": 1045,
+          "end": 1223,
+          "kind": "TypeAliasDeclaration",
+          "startLine": 23,
+          "endLine": 30,
+          "sha256": "95027ec1d68fb73be23103871e26ee4fd8fcb667e1062e687e1b4845b1b58929"
+        },
+        {
+          "symbol": "createFailureSqsHandler",
+          "start": 1224,
+          "end": 2217,
+          "kind": "FunctionDeclaration",
+          "startLine": 31,
+          "endLine": 58,
+          "sha256": "6c4d503dda013d07fa74b0e23e374c145c6dc1a37928412f6b7513b0b21b1056"
+        },
+        {
+          "symbol": "createContentWorkerSqsHandler",
+          "start": 2218,
+          "end": 3433,
+          "kind": "FunctionDeclaration",
+          "startLine": 59,
+          "endLine": 92,
+          "sha256": "cbeaa1e70f725f3ba98ed7163ce089bf1f97e6a4b19e8f3dd3db1da432143074"
+        }
+      ],
+      "excludes": [],
+      "tokenLines": 70,
+      "tokens": 468,
+      "countedLines": [
+        23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+        46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+        69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91,
+        92
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/application/workers.ts",
+      "classification": "selected-protocol",
+      "reason": "Consumer subscription validation and recovery wrapper around domain handlers. Domain materialization/publication/notification branches excluded; small remaining handler call/completion sites count as composition.",
+      "sourceSha256": "c6e320916cee1dea8b1137c9d38cf10e724ac9358780889977f1aca7a5bf3120",
+      "includes": [
+        {
+          "symbol": "createContentWorkers",
+          "start": 899,
+          "end": 6650,
+          "kind": "FunctionDeclaration",
+          "startLine": 16,
+          "endLine": 161,
+          "sha256": "3becfce6ee08d495cf10b222924e5452a901021294c6a91b87b745787706182b"
+        }
+      ],
+      "excludes": [
+        {
+          "symbol": "createContentWorkers/materialize",
+          "reason": "Domain snapshot materialization/deduplication.",
+          "start": 1622,
+          "end": 4666,
+          "kind": "VariableDeclaration",
+          "startLine": 31,
+          "endLine": 105,
+          "sha256": "e8d6bf22bdf3c9bc4916124592e4a19dab8b7e77fceae22276758dcb67bac435"
+        },
+        {
+          "kind": "IfStatement",
+          "contains": "name === \"publishContent\"",
+          "reason": "Publication dependency and business delegation.",
+          "start": 5656,
+          "end": 5946,
+          "startLine": 134,
+          "endLine": 141,
+          "sha256": "6308c8b6b06e4f48c43c2944d3759396fa77387854b62a99bd33c2ff041b97b9"
+        },
+        {
+          "kind": "IfStatement",
+          "contains": "name === \"deliverNotification\"",
+          "reason": "Notification rendering/business sink and completion integration.",
+          "start": 5955,
+          "end": 6250,
+          "startLine": 142,
+          "endLine": 148,
+          "sha256": "65d7e04808ed20763e81ab2a9c47f3f68457f5f6b3023a5e6a79ad6f747a243c"
+        }
+      ],
+      "tokenLines": 58,
+      "tokens": 336,
+      "countedLines": [
+        16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 105, 106, 107, 108, 109,
+        110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127,
+        128, 129, 130, 131, 132, 133, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160,
+        161
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/shared/events.ts",
+      "classification": "selected-protocol",
+      "reason": "Envelope/replay normalization and strict registry/schema checks; application target selection/identity predicate excluded. Current source/enums/schema references count as configuration.",
+      "sourceSha256": "fc5fad6c34d01a6de637ebbafe812fcd3a5f11c880839e1012cdfc524e824e54",
+      "includes": [
+        {
+          "symbol": "$file",
+          "start": 0,
+          "end": 3885,
+          "kind": "SourceFile",
+          "startLine": 1,
+          "endLine": 108,
+          "sha256": "fc5fad6c34d01a6de637ebbafe812fcd3a5f11c880839e1012cdfc524e824e54"
+        }
+      ],
+      "excludes": [
+        {
+          "symbol": "parseContentEvent/resourceType",
+          "reason": "Domain event naming convention.",
+          "start": 2267,
+          "end": 2314,
+          "kind": "VariableDeclaration",
+          "startLine": 59,
+          "endLine": 59,
+          "sha256": "a497ccb7b3fe0958df7d1e71c3d4a367c2a9a254c84e5faa3496aaf165a1cbd7"
+        },
+        {
+          "symbol": "parseContentEvent/resourceId",
+          "reason": "Domain payload-to-resource target selection.",
+          "start": 2324,
+          "end": 2544,
+          "kind": "VariableDeclaration",
+          "startLine": 60,
+          "endLine": 65,
+          "sha256": "b1e4a058d8259ab371c8f445d69294907d5ca30c807313f69ba3bc7312e0d561"
+        },
+        {
+          "kind": "IfStatement",
+          "contains": "envelope.resourceType !== resourceType",
+          "reason": "Domain target identity predicate.",
+          "start": 2548,
+          "end": 2694,
+          "startLine": 66,
+          "endLine": 67,
+          "sha256": "386bb57917385681965c1f185c1f9040b19f0a38e9551c86f7b18525ef227dbe"
+        }
+      ],
+      "tokenLines": 99,
+      "tokens": 714,
+      "countedLines": [
+        1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
+        27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 45, 46, 47, 48, 49, 50,
+        51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 65, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79,
+        80, 81, 82, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102,
+        103, 104, 105, 106, 107, 108
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/shared/operation-views.ts",
+      "classification": "selected-protocol",
+      "reason": "Selected failure view schemas only; publication/notification DTOs remain domain-owned. Existing enum labels count as configuration.",
+      "sourceSha256": "5ddf49e2f379033d00484730a74d571910b003a060b76f1f472aaebd570faaaf",
+      "includes": [
+        {
+          "symbol": "failureIdSchema",
+          "start": 624,
+          "end": 676,
+          "kind": "VariableDeclaration",
+          "startLine": 16,
+          "endLine": 16,
+          "sha256": "bed04470c0440f70270c54ac2074442d4309df18d715292d0318ac07de459ee7"
+        },
+        {
+          "symbol": "consumerSchema",
+          "start": 691,
+          "end": 809,
+          "kind": "VariableDeclaration",
+          "startLine": 17,
+          "endLine": 22,
+          "sha256": "097d46205f322157859dc8a8c3929b0be22c145982889d2095f46d2a7b5131ae"
+        },
+        {
+          "symbol": "failureCollectionSchema",
+          "start": 824,
+          "end": 1254,
+          "kind": "VariableDeclaration",
+          "startLine": 23,
+          "endLine": 38,
+          "sha256": "45cb9fdb5f02699868f68ee349577a43a817629d1ce5d33c9c8fe55a89a22649"
+        },
+        {
+          "symbol": "failureRecoverySchema",
+          "start": 1269,
+          "end": 1477,
+          "kind": "VariableDeclaration",
+          "startLine": 39,
+          "endLine": 45,
+          "sha256": "7ead4557b912a8fde6c2808fcad648a93bb44acf3b1f6d60dcaddad09cdd7eea"
+        },
+        {
+          "symbol": "failureSummarySchema",
+          "start": 1492,
+          "end": 2142,
+          "kind": "VariableDeclaration",
+          "startLine": 46,
+          "endLine": 61,
+          "sha256": "06f3e392238a2cbfe30d5a6b9ef1befea16dda74238ed34d0b739af49f5e18c3"
+        }
+      ],
+      "excludes": [],
+      "tokenLines": 46,
+      "tokens": 322,
+      "countedLines": [
+        16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38,
+        39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/application/runtime.ts",
+      "classification": "selected-protocol",
+      "reason": "Bounded drain-until-idle only. Other app composition/clock/services remain outside denominator; replacing selected protocols' composition must still count after migration.",
+      "sourceSha256": "18b4b6483cf4c04512977758fb6d14887af938ab3a5b2c9adbe109403aed4432",
+      "includes": [
+        {
+          "symbol": "createMemoryRuntime/drainUntilIdle",
+          "start": 2655,
+          "end": 3057,
+          "kind": "VariableDeclaration",
+          "startLine": 82,
+          "endLine": 90,
+          "sha256": "9acce31a14819669c35de7d1d6a40d1f4747478ffdfcd2ee88786493957069b6"
+        }
+      ],
+      "excludes": [],
+      "tokenLines": 9,
+      "tokens": 83,
+      "countedLines": [82, 83, 84, 85, 86, 87, 88, 89, 90]
+    },
+    {
+      "path": "apps/content-operations/src/lab/clients.ts",
+      "classification": "separate-lab",
+      "reason": "Local transport/client safety; separate tooling disclosure, not protocol denominator.",
+      "sourceSha256": "63798ef834803ac84d6db299456c4cb7b66c9c363e5ce0ce4a66c62d4b2bc49e",
+      "includes": [
+        {
+          "symbol": "$file",
+          "start": 0,
+          "end": 2166,
+          "kind": "SourceFile",
+          "startLine": 1,
+          "endLine": 58,
+          "sha256": "63798ef834803ac84d6db299456c4cb7b66c9c363e5ce0ce4a66c62d4b2bc49e"
+        }
+      ],
+      "excludes": [],
+      "tokenLines": 53,
+      "tokens": 381,
+      "countedLines": [
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 19, 20, 21, 22, 24, 25, 26, 27,
+        28, 29, 30, 31, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51,
+        52, 54, 56, 57, 58
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/lab/config.ts",
+      "classification": "separate-lab",
+      "reason": "Local endpoint/profile/manifest safety plus current app configuration; no token file read by measurement.",
+      "sourceSha256": "8ed5ddf8ce1ca4e92d042deb28d208406a673a60435ddc1fb83ce923532d2d0f",
+      "includes": [
+        {
+          "symbol": "$file",
+          "start": 0,
+          "end": 5048,
+          "kind": "SourceFile",
+          "startLine": 1,
+          "endLine": 157,
+          "sha256": "8ed5ddf8ce1ca4e92d042deb28d208406a673a60435ddc1fb83ce923532d2d0f"
+        }
+      ],
+      "excludes": [],
+      "tokenLines": 145,
+      "tokens": 973,
+      "countedLines": [
+        1, 2, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15, 17, 18, 19, 20, 21, 22, 23, 24, 26, 27, 28, 29,
+        30, 31, 33, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54,
+        55, 56, 57, 58, 59, 60, 61, 62, 63, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78,
+        79, 80, 81, 82, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 98, 99, 100, 101, 102,
+        103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120,
+        121, 122, 123, 124, 125, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139,
+        140, 141, 142, 143, 145, 146, 147, 148, 150, 151, 152, 153, 154, 155, 156, 157
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/lab/provision.ts",
+      "classification": "separate-lab",
+      "reason": "Finite service lifecycle and ownership, reported separately.",
+      "sourceSha256": "f7c1d40f5b30bbf2712fab5556ee686c08a1571b4eaf9095d5ebe7a3dbd87b1a",
+      "includes": [
+        {
+          "symbol": "$file",
+          "start": 0,
+          "end": 16604,
+          "kind": "SourceFile",
+          "startLine": 1,
+          "endLine": 485,
+          "sha256": "f7c1d40f5b30bbf2712fab5556ee686c08a1571b4eaf9095d5ebe7a3dbd87b1a"
+        }
+      ],
+      "excludes": [],
+      "tokenLines": 476,
+      "tokens": 3038,
+      "countedLines": [
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
+        26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48,
+        49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 68, 69, 70, 71, 72,
+        73, 74, 76, 77, 78, 79, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97,
+        98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116,
+        117, 118, 119, 120, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136,
+        137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154,
+        155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172,
+        173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190,
+        191, 192, 193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 203, 204, 205, 206, 207, 208,
+        209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224, 225, 226,
+        227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239, 240, 241, 242, 243, 244,
+        245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 256, 257, 258, 259, 260, 261, 262,
+        263, 264, 265, 266, 267, 268, 269, 270, 271, 272, 273, 274, 275, 276, 277, 278, 279, 280,
+        281, 282, 283, 284, 285, 286, 287, 288, 289, 290, 291, 292, 293, 294, 295, 296, 297, 298,
+        299, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 312, 313, 314, 315, 316,
+        317, 318, 319, 320, 321, 322, 323, 324, 325, 326, 327, 328, 329, 330, 331, 332, 333, 334,
+        335, 336, 337, 338, 339, 340, 341, 342, 343, 344, 345, 346, 347, 348, 349, 350, 351, 352,
+        353, 354, 355, 356, 357, 359, 360, 361, 362, 363, 365, 366, 367, 368, 369, 370, 371, 372,
+        373, 374, 375, 376, 377, 378, 379, 380, 381, 382, 383, 384, 385, 386, 387, 388, 389, 390,
+        391, 392, 393, 394, 395, 396, 397, 398, 399, 400, 401, 402, 403, 404, 405, 406, 408, 409,
+        411, 412, 413, 414, 415, 416, 417, 418, 419, 420, 421, 422, 423, 424, 425, 426, 427, 428,
+        429, 430, 431, 432, 433, 434, 435, 436, 437, 438, 439, 440, 441, 442, 443, 444, 445, 446,
+        447, 448, 449, 450, 451, 452, 453, 454, 455, 456, 457, 458, 459, 460, 461, 462, 463, 464,
+        465, 466, 467, 468, 469, 470, 471, 472, 473, 474, 475, 476, 477, 478, 479, 480, 481, 482,
+        483, 484, 485
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/lab/capabilities.ts",
+      "classification": "separate-lab",
+      "reason": "Existing storage/Scheduler/queue provider algorithms and profile configuration, reported separately.",
+      "sourceSha256": "a70dea095f3e1ec807f9a757d255fd435a151c952699a3e6aaa1061011c17f72",
+      "includes": [
+        {
+          "symbol": "$file",
+          "start": 0,
+          "end": 10220,
+          "kind": "SourceFile",
+          "startLine": 1,
+          "endLine": 292,
+          "sha256": "a70dea095f3e1ec807f9a757d255fd435a151c952699a3e6aaa1061011c17f72"
+        }
+      ],
+      "excludes": [],
+      "tokenLines": 284,
+      "tokens": 2036,
+      "countedLines": [
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
+        26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 40, 41, 42, 43, 44, 45, 47, 48, 49, 50,
+        51, 52, 53, 54, 55, 56, 57, 58, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74,
+        75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 94, 95, 96, 97, 98,
+        99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116,
+        117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134,
+        135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 148, 149, 150, 151, 152, 153,
+        154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171,
+        172, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190,
+        191, 192, 193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 203, 204, 205, 206, 207, 208,
+        209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 223, 224, 225, 226, 227,
+        228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239, 240, 241, 242, 243, 244, 245,
+        246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 256, 257, 258, 259, 260, 261, 262, 263,
+        264, 265, 266, 267, 268, 269, 270, 271, 272, 273, 274, 275, 276, 277, 278, 279, 280, 281,
+        282, 283, 284, 285, 287, 288, 289, 290, 291, 292
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/lab/application-topology.ts",
+      "classification": "separate-lab",
+      "reason": "Current application service bindings/grants/provider algorithms, reported separately.",
+      "sourceSha256": "5adc845fe9d0aff35811256973bbede7bece8682a5ed65efd2f989415f94ac54",
+      "includes": [
+        {
+          "symbol": "$file",
+          "start": 0,
+          "end": 16592,
+          "kind": "SourceFile",
+          "startLine": 1,
+          "endLine": 456,
+          "sha256": "5adc845fe9d0aff35811256973bbede7bece8682a5ed65efd2f989415f94ac54"
+        }
+      ],
+      "excludes": [],
+      "tokenLines": 450,
+      "tokens": 3207,
+      "countedLines": [
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 17, 18, 19, 20, 21, 24, 25, 26, 27, 28,
+        29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51,
+        52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74,
+        75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97,
+        98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116,
+        117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134,
+        135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 150, 151, 152, 153,
+        154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171,
+        172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189,
+        190, 191, 192, 193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 203, 204, 205, 206, 207,
+        208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224, 225,
+        226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239, 240, 241, 242, 243,
+        244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 256, 257, 258, 259, 260, 261,
+        262, 263, 264, 265, 266, 267, 268, 269, 270, 271, 272, 273, 274, 275, 276, 277, 278, 279,
+        280, 281, 282, 283, 284, 285, 286, 287, 288, 289, 290, 291, 292, 293, 294, 295, 296, 297,
+        298, 299, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 312, 313, 314, 315,
+        316, 317, 318, 319, 320, 321, 322, 323, 324, 325, 326, 327, 328, 329, 330, 331, 332, 333,
+        334, 335, 336, 337, 338, 339, 340, 341, 342, 343, 344, 345, 346, 347, 348, 349, 350, 351,
+        352, 353, 354, 355, 356, 357, 358, 359, 360, 361, 362, 363, 364, 365, 366, 367, 368, 369,
+        370, 371, 372, 373, 374, 375, 376, 377, 378, 379, 380, 381, 382, 383, 384, 385, 386, 387,
+        388, 389, 390, 391, 392, 393, 394, 395, 397, 398, 399, 400, 401, 402, 403, 404, 405, 406,
+        407, 408, 409, 410, 411, 412, 413, 414, 415, 416, 418, 419, 420, 421, 422, 423, 424, 425,
+        426, 427, 428, 429, 430, 431, 432, 433, 434, 435, 436, 437, 438, 439, 440, 441, 442, 443,
+        444, 445, 446, 447, 448, 449, 450, 451, 452, 453, 454, 455, 456
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/lab/lifecycle.ts",
+      "classification": "separate-lab",
+      "reason": "Bounded wait/missing helpers, reported separately.",
+      "sourceSha256": "2697f36248032d8e6ff0ee097277f3003eccdd8ae7f153c617de95ae0ff744c1",
+      "includes": [
+        {
+          "symbol": "$file",
+          "start": 0,
+          "end": 1088,
+          "kind": "SourceFile",
+          "startLine": 1,
+          "endLine": 38,
+          "sha256": "2697f36248032d8e6ff0ee097277f3003eccdd8ae7f153c617de95ae0ff744c1"
+        }
+      ],
+      "excludes": [],
+      "tokenLines": 36,
+      "tokens": 232,
+      "countedLines": [
+        1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
+        28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/lab/containers.ts",
+      "classification": "separate-lab",
+      "reason": "Exact-owner container inspection/removal, reported separately.",
+      "sourceSha256": "86c90a6379be0f780d388b966c223af95abbd760fafdce0bf4d8afdb6b5132ec",
+      "includes": [
+        {
+          "symbol": "$file",
+          "start": 0,
+          "end": 4080,
+          "kind": "SourceFile",
+          "startLine": 1,
+          "endLine": 109,
+          "sha256": "86c90a6379be0f780d388b966c223af95abbd760fafdce0bf4d8afdb6b5132ec"
+        }
+      ],
+      "excludes": [],
+      "tokenLines": 108,
+      "tokens": 857,
+      "countedLines": [
+        1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
+        27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49,
+        50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72,
+        73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95,
+        96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109
+      ]
+    }
+  ],
+  "applicationSources": [
+    {
+      "path": "apps/content-operations/src/application/api-runtime.ts",
+      "sha256": "ab3a87aa4a19e73dcf804a94e042ab75d88de935b11dc356063efda793ca4c9e"
+    },
+    {
+      "path": "apps/content-operations/src/application/asset-cleanup.ts",
+      "sha256": "8a77c4f06318f2a35c1a6706ceeba44e7368aa0404874fa914efa5176ade964e"
+    },
+    {
+      "path": "apps/content-operations/src/application/dispatch.ts",
+      "sha256": "345d8970857b8407c2e0929283b549f7ba5492c2fa1d4b39bf3cf8b81fe82feb"
+    },
+    {
+      "path": "apps/content-operations/src/application/failure-records.ts",
+      "sha256": "11da673914c87121d8b397d9b4df71fba3bd8228e79eb18f00ac575ae7fa9e01"
+    },
+    {
+      "path": "apps/content-operations/src/application/failures.ts",
+      "sha256": "6bd54b01edab2f01ce079b726acd64f10274b554a1aabb5e623a9befcd1fa930"
+    },
+    {
+      "path": "apps/content-operations/src/application/job-store.ts",
+      "sha256": "c21e33a87942ee4d044d0abcb9e36f1a4d7938a4f1bfadf6c656774730c00933"
+    },
+    {
+      "path": "apps/content-operations/src/application/jobs.ts",
+      "sha256": "750514b71986ae7d7b723cc233ed064b397bc117c4595e1561ac0bc9faf14ac6"
+    },
+    {
+      "path": "apps/content-operations/src/application/json-router.ts",
+      "sha256": "afdcc436fbda3e78787de398d5356150072af100afbbec466c1c06189c09df60"
+    },
+    {
+      "path": "apps/content-operations/src/application/memory.ts",
+      "sha256": "1f4dae1949ac3315528b4f233d12dde50a16a267f1c8509b99cc323555c6060a"
+    },
+    {
+      "path": "apps/content-operations/src/application/notifications.ts",
+      "sha256": "6597fa11998026d16f3d78de0ca36a82eb3d5188d3d3302f02374fe53f09c7f3"
+    },
+    {
+      "path": "apps/content-operations/src/application/object-store.ts",
+      "sha256": "5978522a2583115a29191eadc2261c334959497d080020154203e37d65f06dfe"
+    },
+    {
+      "path": "apps/content-operations/src/application/persistence.ts",
+      "sha256": "7e0bfe7166a418f3307907c26de4acf98d356255bbecf09f85663b9c2cb8b8bd"
+    },
+    {
+      "path": "apps/content-operations/src/application/publication-artifact.ts",
+      "sha256": "6a389790154efefc1b9d11ea18a2a0749bd8d3cc8ce057d4099bffa2b16c836e"
+    },
+    {
+      "path": "apps/content-operations/src/application/publication-claim.ts",
+      "sha256": "a344866d46ac329794e00a4f257598731aaa50dcb679bfff981172a834107627"
+    },
+    {
+      "path": "apps/content-operations/src/application/publication-operations.ts",
+      "sha256": "cf08f8c0016183952fdbbe665d66bae197fbc94f2f70958352dd5d71d956dbea"
+    },
+    {
+      "path": "apps/content-operations/src/application/publisher.ts",
+      "sha256": "64b016b678d015bde910b9e8a9a566506bbab89ab968cbea4abaa651e5785604"
+    },
+    {
+      "path": "apps/content-operations/src/application/pump.ts",
+      "sha256": "f473fce48bfe42e6e462111db00cddc6dc42721526cb70371b65afadeba7c8fc"
+    },
+    {
+      "path": "apps/content-operations/src/application/queries.ts",
+      "sha256": "a1216ff6910e7e1ca1b24ddd499e298dce4d83fc017358c4cc0403ee97a4e28b"
+    },
+    {
+      "path": "apps/content-operations/src/application/reads.ts",
+      "sha256": "352436450edc1a0949b456b1a3ddaa3ec750c5416387450739f2f71c0d1c99c4"
+    },
+    {
+      "path": "apps/content-operations/src/application/runtime.ts",
+      "sha256": "18b4b6483cf4c04512977758fb6d14887af938ab3a5b2c9adbe109403aed4432"
+    },
+    {
+      "path": "apps/content-operations/src/application/seed.ts",
+      "sha256": "70500774a79dd115e39bf6f424939de7a3558a4f33d730cc4c793b438223befd"
+    },
+    {
+      "path": "apps/content-operations/src/application/uploads.ts",
+      "sha256": "a0f2b32b42cff3fa107e1d4f6afe977aa0881f3b60a54f000e91e04bf4d4540b"
+    },
+    {
+      "path": "apps/content-operations/src/application/workers.ts",
+      "sha256": "c6e320916cee1dea8b1137c9d38cf10e724ac9358780889977f1aca7a5bf3120"
+    },
+    {
+      "path": "apps/content-operations/src/aws/api-runtime.ts",
+      "sha256": "3d9b26d644b23c147f6702de58adf11fa04351efcfa955ad6286abafdd7058cb"
+    },
+    {
+      "path": "apps/content-operations/src/aws/delivery.ts",
+      "sha256": "a0b530f30717ca79fb589ebf57b3201ae70ab4b4c7704ad46befe21d45ba8a2c"
+    },
+    {
+      "path": "apps/content-operations/src/aws/failures.ts",
+      "sha256": "b498dc559a7d7bad93d0c51c03a042f6a45ca646e4c25746219dc8436c096765"
+    },
+    {
+      "path": "apps/content-operations/src/aws/job-store.ts",
+      "sha256": "5dcd88299fc2e640425c00302481632b66645843db5e3b3b2ef041f77010f221"
+    },
+    {
+      "path": "apps/content-operations/src/aws/jobs.ts",
+      "sha256": "3b53412eac659c000d22714bd87ff42a3710f2c65d996bf2ffabef8bc9851471"
+    },
+    {
+      "path": "apps/content-operations/src/aws/local-context.ts",
+      "sha256": "a58a2d46afc819c4c36ea51dc0e5ea7a09a9edda1b6578ad015d735dfc01c440"
+    },
+    {
+      "path": "apps/content-operations/src/aws/notifications.ts",
+      "sha256": "c1508f060d71af20b19ef5c614893862e89f69e29a89aa9b02aaf299fb36697f"
+    },
+    {
+      "path": "apps/content-operations/src/aws/object-store.ts",
+      "sha256": "b8c0378944af9060d5af03e596a2ae48e21ab58cbbddf566a21096af9c2d668a"
+    },
+    {
+      "path": "apps/content-operations/src/aws/persistence.ts",
+      "sha256": "fe9395df7483de3c36fdb5ea4f528192f788259ecc207f9fe8b1bf5a418a2cf5"
+    },
+    {
+      "path": "apps/content-operations/src/aws/profile.ts",
+      "sha256": "f2b99d9e141ad815806bd6eab66db13c63bfebf995f9e86b7c6d1f5e6ca42da3"
+    },
+    {
+      "path": "apps/content-operations/src/aws/publication.ts",
+      "sha256": "38180f31282975c5bd12094e0bee4d469e7c58387cb5d530d8b42ae14fae2063"
+    },
+    {
+      "path": "apps/content-operations/src/aws/recovery.ts",
+      "sha256": "2ea0c7051442b10f32dedc426a19f2c427c3e3293843b93276927f9a12ed5976"
+    },
+    {
+      "path": "apps/content-operations/src/aws/spine.ts",
+      "sha256": "ec1cc78122b6696c44169999479d73b6d7b829b23d30f4ca9a6032814ce62bad"
+    },
+    {
+      "path": "apps/content-operations/src/aws/synth/api.ts",
+      "sha256": "17512100d4f64b5866da6caa9c7ee7aec0fc23242d3fb146e9049e236d0ec8a3"
+    },
+    {
+      "path": "apps/content-operations/src/aws/synth/context.ts",
+      "sha256": "386e5e4e92066e169d2356ce6c501903f97eb011b2957ed3e2a7482b608eda98"
+    },
+    {
+      "path": "apps/content-operations/src/aws/synth/entrypoints.ts",
+      "sha256": "fb4cef9a290ed8acdf1f934d7a4e2d666d42df3205bf47ead89d5e658f4783c2"
+    },
+    {
+      "path": "apps/content-operations/src/aws/synth/runtime.ts",
+      "sha256": "3200e143b11fbaf69251a5650605558b5c37f4f8b2ebcdc46e59a52a883b4b6d"
+    },
+    {
+      "path": "apps/content-operations/src/domain/asset-resource.ts",
+      "sha256": "68895fb049764380c626cac93ae9e7ca8a2ae7e3dbc77207a1c1b766fa28d492"
+    },
+    {
+      "path": "apps/content-operations/src/domain/projections.ts",
+      "sha256": "bfb9403cf5f7dbd794803cbf8f985514295663ab114c8248f3e3feb4e5a28615"
+    },
+    {
+      "path": "apps/content-operations/src/domain/publication-commands.ts",
+      "sha256": "62e8320e96f7d00d65dec3706c10dff9b720ceaa946765999a08d3fb97dd87f9"
+    },
+    {
+      "path": "apps/content-operations/src/domain/resources.ts",
+      "sha256": "b7c71f3cfe5da07a4764fcc781d4e0c1c0838634eb21cfb961499f9629adc8b6"
+    },
+    {
+      "path": "apps/content-operations/src/domain/subscriptions.ts",
+      "sha256": "77f62643265e87e45b0d80fc24889c3855cd19f995a7e6080129cbd38ad96b9b"
+    },
+    {
+      "path": "apps/content-operations/src/http/server.ts",
+      "sha256": "439127a40c5a7882b09ec8bee05f7494fc128b25a65cac585ec2c5aed44d4bd2"
+    },
+    {
+      "path": "apps/content-operations/src/infra/config.ts",
+      "sha256": "e87c51617f1c399a9d3538008c22e5b81b1d01c6ff20dc1161bf773e94721bcc"
+    },
+    {
+      "path": "apps/content-operations/src/infra/stack.ts",
+      "sha256": "f03194723a47d8c7054dc13c9aa810f344f00e06ff78d41bfc32a54de21f817a"
+    },
+    {
+      "path": "apps/content-operations/src/lab/application-topology.ts",
+      "sha256": "5adc845fe9d0aff35811256973bbede7bece8682a5ed65efd2f989415f94ac54"
+    },
+    {
+      "path": "apps/content-operations/src/lab/artifact.ts",
+      "sha256": "946cbe02912db6fe85995dc14d06ba2fe9be9a3493d70fda6fc22f08de46dcdc"
+    },
+    {
+      "path": "apps/content-operations/src/lab/capabilities.ts",
+      "sha256": "a70dea095f3e1ec807f9a757d255fd435a151c952699a3e6aaa1061011c17f72"
+    },
+    {
+      "path": "apps/content-operations/src/lab/clients.ts",
+      "sha256": "63798ef834803ac84d6db299456c4cb7b66c9c363e5ce0ce4a66c62d4b2bc49e"
+    },
+    {
+      "path": "apps/content-operations/src/lab/config.ts",
+      "sha256": "8ed5ddf8ce1ca4e92d042deb28d208406a673a60435ddc1fb83ce923532d2d0f"
+    },
+    {
+      "path": "apps/content-operations/src/lab/containers.ts",
+      "sha256": "86c90a6379be0f780d388b966c223af95abbd760fafdce0bf4d8afdb6b5132ec"
+    },
+    {
+      "path": "apps/content-operations/src/lab/handlers.ts",
+      "sha256": "0eec81bb731141d3b327328372c6de5de5fc96064a96f075185b8a7b67021086"
+    },
+    {
+      "path": "apps/content-operations/src/lab/lifecycle.ts",
+      "sha256": "2697f36248032d8e6ff0ee097277f3003eccdd8ae7f153c617de95ae0ff744c1"
+    },
+    {
+      "path": "apps/content-operations/src/lab/provision.ts",
+      "sha256": "f7c1d40f5b30bbf2712fab5556ee686c08a1571b4eaf9095d5ebe7a3dbd87b1a"
+    },
+    {
+      "path": "apps/content-operations/src/lab/resource.ts",
+      "sha256": "9443ce3d3f70dd6a98b1608293084fe90b3f4a99287343f89717feec52781c11"
+    },
+    {
+      "path": "apps/content-operations/src/lab/verification-code.ts",
+      "sha256": "e72a857a08f1f672f378e6a1bf71de3ebf1cd05f130385a1fd3edef43320ca1e"
+    },
+    {
+      "path": "apps/content-operations/src/lab/verification-entry.ts",
+      "sha256": "37b57468ddd6fe2bc5998392eed9b3048a9c87fdc7b7e87deec3bb12ef3bad2a"
+    },
+    {
+      "path": "apps/content-operations/src/lab/verification-state.ts",
+      "sha256": "c0d0d775c70cc1929746c780ade7bebebc69c5bc0aa80275e85ccd754f0ec8b1"
+    },
+    {
+      "path": "apps/content-operations/src/lab/verify-api.ts",
+      "sha256": "ebf5fd7ea22c18e4961e27131fe413b5d48ee46bd44a7af5b73451147125cf21"
+    },
+    {
+      "path": "apps/content-operations/src/lab/verify-assets.ts",
+      "sha256": "2ad46269516b64bf9a0516570c75ae27fdf659c407ce80bf177ce00835c64ab6"
+    },
+    {
+      "path": "apps/content-operations/src/lab/verify-capabilities.ts",
+      "sha256": "27408b04ac6f1614409524a596ee309a140fd28641ab170ca0e4ea2d325f4105"
+    },
+    {
+      "path": "apps/content-operations/src/lab/verify-delivery.ts",
+      "sha256": "9073828f879467cb7dd9704fc3d339360ddc697350ae980623365585f1ea8ec2"
+    },
+    {
+      "path": "apps/content-operations/src/lab/verify-failures.ts",
+      "sha256": "aba2a341c40013f954724db178802c33e299c59b7c5240bcf453a92a0cb44e28"
+    },
+    {
+      "path": "apps/content-operations/src/lab/verify-isolation.ts",
+      "sha256": "c4f46653756a3f04a3d76c70cb133204776b49c6184703a17bf1ebdb3953e746"
+    },
+    {
+      "path": "apps/content-operations/src/lab/verify-jobs.ts",
+      "sha256": "6dc22b8bd1c0cdaffd69dfae6de5c4f9be20bd718182c5a7b76cc6937be1adc9"
+    },
+    {
+      "path": "apps/content-operations/src/lab/verify-paging.ts",
+      "sha256": "b4b7bf46aa5c31107c9201142cf2458176273e99dd529cb8e5f4eab70159c819"
+    },
+    {
+      "path": "apps/content-operations/src/lab/verify-publication.ts",
+      "sha256": "fb42a9fc0f314d18b17b0e0046355900bc00853f221598759f3a6378cbbbce4c"
+    },
+    {
+      "path": "apps/content-operations/src/lab/verify-runtime-cleanup.ts",
+      "sha256": "a75a32da1481390a6744a9858ff9618d8d0311f80ea1f64eb2e4331af8c792d7"
+    },
+    {
+      "path": "apps/content-operations/src/lab/verify-transactions.ts",
+      "sha256": "6aa446e164847e2299dba260c5efde3a6ca7c9c14f9ff181d9134f3745e668d5"
+    },
+    {
+      "path": "apps/content-operations/src/lab/verify.ts",
+      "sha256": "4d228b1e35fae37642268d40e9451594875b2631fffeb1c0dc1b07e11056377b"
+    },
+    {
+      "path": "apps/content-operations/src/shared/api.ts",
+      "sha256": "f958572cd6eb78581fc00e7a479015ba4100dd85a27794ff548f53af9464bf79"
+    },
+    {
+      "path": "apps/content-operations/src/shared/assets.ts",
+      "sha256": "185a8be5562dc70df3dbc1743f87ff6e94c82f8fce0ef0f7d23049ee7151d5ca"
+    },
+    {
+      "path": "apps/content-operations/src/shared/calendar.ts",
+      "sha256": "3bf5c000e2844cd3a5438f23b1317ff65b8841a1329400329858e44ea3d6d852"
+    },
+    {
+      "path": "apps/content-operations/src/shared/contracts.ts",
+      "sha256": "632309e9e131970bcfd2be1715ee4d8cd2b84034a3896b3fa17dda01c2ce1686"
+    },
+    {
+      "path": "apps/content-operations/src/shared/events.ts",
+      "sha256": "fc5fad6c34d01a6de637ebbafe812fcd3a5f11c880839e1012cdfc524e824e54"
+    },
+    {
+      "path": "apps/content-operations/src/shared/identities.ts",
+      "sha256": "206f938790bc2698ece7b52fea7dfa35ef2bc24e610e4d12290925212a6f3a9b"
+    },
+    {
+      "path": "apps/content-operations/src/shared/media-views.ts",
+      "sha256": "461dbce61a85ceeafffb9f9d6a7befd664ae61a120ec63adf161e43d426b68a6"
+    },
+    {
+      "path": "apps/content-operations/src/shared/operation-views.ts",
+      "sha256": "5ddf49e2f379033d00484730a74d571910b003a060b76f1f472aaebd570faaaf"
+    },
+    {
+      "path": "apps/content-operations/src/shared/presentation.ts",
+      "sha256": "3524cdd3f5eb4ba4381f2a58f547c4d18d2b1c5dc2d16545dc8ccc3a2a686b77"
+    },
+    {
+      "path": "apps/content-operations/src/shared/publication-inputs.ts",
+      "sha256": "3072cc4c7f65078c788654d21711000f385af9cd40d5b6da44de4f5a6ad23b49"
+    },
+    {
+      "path": "apps/content-operations/src/shared/publication-recovery.ts",
+      "sha256": "ba3b4f9bc34e9c4411b55195448fa232275e02deae2bdf7a7b7392adee54879f"
+    },
+    {
+      "path": "apps/content-operations/src/shared/review-views.ts",
+      "sha256": "135c7f9b8538bcf23973e2ce077060c90e2c95000c956e0ecac9681fabb2818e"
+    },
+    {
+      "path": "apps/content-operations/src/shared/time.ts",
+      "sha256": "d82200d9d9031643250d110416f9de8f16967ad0bf0678a20bfacdb00602e76d"
+    },
+    {
+      "path": "apps/content-operations/src/shared/validation.ts",
+      "sha256": "22571a50eaacbef0eadf8c2fca2e5034d0fd1a8a5bf9759317a4bfbb49c80d5f"
+    },
+    {
+      "path": "apps/content-operations/src/web/activity.ts",
+      "sha256": "243652db2e594ba02f8b5b90d832370491fe5d0a8da404346cf78bcb9763f16a"
+    },
+    {
+      "path": "apps/content-operations/src/web/app.ts",
+      "sha256": "1c8f086d02f75ed7a2ddc5b1a5c1e2bf8392dbcf645b587718c91686400ffe65"
+    },
+    {
+      "path": "apps/content-operations/src/web/attachment-session.ts",
+      "sha256": "77dded38267fa81519697808eab165902da3d9fea1ef00f76847fb3cae5e8d12"
+    },
+    {
+      "path": "apps/content-operations/src/web/attachments.ts",
+      "sha256": "a0048466bb52e14385a571af39e3bb232c417a8a8599f5a00c303f88fd308a79"
+    },
+    {
+      "path": "apps/content-operations/src/web/calendar.ts",
+      "sha256": "9872d687009a885806db599b80707befc1bd58cd6566bc1eced45284f2c7229f"
+    },
+    {
+      "path": "apps/content-operations/src/web/client.ts",
+      "sha256": "6317e17fd637f788241e18efd32701c8642198234f6b01529957b0d47934370a"
+    },
+    {
+      "path": "apps/content-operations/src/web/content-detail.ts",
+      "sha256": "e2401112788756bb3c62d9af8b45e3c03efd11286df6b09376f355a828419246"
+    },
+    {
+      "path": "apps/content-operations/src/web/content-list.ts",
+      "sha256": "4d4972d32549984ff4b3f6f820ec41f1021b64d00483a1f1698fa9a787f7c739"
+    },
+    {
+      "path": "apps/content-operations/src/web/draft-editor.ts",
+      "sha256": "f353c3056415c6119b33c72c4f3d0a055ccb4d649f52ab87b45067392236b52e"
+    },
+    {
+      "path": "apps/content-operations/src/web/editorial-action.ts",
+      "sha256": "159cc0d0bd2988719b36f1452c892c20da09995fd7261defda7c9405e23b0c65"
+    },
+    {
+      "path": "apps/content-operations/src/web/main.ts",
+      "sha256": "b461bddaa28219a4e0388690b75f63b2adc4290929d1c5cef77aa5642dc56af5"
+    },
+    {
+      "path": "apps/content-operations/src/web/operations.ts",
+      "sha256": "943bc442bfc31b3afb0a715579f2dbec7210b83545583da65cac7e2580021ad8"
+    },
+    {
+      "path": "apps/content-operations/src/web/publication.ts",
+      "sha256": "3c73e4686d42da501b8a27798060aa92c2c98e407d2f02410de069013a123e0a"
+    },
+    {
+      "path": "apps/content-operations/src/web/recovery-session.ts",
+      "sha256": "cc0509460244fc4b7e36607a738f3d011fc5e0fcedd4fe99669d41523522e79a"
+    },
+    {
+      "path": "apps/content-operations/src/web/recovery.ts",
+      "sha256": "6f0b73d0047725d65b5ad44a95b289a156dc000d76048c645668ffaab31a2027"
+    },
+    {
+      "path": "apps/content-operations/src/web/review-detail.ts",
+      "sha256": "820221eee371289aafbb96821f52e290f553c4ff7540c52c7c0e62583b1d7b1d"
+    },
+    {
+      "path": "apps/content-operations/src/web/review-list.ts",
+      "sha256": "a42628dd4eeb08ebd50487dca44671c7d167a5626c2ae6b1a6ff338c9ea82784"
+    },
+    {
+      "path": "apps/content-operations/src/web/review-session.ts",
+      "sha256": "409b256963a5605c602f1351abb21d0bf50a0aa23fd6dc9907e6f7059f2c3431"
+    },
+    {
+      "path": "apps/content-operations/src/web/schedule-session.ts",
+      "sha256": "8db3ac1234c5334b99fa3b27b78b4a2730e5f1e73bd36145cdc11847195f2f21"
+    },
+    {
+      "path": "apps/content-operations/src/web/scheduling.ts",
+      "sha256": "ede4053dffc4f2ebf724d3023e574f194c0a2739c731bb849c517ce143685743"
+    },
+    {
+      "path": "apps/content-operations/src/web/verified-attachment.ts",
+      "sha256": "9cfce8bd7bfc6fbf5e687e3161c0891585a6866707785e13e338277b621a1ffc"
+    },
+    {
+      "path": "apps/content-operations/src/web/visibility-poll.ts",
+      "sha256": "45d3d6898fb89ba2c84a9febd6efad2d9a4ca5b2a06bb71ee4e36a80609737f4"
+    },
+    {
+      "path": "apps/content-operations/src/web/workspace.ts",
+      "sha256": "c192656cbe598dffc1f966a0d24960861ca7d902a19bf321215aae8e2928c34c"
+    }
+  ],
+  "framework": [
+    {
+      "package": "@jawstack/angular",
+      "sourceTokenLines": 948,
+      "sources": [
+        {
+          "path": "packages/angular/src/index.ts",
+          "sha256": "46bab820ed97646115101258082bf3f815a29bdb1da617bf20f07d7d7ff23298",
+          "tokenLines": 948
+        }
+      ],
+      "packageExports": {
+        ".": {
+          "types": "./dist/index.d.ts",
+          "import": "./dist/index.js"
+        }
+      },
+      "declaredIndexExports": [
+        "ActivityResult",
+        "CommandUiDefinition",
+        "ExecuteCommandRequest",
+        "FetchJawStackApiClient",
+        "JAWSTACK_API_CLIENT",
+        "JAWSTACK_AUTH",
+        "JAWSTACK_CONFIG",
+        "JawStackApiClient",
+        "JawStackApiError",
+        "JawStackApiErrorOptions",
+        "JawStackAuthProvider",
+        "JawStackAuthState",
+        "JawStackConfig",
+        "JawStackNavItem",
+        "JsActivityTimelineComponent",
+        "JsAppShellComponent",
+        "JsCommandButtonComponent",
+        "JsCommandDialogComponent",
+        "JsEmptyStateComponent",
+        "JsErrorPanelComponent",
+        "JsResourceDetailComponent",
+        "JsResourceFormComponent",
+        "JsResourceListComponent",
+        "JsStatusBadgeComponent",
+        "ListOptions",
+        "ResourceDetailResult",
+        "ResourceListResult",
+        "ResourceUiDefinition",
+        "describePackage",
+        "packageName",
+        "provideJawStack"
+      ]
+    },
+    {
+      "package": "@jawstack/aws-cdk",
+      "sourceTokenLines": 739,
+      "sources": [
+        {
+          "path": "packages/aws-cdk/src/index.ts",
+          "sha256": "cb4294382fe7cc197a4f51e3280730793e14296b31153aef8f516a3baee1d4e3",
+          "tokenLines": 739
+        }
+      ],
+      "packageExports": {
+        ".": {
+          "types": "./dist/index.d.ts",
+          "import": "./dist/index.js"
+        }
+      },
+      "declaredIndexExports": [
+        "JawStackRemovalPolicy",
+        "JawStackResourceWorkflowApp",
+        "JawStackResourceWorkflowAppProps",
+        "JawStackResourceWorkflowEntrypoints",
+        "JawStackWorkerBinding",
+        "JawStackWorkerOptions",
+        "describePackage",
+        "packageName"
+      ]
+    },
+    {
+      "package": "@jawstack/aws-runtime",
+      "sourceTokenLines": 1916,
+      "sources": [
+        {
+          "path": "packages/aws-runtime/src/index.ts",
+          "sha256": "bd359e31e4bc34da6fe80b003b43dee732ff49d09f73e602d00abf33242e81d5",
+          "tokenLines": 1916
+        }
+      ],
+      "packageExports": {
+        ".": {
+          "types": "./dist/index.d.ts",
+          "import": "./dist/index.js"
+        }
+      },
+      "declaredIndexExports": [
+        "AwsSdkClientLike",
+        "AwsSdkCommand",
+        "DynamoDbActivityItem",
+        "DynamoDbClientLike",
+        "DynamoDbCommand",
+        "DynamoDbCommandTransactionOptions",
+        "DynamoDbCommandUnitOfWork",
+        "DynamoDbCommandUnitOfWorkOptions",
+        "DynamoDbIdempotencyContext",
+        "DynamoDbIdempotencyItem",
+        "DynamoDbIdempotencyScope",
+        "DynamoDbItem",
+        "DynamoDbItemKind",
+        "DynamoDbKey",
+        "DynamoDbOutboxDispatcher",
+        "DynamoDbOutboxDispatcherOptions",
+        "DynamoDbOutboxEventItem",
+        "DynamoDbOutboxStatus",
+        "DynamoDbOutboxSweeper",
+        "DynamoDbOutboxSweeperOptions",
+        "DynamoDbProjectionInput",
+        "DynamoDbProjectionItem",
+        "DynamoDbRepository",
+        "DynamoDbRepositoryOptions",
+        "DynamoDbResourceStateItem",
+        "DynamoDbStreamEvent",
+        "DynamoDbStreamRecord",
+        "DynamoDbWorkerIdempotencyItem",
+        "DynamoDbWorkerIdempotencyStore",
+        "DynamoDbWorkerIdempotencyStoreOptions",
+        "EventBridgeClientLike",
+        "EventBridgePublisher",
+        "EventBridgePublisherOptions",
+        "LambdaHttpAdapterOptions",
+        "LambdaHttpEvent",
+        "LambdaHttpRequestContext",
+        "LambdaHttpResponse",
+        "LambdaRepositoryFactoryInput",
+        "OutboxDispatchResult",
+        "SchedulerEvent",
+        "SchedulerHandler",
+        "SchedulerTargetAdapterOptions",
+        "SchedulerTargetAdapterResult",
+        "SqsEvent",
+        "SqsRecord",
+        "SqsWorkerAdapter",
+        "SqsWorkerAdapterOptions",
+        "SqsWorkerResult",
+        "StaleWorkRequestReminder",
+        "StaleWorkRequestReminderOptions",
+        "StaleWorkRequestReminderResult",
+        "WorkerHandler",
+        "WorkerMessage",
+        "activityKey",
+        "buildCommandTransactWriteItems",
+        "buildProjectionTransactWriteItem",
+        "buildResourceStateTransactWriteItem",
+        "createApiGatewayLambdaHandler",
+        "createLambdaHttpHandler",
+        "createSchedulerTargetAdapter",
+        "createStaleWorkRequestReminderHandler",
+        "describePackage",
+        "fromActivityItem",
+        "fromIdempotencyItem",
+        "fromOutboxEventItem",
+        "fromProjectionItem",
+        "fromResourceStateItem",
+        "fromWorkerIdempotencyItem",
+        "idempotencyContextFromCoreRecord",
+        "idempotencyKey",
+        "invertedTimestamp",
+        "outboxEventKey",
+        "outboxStatusKey",
+        "packageName",
+        "pendingOutboxItemFromStreamRecord",
+        "projectionKey",
+        "projectionPartitionKey",
+        "resourceStateKey",
+        "toActivityItem",
+        "toIdempotencyItem",
+        "toOutboxEventItem",
+        "toProjectionItem",
+        "toResourceStateItem",
+        "toWorkerIdempotencyItem",
+        "workerIdempotencyKey"
+      ]
+    },
+    {
+      "package": "@jawstack/cli",
+      "sourceTokenLines": 1435,
+      "sources": [
+        {
+          "path": "packages/cli/src/cli.ts",
+          "sha256": "bdd224d86315577ea7d736d09e25596246878c6eb6700820d28f2fbea0c8d83a",
+          "tokenLines": 9
+        },
+        {
+          "path": "packages/cli/src/index.ts",
+          "sha256": "f6d7bef36fc508a9c9770a94d7fe1e85917ee7f33761734ae474d54fc5b3117e",
+          "tokenLines": 1426
+        }
+      ],
+      "packageExports": {
+        ".": {
+          "types": "./dist/index.d.ts",
+          "import": "./dist/index.js"
+        }
+      },
+      "declaredIndexExports": [
+        "CliResult",
+        "CommandRunResult",
+        "CommandRunner",
+        "HttpClient",
+        "HttpRequest",
+        "HttpResponse",
+        "JawStackConfig",
+        "RunCliOptions",
+        "Sleep",
+        "defaultConfigFiles",
+        "defineJawStackApp",
+        "describePackage",
+        "getHelpText",
+        "loadJawStackConfig",
+        "packageName",
+        "renderFindingsHuman",
+        "renderFindingsJson",
+        "runCli",
+        "validateDoctor"
+      ]
+    },
+    {
+      "package": "@jawstack/core",
+      "sourceTokenLines": 2601,
+      "sources": [
+        {
+          "path": "packages/core/src/index.ts",
+          "sha256": "70adcf933e465bc929c5e88183b88a59b08019985968804cb24eff4956707939",
+          "tokenLines": 2601
+        }
+      ],
+      "packageExports": {
+        ".": {
+          "types": "./dist/index.d.ts",
+          "import": "./dist/index.js"
+        }
+      },
+      "declaredIndexExports": [
+        "ActivityDraft",
+        "ActivityQuery",
+        "ActivityRecord",
+        "Actor",
+        "ApiError",
+        "ApiSuccess",
+        "AssignWorkRequestInput",
+        "AssignWorkRequestResponse",
+        "AuthContext",
+        "AuthMode",
+        "AuthProvider",
+        "BaseFieldDefinition",
+        "BooleanFieldDefinition",
+        "ChangeWorkRequestStatusInput",
+        "ChangeWorkRequestStatusResponse",
+        "CloseWorkRequestInput",
+        "CloseWorkRequestResponse",
+        "CommandCommitInput",
+        "CommandContext",
+        "CommandDecide",
+        "CommandDecision",
+        "CommandDefinition",
+        "CommandExecutionResult",
+        "CommandExecutorOptions",
+        "CommandRequest",
+        "CommandUnitOfWork",
+        "CommentWorkRequestInput",
+        "CommentWorkRequestResponse",
+        "CostProfile",
+        "CreateManifestInput",
+        "CreateWorkRequestInput",
+        "CreateWorkRequestResponse",
+        "DateTimeFieldDefinition",
+        "DefineCommandInput",
+        "DefineResourceInput",
+        "DetailViewDefinition",
+        "DevAuthProvider",
+        "EnumFieldDefinition",
+        "EnumFieldOptions",
+        "EventDeclaration",
+        "EventDraft",
+        "FieldDefinition",
+        "FieldKind",
+        "FieldOptions",
+        "Finding",
+        "FindingSeverity",
+        "HeaderAuthProvider",
+        "IdGenerator",
+        "IdempotencyCommit",
+        "IdempotencyRecord",
+        "InMemoryRepository",
+        "InMemoryStore",
+        "InMemoryUnitOfWork",
+        "JawStackDefinitionError",
+        "JawStackEvent",
+        "JawStackManifest",
+        "JawStackRuntimeError",
+        "ListViewDefinition",
+        "LocalHttpAdapterOptions",
+        "LocalHttpReadableRepository",
+        "LocalHttpRequestContext",
+        "ManifestAuth",
+        "ManifestCommand",
+        "ManifestField",
+        "ManifestResource",
+        "ManifestSchedule",
+        "ManifestWorker",
+        "Page",
+        "PreparedActivityQuery",
+        "PreparedProjectionQuery",
+        "PreparedQuery",
+        "ProjectionQuery",
+        "ProjectionRecord",
+        "ProjectionWrite",
+        "QueryRepository",
+        "RegistryValidationResult",
+        "ResourceDefinition",
+        "ResourceRegistry",
+        "ResourceRepository",
+        "ResourceState",
+        "ResourceViews",
+        "RuntimeErrorCode",
+        "ScheduleDefinition",
+        "ScheduleRetryPolicy",
+        "ScheduleTargetCommand",
+        "StateDefinition",
+        "StateFields",
+        "StringFieldDefinition",
+        "TestAuthProvider",
+        "TextFieldDefinition",
+        "WorkRequestCommandResponse",
+        "WorkRequestComment",
+        "WorkRequestState",
+        "WorkRequestStatus",
+        "WorkerDefinition",
+        "assignWorkRequest",
+        "assignWorkRequestInput",
+        "changeWorkRequestStatus",
+        "changeWorkRequestStatusInput",
+        "closeWorkRequest",
+        "closeWorkRequestInput",
+        "commentWorkRequest",
+        "commentWorkRequestInput",
+        "createInMemoryPersistence",
+        "createLocalHttpHandler",
+        "createLocalHttpServer",
+        "createManifest",
+        "createResourceRegistry",
+        "createWorkRequest",
+        "createWorkRequestInput",
+        "defineCommand",
+        "defineDetailView",
+        "defineListView",
+        "defineResource",
+        "defineSchedule",
+        "defineState",
+        "defineWorker",
+        "executeCommand",
+        "field",
+        "packageName",
+        "prepareActivityQuery",
+        "prepareProjectionQuery",
+        "serializeManifest",
+        "validateResourceRegistry",
+        "workRequestResource",
+        "workRequestStatusValues"
+      ]
+    },
+    {
+      "package": "create-jawstack",
+      "sourceTokenLines": 309,
+      "sources": [
+        {
+          "path": "packages/create-jawstack/src/cli.ts",
+          "sha256": "5ddedb0d4e05030d030f9456e8173ebdd337b63497eb9f88e99178c7b9784c91",
+          "tokenLines": 5
+        },
+        {
+          "path": "packages/create-jawstack/src/index.ts",
+          "sha256": "b0a45b0a114d2c11034ede70f549b1ed0986e13ba0b8e3de0c1e1038926036ad",
+          "tokenLines": 304
+        }
+      ],
+      "packageExports": {
+        ".": {
+          "types": "./dist/index.d.ts",
+          "import": "./dist/index.js"
+        }
+      },
+      "declaredIndexExports": [
+        "CreateJawStackCliOptions",
+        "CreateJawStackError",
+        "GenerateJawStackAppOptions",
+        "GenerateJawStackAppResult",
+        "defaultJawStackVersion",
+        "defaultTemplateName",
+        "describePackage",
+        "generateJawStackApp",
+        "getHelpText",
+        "packageName",
+        "runCreateJawStackCli"
+      ]
+    }
+  ]
+}

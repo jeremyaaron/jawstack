@@ -8,3 +8,4 @@ coverage/
 .env
 .env.*
 !.env.example
+docs/iterations/003-framework-leverage/leverage/raw/
