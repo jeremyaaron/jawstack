@@ -12,6 +12,9 @@
     "lint": "eslint src scripts test *.ts",
     "dev:web": "vite --host 127.0.0.1",
     "test:browser": "playwright test",
+    "test:browser:local": "playwright test --config playwright.local.config.ts",
+    "integration:preflight": "tsx scripts/integration-preflight.ts",
+    "diagnostics:browser": "tsx scripts/browser-diagnostics.ts",
     "local:up": "tsx scripts/lab.ts up",
     "local:provision": "tsx scripts/lab.ts provision",
     "local:reset": "tsx scripts/lab.ts reset",
@@ -49,6 +52,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "yaml": "2.9.0",
     "@jawstack/aws-cdk": "workspace:*",
     "aws-cdk-lib": "^2.260.0",
     "constructs": "^10.6.0",

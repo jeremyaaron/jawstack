@@ -1,4 +1,5 @@
-import { expect, test, type Page, type APIRequestContext } from "@playwright/test";
+import type { Page, APIRequestContext } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 async function command(
   request: APIRequestContext,

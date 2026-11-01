@@ -109,6 +109,39 @@ describe("ownership-proven runtime cleanup", () => {
     };
     await expect(inspectRuntimes(failing, config, ownerId)).rejects.toThrow("daemon failure");
   });
+  it("waits for ownership-proven removals, but bounds stuck transitions without mutating them", async () => {
+    let lookups = 0;
+    const calls: string[][] = [];
+    const docker: DockerCommand = async (args) => {
+      calls.push(args);
+      if (args[0] === "inspect") return JSON.stringify(container("a".repeat(64), "removing"));
+      if (args.at(-1)?.startsWith("id=")) return ++lookups === 1 ? "a".repeat(64) : "";
+      return "a".repeat(64);
+    };
+    expect(await inspectRuntimes(docker, config, ownerId)).toEqual([]);
+    expect(lookups).toBe(2);
+    expect(calls.some((args) => ["stop", "rm"].includes(args[0]!))).toBe(false);
+    const stuck: DockerCommand = async (args) =>
+      args[0] === "inspect"
+        ? JSON.stringify(container("a".repeat(64), "removing"))
+        : "a".repeat(64);
+    await expect(inspectRuntimes(stuck, config, ownerId, 0)).rejects.toThrow(
+      "already-removing owned runtime disappearance",
+    );
+  });
+  it("does not trust a foreign removing container or expose invalid metadata values", async () => {
+    const docker: DockerCommand = async (args) =>
+      args[0] === "inspect"
+        ? JSON.stringify({
+            ...container("a".repeat(64), "removing"),
+            labels: { ...container().labels, "jawstack.owner": "foreign" },
+          })
+        : "a".repeat(64);
+    await expect(inspectRuntimes(docker, config, ownerId)).rejects.toThrow("ownership/name");
+    expect(() =>
+      ownedRuntime({ ...container(), status: "private-invalid-value" }, config, ownerId),
+    ).toThrow("Invalid runtime inventory fields (status)");
+  });
   it("requires foreign refusal before stopping, then removes running and exited owned fixtures", async () => {
     const records = new Map([[container().id, container()]]);
     let created = 0;

@@ -1,8 +1,8 @@
 # Iteration 2 Implementation Plan: Content Operations
 
-Status: reviewed. Phases 0-22 are complete. The full deployed failure/isolation gate,
-ownership-safe reset, reprovision, and running/exited orphan teardown passed on the
-pinned ARM64/Hobby lab. Phase 23 is next.
+Status: reviewed. Phases 0-23 are complete. Memory and LocalStack browser acceptance,
+the post-browser full integration/teardown gate, and final workspace regressions passed.
+Remote CI dispatch awaits merge/environment setup; Phase 24 is next.
 
 ## Purpose
 
@@ -106,7 +106,7 @@ work may proceed only after an explicit sequencing decision, without claiming th
 | 20    | Consumer AWS               | Actual app bundles and LocalStack runtime wiring          | Complete |
 | 21    | Consumer infrastructure    | CDK composition and topology assertions                   | Complete |
 | 22    | Integration verification   | Full local workflow, failure and isolation evidence       | Complete |
-| 23    | Browser/CI verification    | Complete browser acceptance and PR/manual gates           | Planned  |
+| 23    | Browser/CI verification    | Complete browser acceptance and PR/manual gates           | Complete |
 | 24    | Documentation/verification | Acceptance audit and merge readiness                      | Planned  |
 
 Follow this order by default. Later phases may reuse earlier services but must not depend
@@ -1651,6 +1651,53 @@ integration gate, documentation walkthrough, local links, and `git diff --check`
   the browser suite was not rerun for these non-UI changes. No real AWS, CDK deployment,
   dependency/public-package change, CI trigger change, version bump, publication,
   automatic commit, or push occurred.
+
+### Phase 23: November 1, 2026
+
+- Consolidated browser acceptance with a shared error/layout/screenshot fixture while
+  retaining all existing failure/conflict/clock-harness assertions. Added keyboard/fixture/
+  query-failure acceptance and a UI-driven upload/review/automatic schedule/publication/
+  operations workflow shared by memory and LocalStack. Separate validated configs own
+  isolated ports/processes, one worker, finite deadlines, no retries, and explicit runtime
+  health. LocalStack selects only the real workflow, not injected memory harnesses.
+- The complete memory suite passed 30 desktop/mobile cases in 367,290 ms, with no skips,
+  unexpected or flaky outcomes. Inspected screenshots across all five views and actual
+  image/artifact states. A final focused confirmation of the strengthened shared workflow
+  passed both viewports after live teardown, preserving the full-suite JSON/screenshots.
+  Both failed and successful browser runs released their managed API/web ports.
+- Added PR/manual-only memory CI after workspace verification and browser-boundary build.
+  A separate default-branch-only manual workflow uses the `localstack-hobby` environment,
+  an environment-scoped token and explicit Hobby attestation. Missing credentials are
+  nonzero NOT-RUN before Docker; no secret is passed to a PR job or browser/web API step.
+  Checkout credentials are not persisted, permissions are read-only, jobs/steps are finite,
+  and integration always attempts ownership cleanup. Verified Node 24 action runtimes
+  align CI with `.nvmrc`; there is no push or `pull_request_target` trigger.
+- Diagnostic uploads use explicit runtime/evidence allowlists, seven-day retention and
+  a 300-file/100-MiB cap with bounded traversal/symlink refusal. The private test-only YAML
+  dependency pins the already locked 2.9.0 parser. Six credential-free gate tests cover
+  runtime/ports, unit discovery, preflight exit status, workflow/secret/cleanup boundaries
+  and diagnostic limits. No public framework dependency, API or template changed.
+- The live browser repeat passed both cases from `2026-11-01T14:40:52.730Z` in 202,573 ms
+  on the pinned ARM64/Hobby lab. It checked actual materializers, automatic due publication,
+  rendered immutable image/JSON, three notifications, one succeeded attempt and published
+  authority. The subsequent full gate passed from `14:44:16.307Z` to `15:01:28.640Z`,
+  in 1,032,333 ms, including every deployed failure scenario, sentinel reset, reprovision,
+  repeated app workflow, foreign-lookalike refusal, running/exited orphan reconciliation,
+  and final zero-container/network state. Images remain; the manifest was removed.
+- A first post-browser full gate correctly remained no-go at reset inventory validation;
+  its final down still succeeded. Fixed the unmodeled Docker `removing` transition with a
+  bounded exact-ID disappearance wait only after ownership proof. Unknown/foreign/stuck
+  states remain refused and errors expose field names, not values. Two focused lifecycle
+  regressions were added. New browser assertions also now await committed UI/tab state
+  instead of racing the actual HTTP response; no sleeps/retries/outcome assertions were
+  weakened. See [recorded evidence](localstack-evidence.md#phase-23-browser-acceptance-and-ci-boundaries).
+- Final `pnpm verify:release` passed: 804 workspace tests (511 consumer), typecheck/lint/
+  build, zero pkg-guard findings, generated-app install/typecheck/tests/browser+AWS builds/
+  doctor, and six package dry runs. Browser boundary remains 230 modules/zero server imports.
+  Existing memory web 4336 / API 4337 and review data were preserved. Actual GitHub dispatch
+  was NOT RUN: the workflow must first be merged and its environment controls/secrets set
+  up as documented. No real AWS, CDK deployment, version bump, publication, automatic
+  commit or push occurred. Phase 24 owns the final acceptance/docs audit.
 
 For later phases, append the date, meaningful behavior delivered, commands/results,
 not-run checks, design changes, and remaining limitations. Do not replace observed

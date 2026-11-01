@@ -1,16 +1,24 @@
 import { z } from "zod";
 import { LabError, labFunctions, type LabConfig } from "./config";
 import { applicationProfile } from "../aws/profile";
+import { waitFor } from "./lifecycle";
 
 export type DockerCommand = (args: string[], timeout?: number) => Promise<string>;
 const containerSchema = z.object({
   id: z.string().regex(/^[a-f0-9]{64}$/),
   name: z.string(),
-  status: z.enum(["running", "exited", "created"]),
+  status: z.enum(["running", "exited", "created", "removing"]),
   labels: z.record(z.string(), z.string()).nullable(),
 });
 export function ownedRuntime(input: unknown, config: LabConfig, ownerId: string) {
-  const container = containerSchema.parse(input);
+  const parsed = containerSchema.safeParse(input);
+  if (!parsed.success) {
+    const fields = [
+      ...new Set(parsed.error.issues.map((issue) => String(issue.path[0] ?? "record"))),
+    ];
+    throw new LabError(`Invalid runtime inventory fields (${fields.join(", ")}); cleanup refused.`);
+  }
+  const container = parsed.data;
   const names = [...labFunctions(config), ...applicationProfile(config).functions].map((fn) =>
     fn.name.toLowerCase(),
   );
@@ -29,7 +37,12 @@ export function ownedRuntime(input: unknown, config: LabConfig, ownerId: string)
     );
   return container;
 }
-export async function inspectRuntimes(docker: DockerCommand, config: LabConfig, ownerId: string) {
+export async function inspectRuntimes(
+  docker: DockerCommand,
+  config: LabConfig,
+  ownerId: string,
+  removalTimeoutMs = 30_000,
+) {
   const candidates = new Set<string>();
   for (const filter of [
     `name=^/${config.project}-localstack-1-lambda-`,
@@ -59,6 +72,15 @@ export async function inspectRuntimes(docker: DockerCommand, config: LabConfig, 
     const value = JSON.parse(inspected);
     const record = ownedRuntime(value, config, ownerId);
     if (!record.id.startsWith(id)) throw new LabError("Runtime container identity changed.");
+    if (record.status === "removing") {
+      await waitFor(
+        "already-removing owned runtime disappearance",
+        async () =>
+          (await docker(["ps", "-aq", "--filter", `id=${record.id}`])) ? undefined : true,
+        removalTimeoutMs,
+      );
+      continue;
+    }
     records.push(record);
   }
   return records;
@@ -75,8 +97,8 @@ export async function cleanupRuntimes(docker: DockerCommand, config: LabConfig, 
   for (const record of initial)
     if (record.status === "running") await perform(["stop", "--time", "10", record.id], record.id);
   const stopped = await inspectRuntimes(docker, config, ownerId);
-  if (stopped.some((record) => record.status === "running"))
-    throw new LabError("Owned runtime still running; refusing removal.");
+  if (stopped.some((record) => !["exited", "created"].includes(record.status)))
+    throw new LabError("Owned runtime is not stopped; refusing removal.");
   for (const record of stopped) await perform(["rm", record.id], record.id);
   if ((await inspectRuntimes(docker, config, ownerId)).length)
     throw new LabError("Owned runtimes remain after cleanup.");

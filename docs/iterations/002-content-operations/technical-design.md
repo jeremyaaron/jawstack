@@ -1167,7 +1167,7 @@ landmark focus on route changes, labeled controls, native tooltips, and selected
 icons from [Lucide Angular](https://lucide.dev/guide/angular). No illustration substitutes
 for operational content. Playwright has separate seeded memory/Vite processes, refuses
 existing servers, owns teardown, and runs desktop/mobile screenshots and actual commands.
-It remains opt-in rather than joining unit discovery; a later phase owns dedicated CI jobs.
+It remains outside unit discovery; Phase 23 adds dedicated PR/manual CI jobs.
 The [workbench guide](../../../apps/content-operations/WORKBENCH.md) is the current run contract.
 
 ### Phase 16 Review Decisions
@@ -1593,6 +1593,50 @@ one integration test must observe an automatic rate-triggered invocation. See
 [Scheduler limitations](https://docs.localstack.cloud/aws/services/scheduler/#current-limitations).
 
 ## Verification Strategy
+
+### Phase 23 Browser/CI Decisions
+
+Memory and LocalStack have separate Playwright entrypoints using one validated configuration
+factory. Owned ports are 4436/4437 and 4536/4537 respectively, with explicit overrides,
+no server reuse, bounded startup/action/test/global deadlines, one worker, no retries,
+and process-group graceful shutdown. All cases share uncaught-error/layout/success-screenshot
+acceptance. Existing injected memory failure/clock harnesses retain their assertions and
+remain memory-only. The real shared workflow runs in either mode; the LocalStack config
+selects only that file, with health assertions and actual UI/HTTP/storage/consumer outcomes,
+not host worker calls or intercepted success responses. Unit discovery remains strictly
+`test/unit/**/*.test.ts`; imports/builds/default tests do not start Docker or browsers.
+
+PR/manual CI adds a secret-free memory browser job after ordinary verification and a real
+browser-boundary build. A separate default-branch-only manual workflow uses the protected
+`localstack-hobby` environment, requiring environment-scoped token and Hobby attestation.
+It runs browser acceptance before the full integration gate (which resets/reprovisions and
+shuts down), with `always()` ownership cleanup for earlier failures. Missing credentials
+are nonzero `NOT-RUN`, not green or an inferred pass. Remote dispatch requires the workflow
+on the default branch and separately configured environment controls; local proof is not
+remote CI execution. See the [workbench guide](../../../apps/content-operations/WORKBENCH.md#ci-and-diagnostics).
+
+Both workflows use read-only repository permissions, non-persisted checkout credentials,
+finite job/step deadlines and explicit artifact allowlists. Diagnostics are capped at
+300 files/100 MiB, refuse symlinks and excessive traversal, retain only bounded browser/
+sanitized gate results, and expire after seven days. No hidden-directory upload is enabled.
+The checked-in YAML is parsed in credential-free tests to guard triggers, token scope,
+environment/branch conditions, cleanup and upload limits. The private test-only `yaml`
+dependency pins the already locked 2.9.0 parser; no framework dependency changes.
+
+A post-browser integration run exposed reset inventory rejecting Docker's transient
+`removing` state. Inventory now proves ownership/name/ID before a bounded thirty-second
+exact-ID disappearance wait, not a second stop/remove. Unknown, foreign and stuck states
+still fail closed; removals are issued only for exited/created children after running
+children are stopped. Invalid inventory reports only field names, not private values.
+This is a consumer lifecycle correction, not a changed framework/public runtime contract.
+
+Actions use their verified Node 24 runtimes, separately from the `.nvmrc` application Node
+and Node 22 Lambda target: [checkout v7](https://raw.githubusercontent.com/actions/checkout/v7/action.yml),
+[setup-node v7](https://raw.githubusercontent.com/actions/setup-node/v7/action.yml),
+[upload-artifact v7](https://raw.githubusercontent.com/actions/upload-artifact/v7/action.yml),
+and [pnpm setup v6](https://raw.githubusercontent.com/pnpm/action-setup/v6/action.yml).
+
+### Verification Layers
 
 | Layer              | Required Coverage                                                                                                                                                                                         |
 | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

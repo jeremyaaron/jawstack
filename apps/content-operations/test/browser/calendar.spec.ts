@@ -1,5 +1,6 @@
 import "@angular/compiler";
-import { expect, test, type Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { expect, test } from "./fixtures";
 import { createMemoryApiRuntime } from "../../src/application/api-runtime";
 import { createFixtureClock } from "../../src/application/runtime";
 import { startContentApi } from "../../src/http/server";

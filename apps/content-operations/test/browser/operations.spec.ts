@@ -1,4 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { expect, test } from "./fixtures";
 import { operationsBrowserHarness as operationsHarness } from "../support/operations";
 import { PublicationExecutionError } from "../../src/application/publication-artifact";
 import { SimulatedPublicationCrash } from "../../src/application/publisher";

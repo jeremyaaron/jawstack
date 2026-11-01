@@ -634,3 +634,81 @@ API Gateway/CloudFormation deployment, real AWS behavior/costs, or Scheduler fai
 retry parity. Browser-on-local acceptance and CI configuration remain Phase 23; no browser
 run is inferred from this gate. Public packages/dependencies/versions and CI triggers
 were unchanged in Phase 22.
+
+## Phase 23: Browser Acceptance and CI Boundaries
+
+Observed November 1, 2026, with Playwright 1.64.1/Chromium on the same ARM64 host,
+pinned emulator digest and user-attested Hobby entitlement. Local browser acceptance
+used a separate disposable `e2e23` lab, not the interactive memory dataset.
+
+### Browser Results
+
+- The complete credential-free memory suite passed **30 cases**, zero skips/unexpected/
+  flaky results, from `2026-11-01T13:52:16.398Z` in 367,290 ms (rounded to milliseconds).
+  Cases cover all five views, distinct author/editor fixtures, normal and failure flows,
+  keyboard/validation/route focus, preserved queries/return links, stale/ambiguous commands,
+  actual image/PDF transfers, immutable preview/JSON, scheduling and paged operations.
+- Desktop 1440x900 and mobile 390x844 screenshots were inspected across workbench, editor,
+  review, calendar and operations, plus actual rendered bitmap/publication states. Shared
+  assertions reject uncaught page errors, horizontal control/heading overflow and header/
+  content overlap. Existing editor section-spacing assertions remain active.
+- The final LocalStack browser repeat passed **both cases**, zero skips/unexpected/flaky
+  results, from `2026-11-01T14:40:52.730Z` in 202,573 ms. Browser commands created/uploaded/
+  submitted content, switched author/editor fixtures, approved a frozen review, scheduled
+  publication, navigated calendar/return state, rendered the real immutable image/artifact,
+  downloaded redacted JSON, paged three notifications and observed one succeeded attempt.
+  Read-only API checks verified actual secondary asset/review materialization and published
+  authority. Health required `localstack` / `external-workers`; no host pump, injected clock,
+  direct consumer invocation or intercepted success response drove this path.
+- Both failed and successful browser runs released their owned API/web ports. Memory uses
+  4437/4436; LocalStack uses 4537/4536. Existing review web 4336 / API 4337 were not reused,
+  stopped or reset. Results/screenshots remain under the app's ignored `test-results/`.
+
+### Pipeline and Reset Regression
+
+The first new browser assertions exposed test timing issues: board link names include
+metadata, operation-tab contents change asynchronously, and a live submit click can return
+before its HTTP command commits. Assertions now target the title heading and await the
+new view/row count or committed Open Review state. No sleeps, retries, weaker outcome
+assertions or larger timeout budgets were introduced to hide these failures.
+
+The first post-browser full integration gate remained **failed/no-go** at
+`2026-11-01T14:31:05.276Z`, after successful application failure and feasibility scenarios,
+because reset rejected runtime inventory metadata. Automatic final down still verified
+zero matching containers/network and removed the manifest. Inspection identified an
+unmodeled Docker `removing` transition in the inventory parser. The fix proves labels,
+declared function name and immutable ID first, then waits up to thirty seconds for that
+exact ID to disappear without issuing another stop/remove. Unknown, foreign and stuck
+transitions remain errors. Invalid metadata reports field names, never private values.
+Focused tests cover finishing/stuck removals and foreign refusal; see
+[Docker's state reference](https://docs.docker.com/reference/cli/docker/container/ls).
+
+The complete browser -> integration sequence was rerun. After the two browser cases,
+`verify:local --confirm-reset` passed from **`2026-11-01T14:44:16.307Z`** through
+**`2026-11-01T15:01:28.640Z`**, in **1,032,333 ms**. All Phase 22 delivery/isolation scenarios
+passed again, including three terminal receives, interrupted durable collection and actual
+automatic retry/drained DLQs, crash/lease recovery, editor/CLI recovery, duplicate and
+obsolete-generation protection, and standard archive restoration. Sentinel data survived
+reset, all owned service resources and warm runtimes were absent, and reprovision plus a
+second complete app workflow passed. Final teardown refused the foreign lookalike before
+stopping the emulator, reconciled the running/exited fixtures (one running child, two
+children removed), and verified zero owned containers/network. Images remain; the manifest
+is gone. The sanitized result is `.localstack/e2e23-evidence.json`; only that evidence JSON
+is copied into the diagnostic artifact selection, not the manifest or token file.
+
+### CI Status and Limits
+
+PR/manual CI now includes credential-free memory browsers and a real browser-boundary build.
+A separate manual, default-branch-only workflow references the `localstack-hobby` environment;
+missing token/attestation exits nonzero with **NOT-RUN** before Docker starts. Only preflight
+and startup receive the token. YAML boundary tests verify triggers, read-only permissions,
+non-persisted checkout, environment/branch conditions, secret scope, finite timeouts,
+always-run ownership cleanup, and explicit bounded artifact uploads. Diagnostics reject
+symlinks, more than 300 files/100 MiB and excessive traversal; retention is seven days.
+
+**Actual GitHub dispatch: NOT RUN.** The workflow must be merged and its environment branch/
+approval rules, secret and Hobby attestation configured separately. Passing local commands
+do not claim that remote job ran or that its environment is configured. See the
+[workbench instructions](../../../apps/content-operations/WORKBENCH.md#ci-and-diagnostics).
+The local equivalent sequence above passed with no real AWS/CDK deployment. IAM enforcement,
+production auth, real email and Scheduler failed-delivery parity remain excluded.

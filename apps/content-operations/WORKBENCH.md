@@ -242,12 +242,14 @@ pnpm verify:release
 `test/browser/**/*.spec.ts` and owns separate seeded memory/Vite servers on 4437/4436.
 It refuses occupied ports, runs 1440x900 desktop and 390x844 mobile workflows, and gracefully
 stops its child servers. Optional `CONTENT_OPS_E2E_API_PORT` / `CONTENT_OPS_E2E_WEB_PORT`
-choose another explicit pair. Browser tests do not use Docker, tokens, or AWS.
+choose another explicit pair. This default memory suite does not use Docker, tokens, or AWS.
 Readiness waits for the transformed browser entrypoint, not just Vite's HTML response;
 its cold compilation has a 60-second startup bound. Build/development caches are isolated
 by command and port, keeping browser tests separate from concurrent workspace builds.
 The complete content/editorial walkthroughs have 60-second budgets including cold browser
-dependency optimization; focused scenarios retain their 30-second bounds. Retries are disabled.
+dependency optimization; focused scenarios retain their 30-second bounds. The shared automatic
+publication workflow has a four-minute budget, including a three-minute automatic publication
+wait. Both suites have a ten-minute global deadline, one worker, and no retries.
 
 Browser evidence covers paging/filters, list/board, create/save/reload, owner/editor
 permissions, actual concurrent-edit conflicts, explicit reconciliation, unsaved route/fixture
@@ -257,10 +259,86 @@ DST validation, zoned calendar paging/navigation, schedule conflicts/reopen, key
 and fit. Scheduling browser tests use an additional per-test loopback memory API with an injected
 clock. Only the test host advances that clock and runs the real due jobs/publisher; there is no
 public clock-control endpoint, fake artifact, or direct publish command substituting for a due job.
-Screenshots and
-failure traces are written under Git-ignored `test-results/`; the normal unit command never
-launches Playwright. The full release gate remains credential-free; run browser verification
-explicitly until the later CI phase wires its dedicated job.
+All cases use a shared acceptance fixture that rejects uncaught browser errors and horizontal
+clipping/heading/control overflow, checks header/content separation, and captures a successful
+final screenshot. Keyboard checks exercise the skip link, primary navigation, route focus,
+validation focus, fixture persistence and editor-only operations. Query-failure recovery must
+not masquerade as an empty result. Existing route/fixture/conflict guards remain active.
+
+Screenshots and retained failure traces are written under Git-ignored `test-results/memory/`;
+`test-results/memory-results.json` records the actual result. The normal unit command never
+launches Playwright. Both a successful and failed browser run must release its owned ports;
+existing interactive web/API processes are never reused or stopped. Run heavyweight release,
+browser and Docker gates sequentially on constrained machines.
+
+### LocalStack Browser Acceptance
+
+Use a disposable, provisioned Hobby lab, following the [lab setup](README.md#run-the-application-gate).
+This test creates real content; it does not reset an existing dataset or provision implicitly.
+The default `dev` lab can be overridden consistently for every command:
+
+```sh
+CONTENT_OPS_LAB_ID=e2e23 pnpm --filter content-operations run local:up
+CONTENT_OPS_LAB_ID=e2e23 pnpm --filter content-operations run local:provision
+CONTENT_OPS_LAB_ID=e2e23 pnpm --filter content-operations run test:browser:local
+CONTENT_OPS_LAB_ID=e2e23 pnpm --filter content-operations run verify:local --confirm-reset
+```
+
+The final command is the separate full integration/failure/reset/teardown gate. Successful
+verification already performs down. After a browser or integration interruption, use
+`local:down` with the same lab ID if its manifest remains; never delete containers by prefix.
+An already-removing child is awaited by exact ID for up to thirty seconds, after its
+ownership is proven. Unknown/foreign/stuck inventory is refused and retains the manifest.
+
+`playwright.local.config.ts` selects only the shared `workflow.spec.ts` on desktop/mobile,
+starts its own API/web on 4537/4536, and verifies `localstack`/`external-workers` health.
+It uses actual browser create/upload/submit/editor approval/schedule/calendar/preview/download
+and paged operations flows, with read-only API checks for real asset/review materialization,
+published authority and three notifications. The actual image must render and the downloaded
+artifact must match the content/attachment identity without private storage fields. Publication
+comes from the automatic due job and deployed publisher, not a host pump, injected clock,
+direct worker, or intercepted success response. Memory-only injected failure/clock tests are
+not selected by this config; deployed fault coverage belongs to `verify:local`.
+
+Results are written to `test-results/localstack/` and `test-results/localstack-results.json`.
+The token is not needed by either API or web server; use the ignored lab dotenv file rather
+than a browser/Vite variable. The server child environments explicitly clear the token.
+
+### CI and Diagnostics
+
+The normal [CI workflow](../../.github/workflows/ci.yml) has only PR/manual triggers.
+It runs the credential-free memory browser job after workspace verification, with an actual
+browser-boundary build and Chromium installation. No PR job references LocalStack secrets,
+starts Docker, or uses `pull_request_target`. Workflow tokens have read-only repository
+permissions and checkout does not persist credentials. Node follows `.nvmrc`.
+
+The separate [local integration workflow](../../.github/workflows/content-operations-local.yml)
+is manual and default-branch-only. **Before adding its token**, configure the `localstack-hobby`
+GitHub environment to allow only the repository default branch and require approval where
+available. Store `LOCALSTACK_AUTH_TOKEN` as an environment secret, not a repository-wide secret,
+and set the environment variable `CONTENT_OPS_LOCALSTACK_PLAN=hobby` after confirming the
+account is Hobby, not a paid trial. The workflow must first be merged to the default branch
+to be available for dispatch. No remote run or environment configuration is implied by local
+test results. See [GitHub environment protection](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments).
+
+Only preflight and lab startup receive the token. Missing token/attestation prints `NOT-RUN`,
+writes that status to the job summary, and exits unsuccessfully before Docker starts; it is
+never a passing integration check. The job builds, runs the real browser path, runs the full
+integration gate, and attempts ownership-checked down in an `always()` step. It uses an
+isolated hosted runner, a 50-minute job deadline, finite step budgets, and non-cancelling
+concurrency. Hard runner termination is not reported as verified cleanup or a passing gate.
+
+Artifact upload is restricted to the selected runtime's screenshots/traces/JSON, the browser
+boundary report, and the specifically copied sanitized integration evidence. No dotenv,
+manifest, whole hidden directory, Docker dump, or raw service log is uploaded. A pre-upload
+check refuses symlinks, excessive traversal, more than 300 files or 100 MiB; refused uploads
+fail rather than silently discard diagnostics. Accepted artifacts expire after seven days.
+The same check is available locally:
+
+```sh
+pnpm --filter content-operations run diagnostics:browser memory
+pnpm --filter content-operations run diagnostics:browser localstack
+```
 
 Every Vite build checks the complete module graph and writes `dist/web/browser-boundary.json`.
 Node builtins, core runtime, server/domain factories, AWS/Smithy/CDK, and legacy browser shims

@@ -1,0 +1,87 @@
+name: Content Operations Local Integration
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: content-operations-localstack
+  cancel-in-progress: false
+
+jobs:
+  localstack:
+    if: github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    environment: localstack-hobby
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      CONTENT_OPS_LAB_ID: ci
+      CONTENT_OPS_LOCALSTACK_PLAN: ${{ vars.CONTENT_OPS_LOCALSTACK_PLAN }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.21.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Require token and Hobby attestation (otherwise NOT-RUN)
+        run: pnpm --filter content-operations run integration:preflight
+        env:
+          LOCALSTACK_AUTH_TOKEN: ${{ secrets.LOCALSTACK_AUTH_TOKEN }}
+      - name: Build and enforce browser boundary
+        run: |
+          pnpm --filter './packages/*' run build
+          pnpm --filter content-operations run build
+      - name: Install Chromium
+        run: pnpm --filter content-operations exec playwright install --with-deps chromium
+      - name: Start owned lab
+        timeout-minutes: 5
+        run: pnpm --filter content-operations run local:up
+        env:
+          LOCALSTACK_AUTH_TOKEN: ${{ secrets.LOCALSTACK_AUTH_TOKEN }}
+      - name: Provision owned lab
+        timeout-minutes: 5
+        run: pnpm --filter content-operations run local:provision
+      - name: LocalStack browser acceptance
+        timeout-minutes: 10
+        run: pnpm --filter content-operations run test:browser:local
+      - name: Full integration and teardown gate
+        timeout-minutes: 25
+        run: pnpm --filter content-operations run verify:local --confirm-reset
+      - name: Always reconcile owned lab after interruption
+        if: always()
+        timeout-minutes: 5
+        run: |
+          if [ -f apps/content-operations/.localstack/ci.json ]; then
+            pnpm --filter content-operations run local:down
+          fi
+      - name: Select sanitized evidence only
+        if: always()
+        run: |
+          mkdir -p apps/content-operations/test-results
+          if [ -f apps/content-operations/.localstack/ci-evidence.json ]; then
+            cp apps/content-operations/.localstack/ci-evidence.json apps/content-operations/test-results/localstack-evidence.json
+          fi
+      - name: Bound diagnostic artifacts
+        id: diagnostics
+        if: always()
+        run: pnpm --filter content-operations run diagnostics:browser localstack
+      - name: Integration diagnostics
+        if: always() && steps.diagnostics.outputs.within-budget == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: content-operations-localstack
+          path: |
+            apps/content-operations/test-results/localstack/
+            apps/content-operations/test-results/localstack-results.json
+            apps/content-operations/test-results/localstack-evidence.json
+            apps/content-operations/dist/web/browser-boundary.json
+          retention-days: 7
+          if-no-files-found: warn
