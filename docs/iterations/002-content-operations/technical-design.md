@@ -4,6 +4,9 @@ Status: reviewed as the basis for the [implementation plan](implementation-plan.
 This is a proposed design, not a record of implemented or LocalStack-verified behavior.
 The [PRD](prd.md) defines the product scope; material design changes still require review.
 
+The [iteration outcome](outcome.md) records delivered behavior and verification; current
+operating instructions live in the [consumer runbook](../../../apps/content-operations/README.md).
+
 ## Design Summary
 
 Build a private Angular/TypeScript consumer in `apps/content-operations`, using the

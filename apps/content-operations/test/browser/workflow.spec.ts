@@ -106,9 +106,13 @@ test("author upload, editor review, automatic scheduled publication and operatio
     .toBe("approved");
   await page.getByRole("link", { name: "Current content", exact: true }).click();
   await page.getByLabel("Publication time zone", { exact: true }).selectOption("UTC");
-  await page
-    .getByLabel("Publication time", { exact: true })
-    .fill(new Date(Date.now() + 30_000).toISOString().slice(0, 19));
+  // Native datetime-local normalizes zero seconds away; always fill its canonical minute form.
+  const publicationTime = new Date(Math.ceil((Date.now() + 30_000) / 60_000) * 60_000)
+    .toISOString()
+    .slice(0, 16);
+  const publicationInput = page.getByLabel("Publication time", { exact: true });
+  await publicationInput.fill(publicationTime);
+  await expect(publicationInput).toHaveValue(publicationTime);
   await page.getByRole("button", { name: "Schedule publication", exact: true }).click();
   const scheduling = page.getByRole("region", { name: "Scheduling", exact: true });
   await expect(scheduling.getByRole("status")).toHaveText("Schedule saved.");

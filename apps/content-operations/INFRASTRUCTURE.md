@@ -92,4 +92,6 @@ The CDK template has fifteen functions, thirteen queues, four Scheduler targets,
 fifteen log groups. The SDK lab has thirteen functions and eleven queues because it
 includes four feasibility functions but shares its due-job target and service-failure
 queue. The feasibility proof is not part of the CDK application. The complete deployed
-fault matrix remains [Phase 22](../../docs/iterations/002-content-operations/implementation-plan.md).
+fault matrix runs through the SDK lab, not this template; see the
+[acceptance outcome](../../docs/iterations/002-content-operations/outcome.md) and
+[observed evidence](../../docs/iterations/002-content-operations/localstack-evidence.md).

@@ -712,3 +712,87 @@ do not claim that remote job ran or that its environment is configured. See the
 [workbench instructions](../../../apps/content-operations/WORKBENCH.md#ci-and-diagnostics).
 The local equivalent sequence above passed with no real AWS/CDK deployment. IAM enforcement,
 production auth, real email and Scheduler failed-delivery parity remain excluded.
+
+## Phase 24: Final Acceptance Audit
+
+Observed November 1, 2026 on the same 8 GiB ARM64 development host with Node 24.16.0,
+pnpm 10.21.0, Playwright 1.64.1/Chromium, pinned emulator digest, and user-attested Hobby
+entitlement. Expensive release, memory-browser and live gates ran sequentially. Existing
+interactive memory web 4336 / API 4337 and its edited review fixture were not reset.
+
+### Clean Context and Browser Results
+
+- A fresh clone of `45500a40db3df53cef6a555319243cb3089e350d` installed with the frozen
+  lockfile and built without existing checkout outputs. `pnpm verify:release` passed:
+  804 workspace tests, including 511 consumer tests, zero pkg-guard findings, isolated
+  generated-app installation/typecheck/tests/build/synth/doctor, and six package dry runs.
+  Consumer browser boundary was 230 modules / zero server imports.
+- Initial full memory acceptance passed 30 cases. The first `final24` Hobby browser
+  attempt then failed desktop native `datetime-local` filling when generated seconds were
+  `00`; Chromium normalized them away and Playwright rejected the non-identical value.
+  Mobile passed, but that whole run remains failed. Its log/report/traces are preserved
+  separately, and ownership-checked down verified zero containers/network afterward.
+- The narrow fixture correction always enters canonical minute precision at least thirty
+  seconds ahead and asserts the input value. There is no changed runtime/domain policy,
+  timeout increase, test retry, accelerated clock, host worker, or substituted response.
+  The same patch was applied to the fresh checkout; release regression passed again.
+- Corrected complete memory acceptance passed **30 cases**, zero skipped/unexpected/flaky,
+  from **`2026-11-01T15:45:18.210Z`**, in **365,528 ms**. Its diagnostics were within budget:
+  75 selected files / 8,102,302 bytes, including its boundary report and JSON result.
+- After fresh `final24` startup/provisioning, corrected live browser acceptance passed
+  **both desktop/mobile cases**, zero skipped/unexpected/flaky, from
+  **`2026-11-01T15:52:22.794Z`**, in **233,431 ms**. The shared workflow checked actual
+  upload bytes and decoded bitmap, secondary asset/review materialization, author/editor
+  permissions, frozen approval, automatic scheduled publication, committed preview/JSON,
+  one succeeded attempt and three unique notification deliveries. Final desktop/mobile
+  publication screenshots were visually inspected in addition to layout/media assertions.
+
+### Final Live Gate
+
+`verify:local --confirm-reset` passed against that same owned lab after browser shutdown,
+from **`2026-11-01T15:56:17.228Z`** through **`2026-11-01T16:13:31.838Z`**, in
+**1,034,610 ms**. The sanitized `.localstack/final24-evidence.json` records `passed` / `go`.
+It establishes:
+
+- Twenty-four unsafe-configuration probes rejected with zero network requests and no
+  credential loading; actual missing-table/bucket errors remained failures, not empty reads.
+- Actual HTTP/upload/materialized review/asset, frozen approval, automatic due publication,
+  one logical immutable artifact, three unique notifications, one succeeded attempt,
+  published outbox/worker markers, and nine ownership-proven warm application runtimes.
+- Normal 180-second visibility, no clock advance or host worker invocation; transient
+  retry, post-object crash/lease expiry, two crash attempts, terminal receives 1/2/3,
+  collector record-before-ack interruption, retained source and automatic collection retry,
+  drained application DLQs, generation-two editor retry and one CLI replay cycle.
+- Marker-loss duplicates, older reviews, obsolete generations and late collectors did not
+  duplicate or replace completed business outcomes. Exact stored-fact EventBridge republication
+  and late owned-DLQ copy remained separately identified diagnostics. Standard code hashes
+  were restored before reset.
+- Sentinel owner/payload survived reset, owned resources and warm runtimes were absent,
+  and reprovisioned spine plus a second complete application workflow passed.
+- Foreign runtime lookalike refused before emulator/owned runtime shutdown; final teardown
+  stopped one owned running fixture and removed two fixtures, verified zero matching
+  containers/network, retained cached images, and removed the ownership manifest.
+
+An independent Docker inventory confirmed the named lab network and owned containers were
+absent; unrelated stopped/created containers were left alone. Selected final live diagnostics
+were within budget: eight files / 610,063 bytes, including only the specifically copied
+sanitized evidence JSON, not the manifest/token file. Both final browser viewports were
+visually inspected. The initial failed browser attempt remains recorded above, not hidden
+by the successful rerun.
+
+After teardown, the documented memory API/seed CLI was smoke-tested in the clean checkout
+on isolated API 4637 / allowed web origin 4636. Health reported `memory` / `managed`;
+first seed created six items, repeat seed skipped all six, and authoritative reads showed
+draft, in-review, changes-requested draft, approved, scheduled, and published examples.
+The owned temporary API was then stopped. It did not reuse or reset review API 4337.
+
+The final full `pnpm verify:release` also passed after copying current product/package
+Markdown into the clean-install checkout, including the actual package READMEs: 804
+workspace tests (511 consumer), typecheck/lint/build/format, zero pkg-guard findings,
+isolated generated-app checks and six package dry runs. Final local links/anchors and
+diff checks passed. All owned browser/smoke ports were closed; the existing review app
+and source HEAD were unchanged. The phase is left uncommitted for user review.
+
+Remote GitHub dispatch/environment configuration, real AWS/CDK deployment, IAM enforcement,
+production auth, provider notifications, and Scheduler failed-delivery retry parity remain
+**not performed / not established**. This local pass does not authorize publication or a tag.

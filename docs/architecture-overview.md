@@ -1,6 +1,8 @@
 # Architecture Overview
 
-JawStack v0.1 generates one resource workflow architecture for TypeScript, Angular, and AWS.
+JawStack generates a resource workflow architecture for TypeScript, Angular, and AWS.
+The Work Requests template remains the starter; applications can compose other domains
+through public contracts, as demonstrated by [Content Operations](../apps/content-operations/README.md).
 
 ## Runtime Diagram
 
@@ -34,6 +36,14 @@ Local development uses:
 - Header-based auth context.
 
 Local development does not emulate AWS services. It gives a fast command/runtime loop with the same resource metadata and command decisions.
+
+That is the starter's memory path. Content Operations additionally has an explicitly
+provisioned, resettable Hobby LocalStack path using real local transactions/streams,
+EventBridge, SQS/Lambda workers, private S3, and Scheduler. It shares its Angular/loopback
+HTTP application with memory, but does not substitute a host pump for deployed workers.
+Its CDK composition is synthesis-only and differs deliberately from SDK lab provisioning.
+See [modes and exclusions](../apps/content-operations/README.md#modes) and
+[Application Composition](application-composition.md) for contracts and ownership boundaries.
 
 ## AWS Path
 

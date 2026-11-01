@@ -1,9 +1,9 @@
 # Content Operations API
 
 Local development ingress for the private reference consumer, not production authentication
-or a published framework API. The [Angular workbench and typed client](WORKBENCH.md) now
-provide content browsing, version-safe draft editing, review submission/decisions/history,
-and paged primary activity.
+or a published framework API. The [runbook](README.md) covers setup and both modes; the
+[Angular workbench and typed client](WORKBENCH.md) cover content, reviews, attachments,
+publication, calendar, operations, and version-safe recovery.
 
 ## Start and Seed
 

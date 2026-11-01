@@ -1,8 +1,8 @@
 # Iteration 2 Implementation Plan: Content Operations
 
-Status: reviewed. Phases 0-23 are complete. Memory and LocalStack browser acceptance,
-the post-browser full integration/teardown gate, and final workspace regressions passed.
-Remote CI dispatch awaits merge/environment setup; Phase 24 is next.
+Status: complete. Phases 0-24 and fresh release/browser/Hobby acceptance gates passed.
+Remote CI dispatch/environment setup remain unperformed. Work is uncommitted for user review;
+completion does not authorize merge, tagging, publication, or real-AWS deployment.
 
 ## Purpose
 
@@ -38,8 +38,9 @@ diff cannot be reviewed coherently; do not turn a phase into several unreviewed 
 - Keep documentation current within each phase. The final documentation phase consolidates
   and audits it; it does not postpone instructions required to run earlier work.
 
-Commands and application paths below are implementation targets. Most app scripts do not
-exist yet. Introduce them in their owning phases, not as empty placeholders in this docs change.
+The phases below record the original implementation scope and its evidence. For current
+commands and operating boundaries use the [consumer runbook](../../../apps/content-operations/README.md)
+and [iteration outcome](outcome.md), not historical phase instructions.
 
 ## Verification Levels
 
@@ -107,7 +108,7 @@ work may proceed only after an explicit sequencing decision, without claiming th
 | 21    | Consumer infrastructure    | CDK composition and topology assertions                   | Complete |
 | 22    | Integration verification   | Full local workflow, failure and isolation evidence       | Complete |
 | 23    | Browser/CI verification    | Complete browser acceptance and PR/manual gates           | Complete |
-| 24    | Documentation/verification | Acceptance audit and merge readiness                      | Planned  |
+| 24    | Documentation/verification | Acceptance audit and merge readiness                      | Complete |
 
 Follow this order by default. Later phases may reuse earlier services but must not depend
 on unimplemented later UI, infrastructure, or tests. Keep implementation discoveries in
@@ -674,6 +675,9 @@ Verification: full workspace/generated-app/package checks, browser checks, recor
 integration gate, documentation walkthrough, local links, and `git diff --check`.
 
 ## Acceptance Coverage
+
+AC-01 through AC-11 are met within the reviewed local-only scope. The [outcome](outcome.md)
+maps each criterion to actual commands/tests/evidence and lists unperformed AWS/remote checks.
 
 | PRD Criterion | Primary Implementation Phases | Final Evidence                                                                         |
 | ------------- | ----------------------------- | -------------------------------------------------------------------------------------- |
@@ -1699,6 +1703,46 @@ integration gate, documentation walkthrough, local links, and `git diff --check`
   up as documented. No real AWS, CDK deployment, version bump, publication, automatic
   commit or push occurred. Phase 24 owns the final acceptance/docs audit.
 
-For later phases, append the date, meaningful behavior delivered, commands/results,
-not-run checks, design changes, and remaining limitations. Do not replace observed
-results with the phase's intended acceptance criteria.
+### Phase 24: November 1, 2026
+
+- Consolidated the consumer README into an operating runbook with modes, setup/fixtures,
+  author/editor walkthrough, service matrix, cleanup, troubleshooting/recovery, and limits.
+  Detailed existing protocols moved to `ARCHITECTURE.md`; API/workbench/infrastructure
+  links now point at current guidance rather than unfinished phase descriptions.
+- Updated product/package composition docs, repository/iteration indexes, and release
+  checklist. Historical foundation plans remain unchanged. The
+  [outcome report](outcome.md) maps AC-01 through AC-11 to commands, tests, and observed
+  evidence, distinguishes consumer policy from reusable APIs, and assesses a separately
+  authorized future `0.0.2` dogfood release without changing versions or preparing publication.
+- A fresh clone of committed Phase 23 installed with the frozen lockfile and built before
+  `pnpm verify:release`: 804 workspace tests (511 consumer), zero package findings, isolated
+  generated-app checks and six package dry runs passed. Its complete memory browser suite
+  passed 30 cases. Browser boundary was 230 modules / zero server imports.
+- The first fresh Hobby browser run failed desktop native date-time filling at zero
+  seconds; mobile passed. The fixture now uses canonical minute precision at least thirty
+  seconds ahead and asserts the input value. No timeouts/retries/runtime rules changed.
+  Failed diagnostics were preserved, the owned lab was fully stopped, and the same patch
+  was applied to the clean checkout. Release regression passed again; corrected full
+  memory browser acceptance passed 30 cases and fresh live acceptance passed both viewports,
+  with zero skipped/unexpected/flaky results or retries.
+- The final full Hobby gate passed `go` from `15:56:17.228Z` through `16:13:31.838Z` in
+  1,034,610 ms: deployed failure/recovery matrix, standard archive restoration, sentinel
+  reset/reprovisioned application, foreign-lookalike refusal, and final teardown. Independent
+  inventory confirmed zero owned containers/network and removed manifest; images and
+  unrelated Docker resources remain. [Recorded evidence](localstack-evidence.md#phase-24-final-acceptance-audit).
+- Actual documented memory API/seed commands passed on isolated 4637/4636: six initial
+  creates, six repeat skips, managed health and correct lifecycle states. The temporary
+  API was stopped; interactive review web/API 4336/4337 and version-three draft were preserved.
+  Final diagnostic selections were within budget: memory 75 files / 8,102,302 bytes,
+  LocalStack eight files / 610,063 bytes.
+- The complete current Markdown was copied into the isolated checkout and final
+  `pnpm verify:release` passed with the actual package READMEs: 804 tests (511 consumer),
+  typecheck/lint/build/format, zero package findings, isolated generated-app checks and
+  six package dry runs. Documentation audit passed across 43 Markdown files, 182 local
+  links and 31 anchors; `git diff --check` passed. All owned test ports are closed.
+  No real AWS/CDK deployment, remote CI dispatch/environment change, package version/tag/
+  publication, commit, push, or merge was performed. Phase 24 and the iteration are complete.
+
+This log retains actual chronology, including failed/not-run checks; the
+[outcome](outcome.md) records the final acceptance decision rather than replacing observed
+results with intended criteria.

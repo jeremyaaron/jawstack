@@ -45,7 +45,7 @@ Pass this value to `provideJawStack` and resource components. Server resource fa
 can import the same schema, but browsers should not import instantiated server resources
 or decision factories. The structural type does not strip extra properties or sanitize a
 full resource at runtime. Existing demo/template consumers retain their legacy full-resource
-imports for compatibility; this phase does not migrate them. UI role checks are presentation
+imports for compatibility; they have not been migrated. UI role checks are presentation
 only; authorization must still run on the server.
 
 ## API Errors

@@ -3,6 +3,9 @@
 Status: reviewed as the basis for the [technical design](technical-design.md). Changes to
 product scope still require explicit review.
 
+Implementation acceptance and remaining exclusions are recorded separately in the
+[iteration outcome](outcome.md), without changing the criteria below.
+
 ## Summary
 
 Build a useful editorial workbench as a first-party JawStack consumer under

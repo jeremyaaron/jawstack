@@ -133,8 +133,8 @@ Published attachment membership and bytes remain read-only; snapshot downloads r
 Editors can publish an approved snapshot with its loaded content version and exact approval
 review/revision. Ambiguous retries retain their command key. Queued/running outcomes poll strong
 authority only while visible, with the shared 2-second/10-second backoff and teardown rules;
-failed/stalled outcomes remain locked and visible, not fake successes. Recovery controls remain
-Phase 19. Only a succeeded, committed publication can load a preview. That endpoint reads and
+failed/stalled outcomes remain locked and visible, not fake successes. Editor recovery controls
+are described below. Only a succeeded, committed publication can load a preview. That endpoint reads and
 verifies the actual stored artifact, not a reconstruction from mutable form text.
 
 `Download redacted JSON` exports that verified artifact's public view, without object keys or
@@ -223,7 +223,7 @@ independently. Ledger refresh is explicit after settlement; distributed notifica
 is not assumed complete merely because publication completed. Queries remain individually
 bounded and no background scan walks the entire history.
 
-Consumer replay remains the development [jobs CLI](README.md#failures-and-recovery),
+Consumer replay remains the development [jobs CLI](ARCHITECTURE.md#failures-and-recovery),
 not a browser action or new HTTP endpoint. Publication failures use the explicit publication
 retry command rather than replaying an old publication delivery. Non-publication records retain
 the existing three-cycle replay budget, allowlisted consumer, and original business identity.
@@ -273,7 +273,7 @@ browser and Docker gates sequentially on constrained machines.
 
 ### LocalStack Browser Acceptance
 
-Use a disposable, provisioned Hobby lab, following the [lab setup](README.md#run-the-application-gate).
+Use a disposable, provisioned Hobby lab, following the [lab setup](README.md#start-the-hobby-lab).
 This test creates real content; it does not reset an existing dataset or provision implicitly.
 The default `dev` lab can be overridden consistently for every command:
 

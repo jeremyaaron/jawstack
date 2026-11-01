@@ -58,3 +58,17 @@ Cursors use core's shared, bounded version-1 codec, including validation before 
 for an empty range. Page sizes may change during continuation; deleted boundary rows need
 not still exist. Cursors are unsigned and not authorization credentials, and reads are not
 snapshots. Authorize and select permitted projections/resources in application query handlers.
+
+## Application Persistence
+
+Public key/item mappers and `buildCommandTransactWriteItems`,
+`buildResourceStateTransactWriteItem`, and `buildProjectionTransactWriteItem` support
+application-owned `CommandUnitOfWork` composition. Preserve version conditions, explicit
+old projection deletes, and atomic state/activity/outbox/projection/idempotency writes.
+The base repository's `idempotencyScope` selects resource type, command, and subject;
+the corresponding commit options must use the same scope. TTL is physical cleanup, not
+automatic logical expiry or authorization.
+
+Content Operations composes typed auxiliary writes, logical expiry, and bounded/deduplicated
+transaction planning above these exports. These are consumer policies, not generic package
+defaults or a new arbitrary-write hook. See [Application Composition](../../docs/application-composition.md#core-and-persistence).

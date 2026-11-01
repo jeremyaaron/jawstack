@@ -8,7 +8,18 @@ The MVP starter is intentionally narrow: it ships a Work Requests workflow that 
 
 ## Status
 
-JawStack is pre-release. The first foundation iteration is merged and tagged `v0.0.1` in Git. The repository includes generated-app verification, package dry-run checks, and opt-in AWS dev deploy smoke tooling. Packages are not published to npm. Iteration 2's [Content Operations consumer](apps/content-operations/README.md) includes a passing LocalStack feasibility harness, scoped domain dispatch, immutable attachments, shared materializers, a local notification sink, recoverable publication, checkpointed due/reminder/cleanup jobs, durable failure inspection/replay, a [loopback API](apps/content-operations/API.md), and an [Angular content workbench](apps/content-operations/WORKBENCH.md) with version-safe drafts/reviews, real attachment uploads/downloads, committed publication previews, scheduling/calendar, and operations/recovery views. The same application runs through guarded LocalStack worker/collector Lambdas and recurring Scheduler targets. Its [CDK composition](apps/content-operations/INFRASTRUCTURE.md) is local-only and synthesis-tested, not deployed; broader deployed failure acceptance remains planned. This does not imply a `v0.0.2` release.
+JawStack is pre-release. The foundation is merged and tagged `v0.0.1` in Git; packages
+are not published to npm. Generated-app verification and package dry runs protect the
+Work Requests starter. Real-AWS dev smoke tooling is opt-in.
+
+The maintained [Content Operations application](apps/content-operations/README.md) proves
+multi-resource editorial workflows, immutable attachments/publication, scheduling, local
+notifications, and inspectable recovery. It runs without credentials in memory or through
+an explicitly provisioned Hobby LocalStack lab. Local acceptance includes real workers,
+automatic jobs, deployed failure/retry/DLQ scenarios, and ownership-safe teardown.
+Its [CDK composition](apps/content-operations/INFRASTRUCTURE.md) is synthesis-only, not
+deployed. See the [iteration outcome](docs/iterations/002-content-operations/outcome.md)
+for evidence, limitations, and release assessment. No `v0.0.2` release is implied.
 
 ## Quickstart
 
@@ -49,6 +60,10 @@ pnpm dev:web
 
 Open `http://127.0.0.1:4316`.
 
+For the more complete editorial reference application, follow the
+[Content Operations runbook](apps/content-operations/README.md#start-in-memory).
+It has separate filtered launch commands; the root shortcuts above remain Work Requests.
+
 Generate an app from the local checkout:
 
 ```sh
@@ -71,7 +86,8 @@ npm create jawstack@latest my-jawstack-app
 
 ## Deploy To AWS
 
-JawStack deploys through AWS CDK. The deploy path is opt-in because it creates real AWS resources.
+The Work Requests starter deploys through AWS CDK. This opt-in path creates real AWS
+resources and may incur costs. It is not a Content Operations deployment procedure.
 
 ```sh
 export AWS_PROFILE=jawstack-dev
@@ -194,10 +210,10 @@ Early vision drafts are archived under `docs/internal/`.
 
 Near-term:
 
-- Prove a bounded LocalStack integration path without requiring real AWS credentials
-- Build a content-operations reference application beyond Work Requests
-- Improve framework customization and verification where consumer requirements expose gaps
+- Extend maintained consumers where real product requirements expose reusable framework gaps
+- Decide a separately reviewed release for the additive query, Angular, and CDK contracts
 - Add Changesets and npm publish workflow when packages are worth publishing
+- Prove any production-auth/real-AWS consumer path separately, with explicit cost approval
 
 Post-MVP directions:
 
