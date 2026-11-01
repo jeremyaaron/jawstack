@@ -321,6 +321,16 @@ account is Hobby, not a paid trial. The workflow must first be merged to the def
 to be available for dispatch. No remote run or environment configuration is implied by local
 test results. See [GitHub environment protection](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments).
 
+The GitHub Actions editor extension validates environment/variable/secret names against
+the remote repository. Until that environment and its settings exist, it can report
+`Value 'localstack-hobby' is not valid` and `Context access might be invalid` for the plan
+variable and token references. Those are missing optional CI prerequisites, not YAML
+syntax errors; the Git-ignored local token file does not configure GitHub. Leave the
+manual gate unconfigured when only local development is needed. When enabling it, create
+the protected environment first, then its Hobby variable and real environment secret, and
+refresh the extension's metadata. Do not create dummy secrets or disable workflow validation
+just to hide these diagnostics. Environment setup does not dispatch the workflow or deploy AWS.
+
 Only preflight and lab startup receive the token. Missing token/attestation prints `NOT-RUN`,
 writes that status to the job summary, and exits unsuccessfully before Docker starts; it is
 never a passing integration check. The job builds, runs the real browser path, runs the full

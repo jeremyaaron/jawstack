@@ -1,7 +1,9 @@
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Writable } from "node:stream";
+import { promisify } from "node:util";
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -81,7 +83,45 @@ describe("create-jawstack", () => {
       readFile(join(targetDirectory, "scripts", "build-aws-entrypoints.mjs"), "utf8"),
     ).resolves.toContain("src/aws/api.ts");
     await expect(readFile(join(targetDirectory, ".gitignore"), "utf8")).resolves.toContain("dist/");
+    await expect(readFile(join(targetDirectory, "eslint.config.js"), "utf8")).resolves.toContain(
+      "tsconfigRootDir: import.meta.dirname",
+    );
   });
+
+  it("pins parser roots when workspace and template configs share an editor process", async () => {
+    const { stdout } = await promisify(execFile)(
+      process.execPath,
+      [
+        "--input-type=module",
+        "-e",
+        `
+          import assert from "node:assert/strict";
+          import { resolve } from "node:path";
+          import { ESLint } from "eslint";
+
+          const roots = [process.cwd(), resolve("templates/angular-resource-workflow")];
+          const engines = [];
+          for (const cwd of roots) {
+            const engine = new ESLint({ cwd });
+            for (const extension of ["ts", "js"]) {
+              const filePath = resolve(cwd, "src/parser-root-regression." + extension);
+              const config = await engine.calculateConfigForFile(filePath);
+              assert.equal(config.languageOptions.parserOptions.tsconfigRootDir, cwd);
+              engines.push({ engine, filePath, extension });
+            }
+          }
+          for (const { engine, filePath, extension } of [...engines, ...engines.toReversed()]) {
+            const text = extension === "ts" ? "export const value: number = 1;" : "export const value = 1;";
+            const [result] = await engine.lintText(text, { filePath });
+            assert.equal(result.errorCount, 0, JSON.stringify(result.messages));
+          }
+          console.log("Both parser roots remain valid in one process.");
+        `,
+      ],
+      { cwd: repositoryRoot, timeout: 10_000, maxBuffer: 8192 },
+    );
+    expect(stdout).toContain("Both parser roots remain valid in one process.");
+  }, 15_000);
 
   it("refuses to generate into a non-empty directory unless forced", async () => {
     const directory = await makeTempDirectory();
