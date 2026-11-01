@@ -1,8 +1,8 @@
 # Iteration 2: Content Operations
 
-Status: Phases 0-20 complete. Actual application LocalStack workers/collectors, automatic
-scheduled publication, immutable artifacts, notification outcomes, ownership-safe reset,
-seed replay, and workspace checks passed. Phase 21 is next.
+Status: Phases 0-21 complete. Local-only CDK composition, profile/policy/topology assertions,
+shared JSON ingress, live application regression, baseline compatibility, and isolated
+desktop/mobile browser checks passed. Phase 22 is next.
 
 ## Documents
 
@@ -106,4 +106,14 @@ gate drives the loopback API through uploaded bytes, review materialization, aut
 publication, immutable artifact verification, notification delivery, and operational queries,
 then ownership-safe reset and a second real workflow. The feasibility spine remains a
 regression; no host substitute performs consumer work. CDK synthesis/comparison and the
-broader deployed failure matrix remain Phases 21 and 22 respectively.
+broader deployed failure matrix were assigned to Phases 21 and 22 respectively.
+
+Phase 21 adds the [synthesis-only composition](../../../apps/content-operations/INFRASTRUCTURE.md)
+using public named bindings, private S3, durable collectors, per-job write grants, and real
+guarded JSON/runtime entrypoints. Narrow optional CDK worker settings match the lab's source,
+batch and collector-visibility bounds without altering baseline IDs/defaults. Template and
+SDK-contract tests distinguish supported parity from physical-name/ingress/sweeper/schedule/
+architecture differences. All 787 workspace tests and 24 isolated browser scenarios passed;
+the actual SDK lab workflow/reset regression passed too. Final teardown needed exact-ID
+orphan-runtime cleanup after a deadline; that automatic recovery is explicitly Phase 22
+work. No real-AWS/CDK deployment or production authentication is claimed.

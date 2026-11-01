@@ -120,9 +120,18 @@ importers:
       '@angular/compiler-cli':
         specifier: 21.2.17
         version: 21.2.17(@angular/compiler@21.2.17)(typescript@5.9.3)
+      '@jawstack/aws-cdk':
+        specifier: workspace:*
+        version: link:../../packages/aws-cdk
       '@playwright/test':
         specifier: 1.64.1
         version: 1.64.1
+      aws-cdk-lib:
+        specifier: ^2.260.0
+        version: 2.260.0(constructs@10.6.0)
+      constructs:
+        specifier: ^10.6.0
+        version: 10.6.0
       esbuild:
         specifier: ^0.28.1
         version: 0.28.1

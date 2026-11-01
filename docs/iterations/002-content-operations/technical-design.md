@@ -1389,6 +1389,49 @@ faults. They are no longer part of this command. The comprehensive deployed faul
 Phase 22, not implied by a passing Phase 20 happy-path gate. No real-AWS mode or CDK deployment
 has been added.
 
+### Phase 21 Composition Decisions
+
+`src/infra/config.ts` is the side-effect-free consumer configuration; `src/infra/stack.ts`
+composes the public high-level construct with S3, four named worker-DLQ collectors, explicit
+named due-job write grants, and retained asynchronous-job failures. Five real ESM archives
+are built separately under `dist/infra/`. `synth:local` emits the dummy-account local assembly
+without CDK CLI deployment, context-provider lookup, credentials, Docker, or token access.
+The application keeps fixture auth explicitly `dev`/`fixtures`; no external-auth claim or
+consumer deploy command was added.
+
+The base construct needed one narrow additive `workerOptions` input: single-message batch
+size, collector-compatible DLQ visibility, and an EventBridge source filter. Validation runs
+before service-resource construction; defaults, original logical IDs, existing named records,
+and generated Work Requests behavior are unchanged. The source and all supported bounds come
+from the same application profile as SDK provisioning. Collectors and grants use only public
+named bindings, never construct children or positional arrays.
+
+The loopback host and synthesized API wrapper share `application/json-router.ts`, not a second
+editorial authority or the framework's unscoped generic dispatcher. Body streaming, binary
+downloads, seed, origin/socket checks and managed memory pumping remain in the host. The v2
+Lambda wrapper is bounded JSON GET/POST only; unsupported host-only routes fail rather than
+pretending to transfer files or seed. Its health status is `synthesis-only`. Immutable S3
+operations share the same injected-client protocol implementation; the owned lab wrapper
+retains its endpoint/context/ownership checks.
+
+Synthesized entrypoints require exact local/dev/emulator/function/consumer/job/queue bindings
+before constructing clients. They use fixed internal LocalStack endpoints and dummy credentials;
+real Lambda lacks the required matching private emulator metadata and is rejected. Pure import
+does not create a runtime. Guarded SDK contract tests execute default synthesized API,
+materializer and notification entrypoints against a transaction simulator; this is not cloud
+delivery evidence. Existing SDK lab scenarios remain the actual transport evidence.
+
+The CDK template preserves the base HTTP API and outbox sweeper, splits due schedules into
+four named functions, and retains four service-level Scheduler DLQs plus one async-job queue.
+It therefore has fifteen functions/thirteen queues, versus the lab's thirteen/eleven including
+feasibility functions and shared job targets. It uses the default schedule group, `LATEST`
+stream start, base ARM64 runtime, explicit TTL, and S3 encryption/TLS policy. The SDK lab uses
+owned physical names/group, `TRIM_HORIZON`, manifest-selected architecture, and SDK cleanup.
+These are explicit exclusions from topology equality, not assertions of deployment parity.
+See the [infrastructure guide](../../../apps/content-operations/INFRASTRUCTURE.md) for the
+complete comparison. No CloudFormation, API Gateway, CDK asset delivery, or IAM enforcement
+proof is claimed; the full deployed fault matrix remains Phase 22.
+
 ### Compatibility Gate and Provisioning Choice
 
 The [Hobby plan matrix](https://www.localstack.cloud/pricing) excludes API Gateway HTTP APIs.

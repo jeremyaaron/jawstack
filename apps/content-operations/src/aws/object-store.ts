@@ -70,6 +70,15 @@ export function createLocalS3ObjectStore(
     followRegionRedirects: false,
     requestHandler: new LocalOnlyHttpHandler(config.endpoint),
   });
+  return createS3ObjectStore(client, config.bucket);
+}
+
+// Callers own environment/endpoint validation; the immutable-object protocol is shared.
+export function createS3ObjectStore(
+  client: S3Client,
+  bucket: string,
+): AssetObjectStore & PublicationObjectStore & AssetCleanupStore & { close(): void } {
+  const config = { bucket };
   const read: AssetObjectStore["read"] = async (reference) => {
     const ref = objectReferenceSchema.parse(reference);
     try {

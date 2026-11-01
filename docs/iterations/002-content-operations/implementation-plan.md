@@ -1,8 +1,8 @@
 # Iteration 2 Implementation Plan: Content Operations
 
-Status: reviewed. Phases 0-20 are complete. The actual application LocalStack runtime,
-automatic scheduled publication, real worker outcomes, ownership-safe reset/reprovision,
-seed replay, and workspace checks passed. Phase 21 is next.
+Status: reviewed. Phases 0-21 are complete. Local-only CDK composition, shared JSON ingress,
+profile/topology/policy assertions, baseline compatibility, live application regressions,
+and isolated desktop/mobile browser checks passed. Phase 22 is next.
 
 ## Purpose
 
@@ -104,7 +104,7 @@ work may proceed only after an explicit sequencing decision, without claiming th
 | 18    | Consumer UI                | Scheduling, calendar and agenda                           | Complete |
 | 19    | Consumer UI                | Operations, outcomes and retry controls                   | Complete |
 | 20    | Consumer AWS               | Actual app bundles and LocalStack runtime wiring          | Complete |
-| 21    | Consumer infrastructure    | CDK composition and topology assertions                   | Planned  |
+| 21    | Consumer infrastructure    | CDK composition and topology assertions                   | Complete |
 | 22    | Integration verification   | Full local workflow, failure and isolation evidence       | Planned  |
 | 23    | Browser/CI verification    | Complete browser acceptance and PR/manual gates           | Planned  |
 | 24    | Documentation/verification | Acceptance audit and merge readiness                      | Planned  |
@@ -608,6 +608,10 @@ Scope:
   explicit recovery, object-write crash, lease expiry, and obsolete-generation scenarios.
 - Prove unsafe endpoints/credential inheritance yield zero AWS requests, and verify missing-service errors.
 - Repeat ownership-safe reset/teardown and update image/entitlement/architecture evidence with final results.
+- Cover orphaned warm runtimes after emulator shutdown: use verifiable instance ownership,
+  reject foreign lookalikes, and recover without broad prefix-based container deletion.
+  Include exited containers and final teardown outcome in the gate evidence, not only a
+  successful workflow or service-resource reset.
 
 Acceptance:
 
@@ -1552,6 +1556,54 @@ integration gate, documentation walkthrough, local links, and `git diff --check`
   memory web 4336 / API 4337 and the review dataset were preserved and remained healthy.
 - No real AWS, CDK deployment, dependency/public framework/template change, version bump,
   CI trigger change, package publication, automatic commit, or push was performed.
+
+### Phase 21: November 1, 2026
+
+- Added the side-effect-free infrastructure configuration and consumer composition around
+  public `JawStackResourceWorkflowApp` bindings, private S3, four durable collectors, named
+  due-job write grants, retained asynchronous-job failures, and dev-fixture JSON ingress.
+  `synth:local` builds actual ESM entrypoints and emits a dummy-account assembly without
+  a deployment command, Docker, token access, credentials, or context-provider lookup.
+- Added narrowly motivated optional framework worker transport settings for batch size,
+  DLQ visibility and source filtering. Defaults and construct IDs remain unchanged; the
+  baseline snapshot and generated Work Requests path passed without snapshot updates.
+  Added only consumer development dependencies on the existing CDK workspace/library/
+  constructs versions, with no unrelated dependency updates or package version bumps.
+- Shared public command/query routing, replay metadata, conflict/error redaction, and
+  command allowlisting between loopback HTTP and synthesis JSON Lambda. Host streaming,
+  binary downloads, seed, origin checks and memory pumping stay in the host. The immutable
+  S3 protocol accepts an already guarded client; existing owned-lab construction retains
+  its checks. Real cloud contexts are rejected before synthesized entrypoints create clients.
+- Synthesized template checks cover fifteen functions, thirteen queues, four Scheduler
+  targets, fifteen log groups, private storage, targeted object grants, named bindings,
+  bounded mappings and retries, and the lab profile's subscriptions/source/bounds. Default
+  synthesized API/materializer/notification entrypoints execute actual scoped shared
+  protocols against an SDK transaction simulator; this is explicitly not cloud evidence.
+- Added five import-safe real archives under `dist/infra/`, with atomic replacement and
+  fixed ZIP timestamps to avoid asset churn; repeated builds verified stable hashes for
+  all five archives. Documented deliberate topology differences:
+  host-vs-JSON ingress, SDK-vs-CloudFormation assets/names, stream starting position,
+  sweeper, per-schedule functions/DLQs/group, architecture, TTL and S3 policy/cleanup.
+- `pnpm verify:release` passed: 787 workspace unit tests (494 consumer, 36 CDK), workspace
+  typecheck/lint/build, zero pkg-guard findings, isolated generated-app install/typecheck/
+  tests/browser+AWS builds/doctor, and six package dry runs. `synth:local` passed. The
+  browser graph remains credential-free and excludes server/CDK modules.
+  Final source typecheck, formatting, diff checks, and all 112 local Markdown file targets
+  across 40 documents passed.
+- The SDK-provisioned live application regression passed in 361,769 ms, with actual
+  automatic due publication, one artifact/three notifications/one attempt per flow,
+  proof redrive/collection, sentinel reset, zero runtimes after reset, and reprovision.
+  Final down exposed two running plus seven exited orphan runtime containers. After
+  confirming exact IDs, this-run creation times and lab/function contexts, only those
+  containers were stopped/removed; repeated down passed with no matching containers.
+  Automatic ownership-proven orphan recovery is explicitly added to Phase 22, not claimed
+  fixed here. Existing memory web 4336 / API 4337 and the review dataset stayed available.
+- A browser run concurrent with Docker/build load had canvas-generation and loading
+  deadline failures. No assertions/timeouts were weakened. The isolated full run passed
+  all 24 desktop/mobile scenarios in 3.1 minutes; actual image/PDF/artifact rendering and
+  screenshots were checked. On constrained hosts, run these expensive gates sequentially.
+- No real AWS, CDK deployment, production-auth claim, CI trigger change, release, publish,
+  automatic commit, or push occurred. Phase 22 is the full deployed failure/evidence gate.
 
 For later phases, append the date, meaningful behavior delivered, commands/results,
 not-run checks, design changes, and remaining limitations. Do not replace observed

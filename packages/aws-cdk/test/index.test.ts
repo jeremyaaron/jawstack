@@ -742,6 +742,52 @@ function namedProps(): JawStackResourceWorkflowAppProps {
   };
 }
 
+describe("consumer worker transport options", () => {
+  it("supports bounded single-message batches, collector visibility, and a source filter", () => {
+    const app = new App();
+    const stack = new Stack(app, "ConsumerOptions");
+    new JawStackResourceWorkflowApp(stack, "Workflow", {
+      ...workflowProps(),
+      workerOptions: {
+        batchSize: 1,
+        deadLetterVisibilityTimeoutSeconds: 180,
+        eventSource: "content-operations.dev",
+      },
+    });
+    const template = Template.fromStack(stack);
+    template.hasResourceProperties("AWS::Lambda::EventSourceMapping", {
+      BatchSize: 1,
+      EventSourceArn: Match.objectLike({
+        "Fn::GetAtt": Match.arrayWith([Match.stringLikeRegexp(".*sendNotificationQueue.*"), "Arn"]),
+      }),
+    });
+    template.hasResourceProperties("AWS::SQS::Queue", {
+      QueueName: "jawstack-test-dev-sendnotification-dlq",
+      VisibilityTimeout: 180,
+    });
+    template.hasResourceProperties("AWS::Events::Rule", {
+      EventPattern: { "detail-type": ["workRequest.created"], source: ["content-operations.dev"] },
+    });
+  });
+  it.each([
+    { batchSize: 0 },
+    { batchSize: 11 },
+    { batchSize: 1.5 },
+    { deadLetterVisibilityTimeoutSeconds: 30 },
+    { deadLetterVisibilityTimeoutSeconds: 43201 },
+    { eventSource: " " },
+    { eventSource: "bad\nsource" },
+  ])("rejects unsafe worker options before creating service resources: %j", (workerOptions) => {
+    const app = new App();
+    const stack = new Stack(app, "InvalidOptions");
+    expect(
+      () =>
+        new JawStackResourceWorkflowApp(stack, "Workflow", { ...workflowProps(), workerOptions }),
+    ).toThrow();
+    expect(Template.fromStack(stack).toJSON().Resources ?? {}).toEqual({});
+  });
+});
+
 function synthTemplate(): Template {
   const app = new App();
   const stack = new Stack(app, "TestStack");

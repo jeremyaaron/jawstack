@@ -6,7 +6,8 @@
     "paths": {
       "@jawstack/angular": ["../../packages/angular/src/index.ts"],
       "@jawstack/core": ["../../packages/core/src/index.ts"],
-      "@jawstack/aws-runtime": ["../../packages/aws-runtime/src/index.ts"]
+      "@jawstack/aws-runtime": ["../../packages/aws-runtime/src/index.ts"],
+      "@jawstack/aws-cdk": ["../../packages/aws-cdk/src/index.ts"]
     },
     "noEmit": true
   },

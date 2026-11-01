@@ -49,6 +49,13 @@ export type JawStackResourceWorkflowAppProps = Readonly<{
   auth: ManifestAuth;
   entrypoints: JawStackResourceWorkflowEntrypoints;
   removalPolicy?: JawStackRemovalPolicy;
+  workerOptions?: JawStackWorkerOptions;
+}>;
+
+export type JawStackWorkerOptions = Readonly<{
+  batchSize?: number;
+  deadLetterVisibilityTimeoutSeconds?: number;
+  eventSource?: string;
 }>;
 
 export class JawStackResourceWorkflowApp extends Construct {
@@ -88,6 +95,7 @@ export class JawStackResourceWorkflowApp extends Construct {
     const lambdaDefaults = lambdaDefaultsFromCostProfile(props.costProfile);
     const queueDefaults = queueDefaultsFromCostProfile(props.costProfile);
     const schedulerDefaults = schedulerDefaultsFromCostProfile(props.costProfile);
+    validateWorkerOptions(props.workerOptions, lambdaDefaults.timeout.toSeconds());
 
     const tableConstruct = new JawStackTableConstruct(this, "Table", {
       tableName: names.tableName,
@@ -129,6 +137,7 @@ export class JawStackResourceWorkflowApp extends Construct {
       eventBus: eventBusConstruct.eventBus,
       lambdaDefaults,
       queueDefaults,
+      ...(props.workerOptions ? { workerOptions: props.workerOptions } : {}),
       removalPolicy,
     });
     const schedulerConstruct = new JawStackSchedulerConstruct(this, "Schedulers", {
@@ -392,6 +401,7 @@ type JawStackWorkerConstructProps = Readonly<{
   lambdaDefaults: LambdaDefaults;
   queueDefaults: QueueDefaults;
   removalPolicy: RemovalPolicy;
+  workerOptions?: JawStackWorkerOptions;
 }>;
 
 class JawStackWorkerConstruct extends Construct {
@@ -427,6 +437,13 @@ class JawStackWorkerConstruct extends Construct {
         queueName: `${workerName}-dlq`,
         retentionPeriod: Duration.days(14),
         removalPolicy: props.removalPolicy,
+        ...(props.workerOptions?.deadLetterVisibilityTimeoutSeconds !== undefined
+          ? {
+              visibilityTimeout: Duration.seconds(
+                props.workerOptions.deadLetterVisibilityTimeoutSeconds,
+              ),
+            }
+          : {}),
       });
       const queue = new sqs.Queue(this, `${worker.name}Queue`, {
         queueName: `${workerName}-queue`,
@@ -459,7 +476,7 @@ class JawStackWorkerConstruct extends Construct {
       props.table.grantReadWriteData(workerFunction);
       workerFunction.addEventSource(
         new lambdaEventSources.SqsEventSource(queue, {
-          batchSize: 10,
+          batchSize: props.workerOptions?.batchSize ?? 10,
           maxConcurrency,
         }),
       );
@@ -468,6 +485,9 @@ class JawStackWorkerConstruct extends Construct {
         eventBus: props.eventBus,
         eventPattern: {
           detailType: [...worker.eventTypes],
+          ...(props.workerOptions?.eventSource
+            ? { source: [props.workerOptions.eventSource] }
+            : {}),
         },
         targets: [new targets.SqsQueue(queue)],
       });
@@ -755,6 +775,33 @@ function schedulesFromResources(resources: readonly ResourceDefinition[]): Sched
 function pointInTimeRecoveryFromCostProfile(costProfile: CostProfile): boolean {
   const dynamodbProfile = recordProperty(costProfile, "dynamodb");
   return booleanProperty(dynamodbProfile, "pointInTimeRecovery") ?? false;
+}
+
+function validateWorkerOptions(options: JawStackWorkerOptions | undefined, timeout: number): void {
+  if (!options) return;
+  const { batchSize, deadLetterVisibilityTimeoutSeconds: visibility, eventSource } = options;
+  if (
+    batchSize !== undefined &&
+    (!Number.isSafeInteger(batchSize) || batchSize < 1 || batchSize > 10)
+  )
+    throw new Error("Worker batch size must be an integer from 1 to 10.");
+  if (
+    visibility !== undefined &&
+    (!Number.isSafeInteger(visibility) || visibility < timeout * 6 || visibility > 43200)
+  )
+    throw new Error(
+      "Worker DLQ visibility must be at least six function timeouts and at most 43200 seconds.",
+    );
+  if (
+    eventSource !== undefined &&
+    (typeof eventSource !== "string" ||
+      !eventSource.trim() ||
+      eventSource.length > 256 ||
+      [...eventSource].some(
+        (character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127,
+      ))
+  )
+    throw new Error("Worker event source must be a nonblank bounded source string.");
 }
 
 function recordProperty(value: unknown, key: string): Record<string, unknown> | undefined {

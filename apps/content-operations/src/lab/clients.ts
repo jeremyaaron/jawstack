@@ -30,7 +30,7 @@ export class LocalOnlyHttpHandler extends NodeHttpHandler {
   }
 }
 
-export function createClients(config: LabConfig) {
+export function createClients(config: Pick<LabConfig, "endpoint" | "region">) {
   if (config.endpoint === hostEndpoint) assertCleanAwsEnvironment(process.env);
   const options = {
     endpoint: config.endpoint,

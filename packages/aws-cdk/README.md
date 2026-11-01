@@ -42,6 +42,17 @@ application permissions.
 
 ## Application Composition
 
+Optional `workerOptions` on `JawStackResourceWorkflowApp` lets a consumer set `batchSize`
+(integer 1-10), `deadLetterVisibilityTimeoutSeconds` (at least six function timeouts,
+at most 43,200 seconds), and an `eventSource` filter for worker EventBridge rules. Invalid
+options fail before service resources are created. Omitted settings retain batch size ten,
+the SQS default DLQ visibility, and the original detail-type-only rules. Existing logical
+IDs, named bindings, generated consumers, and default policies remain unchanged.
+
+These settings let an application-owned collector share its worker's bounded timeout/DLQ
+visibility and let local integration use single-message batches without editing child
+constructs. Applications still own collector functions, grants, and event sources.
+
 Given an existing workflow, a private artifact bucket, and an application-owned failure
 collector function, compose permissions and collection through public bindings:
 

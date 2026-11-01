@@ -46,6 +46,9 @@ These commands do not start Docker, load the token file, resolve AWS credentials
 connect to any AWS service. The build creates a guarded browser bundle under `dist/web/`
 and bundled Node 22 `spine.zip`, `publication.zip`, `jobs.zip`, and `recovery.zip`
 Lambda archives under `dist/`; all four archives supply deployed lab handlers.
+It also builds five separate synthesis-only archives under `dist/infra/`. The
+[infrastructure guide](INFRASTRUCTURE.md) describes the local-only CDK composition,
+credential-free synthesis command, JSON ingress boundary, and explicit lab differences.
 Build the workspace once so the harness can bundle installed public package entrypoints.
 Unit tests are explicitly restricted to `test/unit/**/*.test.ts`; live integration is a
 separate script, never a token-dependent test in default discovery.
@@ -524,7 +527,7 @@ queue/DLQ, one private S3 bucket, five schedules, twelve IAM roles, thirteen Lam
 and seven-day logs. Lambda ZIPs are uploaded through the SDK. The four application schedules
 are enabled; the proof schedule is enabled only during verification. The pure
 `src/aws/profile.ts` declares application names, subscriptions, bundles, and bounds for
-later CDK comparison. The shared spine dispatcher publishes actual application outbox facts.
+CDK comparison. The shared spine dispatcher publishes actual application outbox facts.
 
 For interactive use, start `dev:api:local`, seed with `seed --runtime localstack`, and start
 `dev:web` as described in [the API guide](API.md). No UI/domain change is needed. Seeding

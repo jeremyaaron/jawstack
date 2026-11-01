@@ -1,27 +1,24 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import {
-  createManifest,
-  JawStackRuntimeError,
-  type RuntimeErrorCode,
-  type AuthContext,
-  type ApiError,
-} from "@jawstack/core";
-import { createContentOperationsResources } from "../domain/resources";
-import { contentUi } from "../shared/presentation";
+import { JawStackRuntimeError, type RuntimeErrorCode, type AuthContext } from "@jawstack/core";
 import { fixtureIds, fixtureIdentities, fixtureAuth } from "../shared/identities";
 import { idSchema, limits } from "../shared/validation";
 import { eventIdentitySchema } from "../shared/events";
 import { contentStateSchema } from "../shared/contracts";
 import { publicValue } from "../shared/api";
-import { keyComponentSchema } from "../application/persistence";
 import { createContentQueries, requireFixture } from "../application/queries";
 import { createPrivateReads } from "../application/reads";
 import { createSeeder } from "../application/seed";
 import type { ApiRuntime } from "../application/api-runtime";
+import {
+  contentManifest,
+  createContentJsonRouter,
+  jsonFailure,
+  jsonLimit,
+  queryParameters,
+} from "../application/json-router";
 
-const jsonLimit = 256 * 1024;
 class HttpFailure extends JawStackRuntimeError {
   constructor(
     readonly status: number,
@@ -31,30 +28,6 @@ class HttpFailure extends JawStackRuntimeError {
     super(code, message);
   }
 }
-const statuses: Record<RuntimeErrorCode, number> = {
-  "command.validation": 400,
-  "query.invalid": 400,
-  "command.rejected": 422,
-  "auth.missing": 401,
-  "auth.forbidden": 403,
-  "resource.not_found": 404,
-  "resource.conflict": 409,
-  "resource.invalid_state": 422,
-  "idempotency.conflict": 409,
-  "runtime.internal": 500,
-  "runtime.unavailable": 503,
-};
-const resourceTypeSchema = z.enum(["contentItem", "reviewTask", "asset"]);
-const commandBody = z.strictObject({ input: z.unknown(), idempotencyKey: keyComponentSchema });
-const safeDetails = (details: unknown) => {
-  const parsed = z
-    .object({
-      expectedVersion: z.number().int().positive(),
-      actualVersion: z.number().int().positive(),
-    })
-    .safeParse(details);
-  return parsed.success ? parsed.data : undefined;
-};
 function singleHeader(request: IncomingMessage, name: string) {
   if (
     request.rawHeaders.filter(
@@ -66,15 +39,6 @@ function singleHeader(request: IncomingMessage, name: string) {
   if (Array.isArray(value))
     throw new HttpFailure(400, "command.validation", "Duplicate request header.");
   return value;
-}
-function queryParameters(url: URL) {
-  const result: Record<string, string> = {};
-  for (const [name, value] of url.searchParams) {
-    if (Object.hasOwn(result, name))
-      throw new JawStackRuntimeError("query.invalid", "Duplicate query parameter.");
-    Object.defineProperty(result, name, { value, enumerable: true });
-  }
-  return result;
 }
 function byteStream(
   request: IncomingMessage,
@@ -137,28 +101,6 @@ async function jsonBody(request: IncomingMessage, signal: AbortSignal) {
     throw new JawStackRuntimeError("command.validation", "Invalid JSON request body.");
   }
 }
-function manifest() {
-  const value = createManifest({
-    appName: "content-operations",
-    stage: "local",
-    resources: createContentOperationsResources(),
-    stable: true,
-    auth: { mode: "dev", provider: "fixtures" },
-    costProfile: {},
-  });
-  return {
-    ...value,
-    resources: value.resources.map((resource) => ({
-      ...resource,
-      commands: resource.commands.filter(
-        (command) =>
-          resource.name === "contentItem" && Object.hasOwn(contentUi.commands, command.name),
-      ),
-      workers: [],
-      schedules: [],
-    })),
-  };
-}
 export async function startContentApi(options: {
   runtime: ApiRuntime;
   host?: string;
@@ -191,6 +133,7 @@ export async function startContentApi(options: {
   const queries = createContentQueries({ repository: runtime.repository, clock: runtime.clock });
   const reads = createPrivateReads(runtime);
   const seed = createSeeder(runtime);
+  const jsonRouter = createContentJsonRouter(runtime);
   const controllers = new Set<AbortController>();
   const handlers = new Set<Promise<void>>();
   let closed = false;
@@ -332,7 +275,7 @@ export async function startContentApi(options: {
                   : "managed"
                 : "external-workers",
           });
-        else if (parts[1] === "manifest") success(manifest());
+        else if (parts[1] === "manifest") success(contentManifest());
         else success(fixtureIdentities);
         return;
       }
@@ -341,49 +284,19 @@ export async function startContentApi(options: {
       if (!fixtureIds.includes(fixture as (typeof fixtureIds)[number]))
         throw new JawStackRuntimeError("auth.forbidden", "Unknown development fixture.");
       const auth: AuthContext = fixtureAuth(fixture as (typeof fixtureIds)[number]);
-      if (method === "POST" && parts[1] === "resources") {
-        z.strictObject({}).parse(q);
-        const creating =
-          parts.length === 5 &&
-          parts[2] === "contentItem" &&
-          parts[3] === "commands" &&
-          parts[4] === "create";
-        const updating =
-          parts.length === 6 &&
-          parts[2] === "contentItem" &&
-          parts[4] === "commands" &&
-          parts[5] !== "create";
-        const name = creating ? "create" : updating ? parts[5]! : "";
-        if (!Object.hasOwn(contentUi.commands, name))
-          throw new JawStackRuntimeError(
-            "auth.forbidden",
-            "This command is not exposed through HTTP.",
-          );
-        const body = commandBody.parse(await jsonBody(request, signal));
-        const result = await runtime.dispatch(
-          {
-            resourceType: "contentItem",
-            ...(updating ? { resourceId: idSchema.parse(parts[3]) } : {}),
-            commandName: name,
-            input: body.input,
-            idempotencyKey: body.idempotencyKey,
-            requestId: meta.requestId,
-            correlationId: meta.correlationId,
-            requestContext: {},
-          },
-          auth,
-        );
-        if (result.ok) {
-          meta.requestId = result.meta.requestId;
-          meta.correlationId = result.meta.correlationId;
-          write(200, { ...result, data: publicValue(result.data) });
-          return;
-        }
-        throw new JawStackRuntimeError(
-          result.error.code,
-          result.error.message,
-          safeDetails(result.error.details),
-        );
+      queryRoute = method === "GET";
+      const routed = await jsonRouter({
+        method: method!,
+        parts,
+        query: q,
+        auth,
+        meta,
+        body: () => jsonBody(request, signal),
+      });
+      if (routed) {
+        Object.assign(meta, routed.body.meta);
+        write(routed.status, routed.body);
+        return;
       }
       if (method === "POST" && url.pathname === "/api/development/seed") {
         requireFixture(auth, true);
@@ -420,33 +333,6 @@ export async function startContentApi(options: {
       }
       if (method === "GET") {
         queryRoute = true;
-        if (
-          parts.length === 2 &&
-          ["content", "reviews", "calendar", "operations"].includes(parts[1]!)
-        ) {
-          const name =
-            parts[1] === "content"
-              ? "content"
-              : parts[1] === "reviews"
-                ? "reviews"
-                : parts[1] === "calendar"
-                  ? "calendar"
-                  : "operations";
-          success(await queries[name](auth, q));
-          return;
-        }
-        if (
-          parts[1] === "resources" &&
-          (parts.length === 4 || (parts.length === 5 && parts[4] === "activity"))
-        ) {
-          const type = resourceTypeSchema.parse(parts[2]);
-          const id = idSchema.parse(parts[3]);
-          if (parts.length === 4) {
-            z.strictObject({}).parse(q);
-            success(await queries.resource(auth, type, id));
-          } else success(await queries.activity(auth, type, id, q));
-          return;
-        }
         if (parts.length === 4 && parts[1] === "assets" && parts[3] === "download") {
           const parsed = z.strictObject({ contentId: idSchema.optional() }).parse(q);
           const result = await reads.download(auth, idSchema.parse(parts[2]), parsed.contentId);
@@ -464,47 +350,15 @@ export async function startContentApi(options: {
           response.end(result.bytes);
           return;
         }
-        if (parts.length === 4 && parts[1] === "content" && parts[3] === "publication") {
-          z.strictObject({}).parse(q);
-          success(await reads.publication(auth, idSchema.parse(parts[2])));
-          return;
-        }
       }
       throw new JawStackRuntimeError("resource.not_found", "Route was not found.");
     } catch (error) {
-      const code: RuntimeErrorCode =
-        error instanceof URIError
-          ? "query.invalid"
-          : error instanceof z.ZodError
-            ? queryRoute
-              ? "query.invalid"
-              : "command.validation"
-            : error instanceof JawStackRuntimeError
-              ? error.code
-              : "runtime.internal";
-      const message = [
-        "runtime.internal",
-        "runtime.unavailable",
-        "resource.invalid_state",
-      ].includes(code)
-        ? "The operation could not complete. Retry or inspect local operations."
-        : error instanceof z.ZodError
-          ? "Invalid request fields."
-          : error instanceof JawStackRuntimeError
-            ? error.message
-            : "The request could not complete.";
-      const details =
-        error instanceof JawStackRuntimeError ? safeDetails(error.details) : undefined;
-      const body: ApiError = {
-        ok: false,
-        error: { code, message, ...(details ? { details } : {}) },
-        meta,
-      };
+      const failure = jsonFailure(error, meta, queryRoute);
       if (!request.readableEnded) {
         response.setHeader("connection", "close");
         response.once("finish", () => request.destroy());
       }
-      write(error instanceof HttpFailure ? error.status : statuses[code], body);
+      write(error instanceof HttpFailure ? error.status : failure.status, failure.body);
     } finally {
       if (!response.writableFinished && !response.destroyed)
         await new Promise<void>((resolve) => {

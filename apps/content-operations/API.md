@@ -67,6 +67,12 @@ API proxy. The configured web port is its exact allowed Host/Origin. Settings ma
 
 ## Identity and Envelopes
 
+The synthesis-only JSON Lambda wrapper shares the application JSON router with this server;
+it is not a deployed replacement for the loopback API. Binary transfer, seeding, host/origin
+validation, and managed memory processing remain host concerns. See the
+[infrastructure boundary](INFRASTRUCTURE.md) before interpreting a synthesized HTTP API
+as a runnable or production-authenticated service.
+
 Except health, manifest, and fixture discovery, requests require `x-content-ops-fixture`
 with one of `author_1`, `author_2`, `editor_1`, or `editor_2`. The server resolves their
 roles. Arbitrary subject/role/claims headers cannot promote callers; internal services

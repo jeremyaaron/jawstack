@@ -535,3 +535,31 @@ not inferred from the separate proof DLQ or memory browser suite. Scheduler fail
 retry fidelity, IAM enforcement, API Gateway/CloudFormation/CDK deployment, production auth,
 and real AWS remain unverified/excluded. Older direct-call crash/injected-clock live fixtures
 are retained as historical evidence, not run beside asynchronous application consumers.
+
+## Phase 21: Synthesis and Runtime Regression
+
+Observed November 1, 2026. The consumer now composes the public framework CDK construct,
+private S3, four worker-DLQ collectors, named due-job write grants, and a synthesis-only
+JSON ingress. The same infrastructure profile drives supported lab/synth comparisons;
+the [infrastructure guide](../../../apps/content-operations/INFRASTRUCTURE.md) lists deliberate
+differences. Synthesis and import checks use no token, Docker, credentials or cloud requests.
+Default synthesized API/materializer/notification handlers also have guarded SDK contract
+coverage; those simulated transactions are not deployment or IAM-enforcement evidence.
+
+The existing SDK-provisioned application gate was rerun against the shared JSON router and
+immutable-object protocol. It passed from `2026-11-01T04:34:34.428Z` to
+`2026-11-01T04:40:36.197Z` in 361,769 ms on the pinned ARM64/Hobby lab. Both actual application
+flows yielded one artifact, three notifications, and one succeeded attempt. Actual automatic
+Scheduler execution, proof redrive/durable collection, published outbox/worker markers,
+sentinel preservation, owned-resource absence, zero warm containers after reset, and
+reprovision passed. This was the existing SDK topology, **not a CDK deployment**.
+
+Final shutdown exposed a lifecycle edge: the emulator stopped but two warm jobs/materializer
+containers and seven exited runtime containers survived beyond the cleanup deadline. Their
+exact IDs, creation times within this run, lab ID, and declared function identities were
+checked without dumping environments or credentials; application contexts also matched
+their local stage/runtime. Recovery stopped the two running containers and removed only
+those nine confirmed exited containers. Repeating `local:down` then passed, with no owned
+emulator or Lambda containers remaining and images retained. Automatic ownership-proven
+orphan-runtime recovery is added to Phase 22's teardown coverage; no broad prefix deletion
+was introduced. The original down timeout is not counted as an automatic teardown pass.
