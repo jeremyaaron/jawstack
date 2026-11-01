@@ -259,7 +259,12 @@ export async function provisionSpine(
         Timeout: timeout,
         MemorySize: 256,
         Tags: { "jawstack:owner": manifest.ownerId },
-        Environment: { Variables: { CONTENT_OPS_LAB_ID: config.instanceId } },
+        Environment: {
+          Variables: {
+            CONTENT_OPS_LAB_ID: config.instanceId,
+            CONTENT_OPS_OWNER_ID: manifest.ownerId,
+          },
+        },
       }),
     );
     await waitFor(`${name} readiness`, async () => {
@@ -347,6 +352,7 @@ export async function provisionSpine(
   await provisionApplication(c, config, manifest, save);
   manifest.status = "ready";
   manifest.capabilitiesVersion = 1;
+  manifest.runtimeOwnershipVersion = 1;
   await save();
 }
 

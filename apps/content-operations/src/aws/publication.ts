@@ -6,7 +6,8 @@ import {
   type SqsEvent,
 } from "@jawstack/aws-runtime";
 import { createContentDispatch } from "../application/dispatch";
-import { createPublisher } from "../application/publisher";
+import { createPublisher, type PublicationFaultPoint } from "../application/publisher";
+import type { ContentEvent } from "../shared/events";
 import { parseContentEvent } from "../shared/events";
 import { validatedDeliveryBatch, deliveryMarkerTtlSeconds } from "./delivery";
 import { localLambdaConfig } from "./local-context";
@@ -46,7 +47,13 @@ export function createPublicationSqsHandler(options: {
     );
 }
 
-export async function publisher(event: SqsEvent) {
+export async function executePublication(
+  event: SqsEvent,
+  hooks: {
+    before?: (event: ContentEvent) => Promise<void>;
+    fault?: (event: ContentEvent, point: PublicationFaultPoint) => Promise<void>;
+  } = {},
+) {
   const config = localLambdaConfig("publisher");
   const clients = createClients(config);
   let objects: ReturnType<typeof createLocalS3ObjectStore> | undefined;
@@ -62,10 +69,19 @@ export async function publisher(event: SqsEvent) {
       tableName: config.table,
       expectedQueueArn: queueArn(config, `${config.project}-publication`),
       source: config.source,
-      publisher: createPublisher({ repository, dispatch, objects }),
+      publisher: async (fact) => {
+        await hooks.before?.(fact);
+        return createPublisher({
+          repository,
+          dispatch,
+          objects: objects!,
+          ...(hooks.fault ? { fault: (point) => hooks.fault!(fact, point) } : {}),
+        })(fact);
+      },
     })(event);
   } finally {
     objects?.close();
     destroyClients(clients);
   }
 }
+export const publisher = (event: SqsEvent) => executePublication(event);

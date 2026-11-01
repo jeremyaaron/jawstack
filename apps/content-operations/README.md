@@ -520,6 +520,13 @@ pnpm --filter content-operations run local:provision
 pnpm --filter content-operations run verify:local --confirm-reset
 ```
 
+This is a destructive, approximately 15-20 minute integration gate, not a health check.
+It resets the owned dataset, reprovisions and repeats the happy path, then shuts down
+the lab. A pass includes final teardown; start/provision again for interactive use.
+Failures also attempt ownership-checked shutdown and retain the manifest if cleanup
+cannot be proved. Sanitized results are atomically recorded in
+`.localstack/<lab-id>-evidence.json`, including a failed/no-go result when cleanup fails.
+
 The commands create a dedicated `jawstack-content-ops-dev` Compose project/network and
 app-owned local resources: one DynamoDB table/stream, one EventBridge bus with five rules,
 four application queues/four worker DLQs, a retained schedule-failures queue, the proof
@@ -561,13 +568,44 @@ worker records receive counts 1, 2, and 3 before throwing. Actual SQS redrive mo
 message to the DLQ; a collector persists the original event before returning successfully.
 The gate waits for that receipt, the collector marker, and an empty DLQ.
 
+### Deployed Failure Matrix
+
+The gate separately builds a verification-only archive and temporarily installs it on
+the eight owned application workers/collectors. It wraps the same production execution
+factories with dependency fault hooks; normal lab and synthesis bundles contain no fault
+control reader, environment switch, or HTTP fault route. Function tags, handler, manifest
+owner, and standard archive hashes must match before any swap. Original archives are
+restored and their hashes checked in `finally`, including on scenario failure.
+
+Owned, run-scoped DynamoDB controls and actual Lambda receipt observations exercise:
+
+- A one-shot transient publisher failure, then automatic SQS retry.
+- Interruption after the immutable S3 write, an unexpired-lease duplicate, and automatic
+  lease-expiry recovery with one expired/one succeeded attempt and identical object bytes.
+- Three real terminal publisher receives, actual redrive, and collector interruption
+  after the durable failure record but before reconciliation/acknowledgement. The source
+  remains in the DLQ until automatic collector retry reconciles it.
+- Idempotent editor retry to generation two and owned CLI replay of a terminal notification
+  failure, producing one recovery cycle and one business delivery.
+- Completed duplicates, older review facts, obsolete publication generations, and a late
+  collector. Selected transport markers are deleted to test permanent business guards.
+- Paged attempts/notifications/failures, invalid cursors, explicit missing-table/bucket
+  failures, and unsafe endpoint/inherited-credential probes with zero network requests.
+
+Application visibility remains 180 seconds, with three receives and normal publication
+leases; the gate neither advances clocks nor accelerates visibility. Its delivery deadline
+is fifteen minutes. Original happy-path events use the actual stream -> bus -> queue ->
+Lambda path. Exact committed-fact republishes through EventBridge and a late original copy
+through the owned DLQ are **diagnostics**, reported separately; no host worker or direct
+Lambda invocation substitutes for deployed execution.
+
 ### Historical Adapter Proofs
 
 Phases 3-14 also ran the following direct adapter proofs. Their implementation and recorded
 evidence remain available, but `verify:local` no longer executes these injected-clock/crash
 fixtures alongside live application consumers: their intentional interruptions would race
-deployed workers. Unit/contract regressions remain active. Phase 22 adds the deployed
-application failure matrix; the current happy-path gate is not that complete acceptance gate.
+deployed workers. Unit/contract regressions remain active. The deployed failure matrix
+above replaces those direct fixtures for full integration acceptance.
 
 The paging proof seeded 260 projection records with 8 KiB payloads, tied timestamps, and
 both existing sort-suffix forms, plus seventeen activity records. It checks an actual
@@ -651,6 +689,8 @@ Stop the entire owned ephemeral lab and remove its container/network:
 pnpm --filter content-operations run local:down
 ```
 
+A successful verification has already done this; no second down is required.
+
 Reset preflights ownership tags on every known resource before deleting anything. It also
 checks the expected event-source mappings. Provisioning refuses pre-existing named
 resources rather than adopting or retagging them. On interrupted provisioning, use reset
@@ -660,6 +700,19 @@ Reset stops the schedule, removes mappings/functions and their warm containers, 
 only the owned unversioned bucket within a 10,000-object/10-page limit, and removes the
 remaining owned resources. It refuses foreign tags, unexpected targets/mappings, enabled
 bucket versioning, and broken pagination rather than silently broadening cleanup.
+
+Lambda runtime containers carry manifest-owner, lab, and runtime-kind labels supplied
+by the emulator. Cleanup checks those labels, the exact declared function-name pattern,
+and inspected IDs for all candidates before mutation. Down stops the emulator first,
+then stops/removes proven running and exited/created orphan runtimes. A prefix alone
+never authorizes removal. The gate also creates owned running/exited diagnostics and a
+separately owned lookalike from the cached runtime image. One shell-entrypoint fixture
+must be observed `exited`, not merely `created`; another runs a bounded sleep independent
+of the emulator's child registry. A foreign lookalike must prevent shutdown before the
+emulator or owned running fixture is stopped. After the test removes only its exact
+foreign sentinel, final down must stop/remove the running orphan and remove the exited
+fixture. It verifies zero matching containers/networks before deleting the manifest.
+Images remain.
 
 S3 creation and tagging are not one atomic API operation. If interrupted between them,
 reset refuses an untagged bucket; recreate the owned ephemeral emulator with `local:down`

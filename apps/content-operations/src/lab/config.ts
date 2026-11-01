@@ -137,6 +137,7 @@ export const manifestSchema = z
     mappings: z.array(z.string()).default([]),
     capabilitiesVersion: z.literal(1).optional(),
     applicationVersion: z.literal(1).optional(),
+    runtimeOwnershipVersion: z.literal(1).optional(),
   })
   .strict();
 export type LabManifest = z.infer<typeof manifestSchema>;

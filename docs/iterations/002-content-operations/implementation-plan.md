@@ -1,8 +1,8 @@
 # Iteration 2 Implementation Plan: Content Operations
 
-Status: reviewed. Phases 0-21 are complete. Local-only CDK composition, shared JSON ingress,
-profile/topology/policy assertions, baseline compatibility, live application regressions,
-and isolated desktop/mobile browser checks passed. Phase 22 is next.
+Status: reviewed. Phases 0-22 are complete. The full deployed failure/isolation gate,
+ownership-safe reset, reprovision, and running/exited orphan teardown passed on the
+pinned ARM64/Hobby lab. Phase 23 is next.
 
 ## Purpose
 
@@ -105,7 +105,7 @@ work may proceed only after an explicit sequencing decision, without claiming th
 | 19    | Consumer UI                | Operations, outcomes and retry controls                   | Complete |
 | 20    | Consumer AWS               | Actual app bundles and LocalStack runtime wiring          | Complete |
 | 21    | Consumer infrastructure    | CDK composition and topology assertions                   | Complete |
-| 22    | Integration verification   | Full local workflow, failure and isolation evidence       | Planned  |
+| 22    | Integration verification   | Full local workflow, failure and isolation evidence       | Complete |
 | 23    | Browser/CI verification    | Complete browser acceptance and PR/manual gates           | Planned  |
 | 24    | Documentation/verification | Acceptance audit and merge readiness                      | Planned  |
 
@@ -1604,6 +1604,53 @@ integration gate, documentation walkthrough, local links, and `git diff --check`
   screenshots were checked. On constrained hosts, run these expensive gates sequentially.
 - No real AWS, CDK deployment, production-auth claim, CI trigger change, release, publish,
   automatic commit, or push occurred. Phase 22 is the full deployed failure/evidence gate.
+
+### Phase 22: November 1, 2026
+
+- Expanded `verify:local` into the deployed application failure/isolation/cleanup gate.
+  A separately built verification archive injects bounded dependencies into the same
+  production execution factories, on owned real worker/collector functions. Standard
+  bundles have no control reader or fault route. All targets are preflighted before
+  code swaps; original archives are restored and their hashes checked on success/failure.
+  Lab ZIP timestamps are fixed so equivalent rebuilds retain identical archive hashes.
+- The complete live gate passed from `2026-11-01T05:40:06.877Z` through
+  `05:57:32.593Z`, in 1,045,716 ms. It observed automatic scheduled publication before
+  and after reset; each happy path produced one immutable artifact, three notifications,
+  and one succeeded attempt. The deployed failure matrix proved transient retry, S3-write
+  interruption/live-lease duplicate/expiry recovery, two crash attempts, terminal receives
+  1/2/3, interrupted durable collection with retained source, automatic collector retry
+  and drained DLQs, editor retry to generation two, one CLI replay cycle/delivery,
+  duplicate/out-of-order/obsolete-generation guards after marker loss, paged operations,
+  and explicit missing-table/bucket errors. No clock advances or host worker substitutes
+  were used; committed-fact EventBridge republishes and late owned-DLQ copies are labeled
+  diagnostics. All 24 unsafe endpoint/credential probes stopped before network transport.
+- Added manifest-owner/lab/runtime labels and ownership-version metadata. Reset/down
+  preflight exact declared names, labels and IDs, reject foreign lookalikes, and reconcile
+  running and exited/created children without prefix-only adoption or image pruning.
+  The live sentinel reset preserved foreign data and left zero owned service resources/
+  warm runtimes. Final teardown refused a separate-owner lookalike before stopping the
+  emulator, then stopped/removed the owned running fixture and removed the exited fixture
+  using the actual cached runtime image. No matching emulator, runtimes or network remain;
+  images are retained and the manifest is removed. Pass/fail evidence includes teardown.
+- An initial live run correctly remained failed/no-go when its HTTP response assertion
+  compared JSON key order. A separate actual HTTP/DynamoDB replay proved structural equality
+  with different serialization order; the verifier now uses the established structural
+  comparison. That failed run's automatic cleanup also recovered one observed running
+  owned Lambda remainder. It is not counted as a passing gate. See
+  [LocalStack evidence](localstack-evidence.md) for the final result and exclusions.
+- Added nine credential-free verification/cleanup/archive tests. An unconstrained unit
+  run timed out during synthesis imports; limiting this app to two workers made subsequent
+  full runs pass without changing assertions or timeouts. `pnpm verify:release` passed
+  with 796 workspace tests (503 consumer), typecheck/lint/build, zero pkg-guard findings,
+  generated-app install/typecheck/tests/browser+AWS builds/doctor, and six package dry runs.
+  Focused final cleanup tests, source typecheck/lint, formatting, and local Markdown
+  file targets also passed. The final `pnpm verify:release` repeat after live teardown
+  passed as well; all 114 local Markdown targets across 40 documents passed.
+- Successful verification now stops the disposable lab. Existing memory web 4336 / API
+  4337 and the review dataset were preserved. Browser acceptance/CI remains Phase 23;
+  the browser suite was not rerun for these non-UI changes. No real AWS, CDK deployment,
+  dependency/public-package change, CI trigger change, version bump, publication,
+  automatic commit, or push occurred.
 
 For later phases, append the date, meaningful behavior delivered, commands/results,
 not-run checks, design changes, and remaining limitations. Do not replace observed

@@ -315,6 +315,7 @@ export async function provisionApplication(
         Environment: {
           Variables: {
             CONTENT_OPS_LAB_ID: config.instanceId,
+            CONTENT_OPS_OWNER_ID: manifest.ownerId,
             CONTENT_OPS_RUNTIME: "localstack",
             CONTENT_OPS_STAGE: "local",
             ...(fn.consumer ? { CONTENT_OPS_CONSUMER: fn.consumer } : {}),

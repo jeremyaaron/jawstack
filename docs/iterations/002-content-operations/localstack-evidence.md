@@ -563,3 +563,74 @@ those nine confirmed exited containers. Repeating `local:down` then passed, with
 emulator or Lambda containers remaining and images retained. Automatic ownership-proven
 orphan-runtime recovery is added to Phase 22's teardown coverage; no broad prefix deletion
 was introduced. The original down timeout is not counted as an automatic teardown pass.
+
+## Phase 22: Full Failure, Isolation and Cleanup Gate
+
+Observed November 1, 2026, on the same pinned `2026.10.0` emulator digest,
+macOS/Docker ARM64 host, Node 22 ESM Lambda configuration, and user-attested Hobby
+entitlement above. Clients used explicit dummy credentials and guarded local endpoints;
+the token was supplied only to the emulator. No trial activation, real AWS requests,
+or CDK/CloudFormation deployment was performed.
+
+The full gate passed from `2026-11-01T05:40:06.877Z` to
+`2026-11-01T05:57:32.593Z`, in **1,045,716 ms** (17 minutes 26 seconds). Decision:
+**go for this local integration gate**, not production readiness or AWS parity.
+The final sanitized machine result remains in the Git-ignored
+`apps/content-operations/.localstack/dev-evidence.json`. It was marked passed only
+after reset, reprovision, repeated workflow, and final Docker teardown succeeded.
+
+### Observed Results
+
+| Check                      | Observed Result                                                                                                                                                                                                                                                                                                                                                                             |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Isolation                  | 24 unsafe endpoint/inherited-credential/runtime probes rejected; zero calls reached the AWS SDK network transport.                                                                                                                                                                                                                                                                          |
+| Both happy paths           | Actual HTTP draft/upload/review, automatic scheduled publication, real materializers, one exact immutable artifact, three unique notifications and one succeeded attempt, before and after reset.                                                                                                                                                                                           |
+| Transient publisher        | Injected failure before execution left no completion marker; normal SQS redelivery completed publication.                                                                                                                                                                                                                                                                                   |
+| Object-write interruption  | Private object existed while preview remained 404. A live-lease duplicate did not mutate authority or complete its marker. Automatic redelivery after lease expiry produced one expired and one succeeded attempt, unchanged bytes/digest, and one logical object.                                                                                                                          |
+| Terminal publisher         | Actual source Lambda receives 1, 2 and 3, followed by real DLQ redrive.                                                                                                                                                                                                                                                                                                                     |
+| Interrupted collector      | Failure record was durable with pending resolution, no completion marker, and source still retained in the DLQ. Automatic collector retry reconciled publication to stalled; marker and actual queue acknowledgement/drain followed.                                                                                                                                                        |
+| Editor recovery            | Actual HTTP retry and equivalent idempotent replay returned the original success structurally; publication succeeded in generation two.                                                                                                                                                                                                                                                     |
+| Notification recovery      | Terminal notification was durably collected; actual owned CLI replay and repeated request produced one recovery cycle, one resolved generation and one business delivery through outbox/stream/bus/queue/Lambda.                                                                                                                                                                            |
+| Permanent business guards  | Selected markers were deleted before diagnostics. Completed publication duplicates, older review facts, obsolete generations and a late collector did not change completed authority or stable artifact bytes; published notification remained unique.                                                                                                                                      |
+| Operational queries/errors | Real HTTP paged attempts/notifications/failures, invalid cursor rejection, missing-table failure without backend detail leakage, and explicit missing-bucket storage failure passed.                                                                                                                                                                                                        |
+| Feasibility regression     | Transaction/replay/outbox/receipt/S3 checks, concurrent conditional object creation, automatic rate tick, source receives 1/2/3, durable proof collector and empty proof DLQ passed.                                                                                                                                                                                                        |
+| Reset/reprovision          | Separate-owner sentinel nonce preserved; owned service resources absent and zero Lambda runtimes after reset. Reprovision and another complete application workflow passed.                                                                                                                                                                                                                 |
+| Final teardown             | Separate-owner Docker lookalike refused before emulator/owned runtime stop. A cached-runtime-image shell fixture was observed exited, another running; final down stopped/removed the running orphan and removed the exited fixture. Result: one running child reconciled, two children removed, zero matching emulator/runtime containers and networks, images retained, manifest removed. |
+
+### Method and Corrections
+
+The gate builds a separate verification-only archive and temporarily updates the eight
+owned application workers/collectors. Function ownership, owner environment, handlers and
+standard archive hashes are checked before any update. Wrappers inject owner/run-scoped,
+conditionally consumed faults into the shared production execution factories; actual
+Lambda invocations record receipt identity and source receive counts in the owned table.
+All changed standard archives were restored and their hashes checked before reset.
+Standard lab/synthesis bundles do not contain the fault-control reader.
+
+Application queue visibility remained **180 seconds** with three receives and normal
+publication leases. There were **zero clock advances and zero host worker invocations**.
+Exact committed-fact republishes through EventBridge and a late original copy through
+the owned DLQ are intentional diagnostics, not automatic Scheduler sources. Marker
+deletion tests business guards independently of the transport cache. Cleanup shell
+fixtures test real Docker lifecycle behavior using the cached runtime image; they are
+not presented as application Lambda invocations.
+
+An initial complete attempt remained failed/no-go at `05:38:07.281Z` because the new
+verifier compared serialized HTTP reply key order. An actual HTTP/DynamoDB replay then
+confirmed structurally equal replies with different serialization order. The assertion
+was corrected to the existing structural-equality pattern, and the entire gate was
+rerun successfully. The failed run's automatic down also reconciled one observed running
+owned Lambda remainder and verified zero matching containers/network. Interrupted
+exploratory runs were cleaned through the owned lifecycle; none count as acceptance passes.
+
+The final Docker inventory independently confirmed no matching containers or named lab
+network. Existing memory web 4336 / API 4337 remained healthy and their dataset was not
+reset. Verification now performs final down itself; interactive use requires fresh up/
+provision afterward. Reproduction follows the [application README](../../../apps/content-operations/README.md).
+
+This proves the SDK-provisioned local path, including actual application failure/recovery
+transport. It does **not** verify IAM enforcement, production authentication, real email,
+API Gateway/CloudFormation deployment, real AWS behavior/costs, or Scheduler failed-delivery
+retry parity. Browser-on-local acceptance and CI configuration remain Phase 23; no browser
+run is inferred from this gate. Public packages/dependencies/versions and CI triggers
+were unchanged in Phase 22.

@@ -18,6 +18,7 @@ import { createDynamoFailureStore } from "./failures";
 import { createDynamoPersistence } from "./persistence";
 import { createDynamoNotificationSink } from "./notifications";
 import type { ContentWorkerName } from "../domain/subscriptions";
+import type { RecoveryFaultPoint } from "../application/failures";
 
 type TransportOptions = {
   client: DynamoDbClientLike;
@@ -89,7 +90,14 @@ export function createContentWorkerSqsHandler(
     return adapter.handle(batch);
   };
 }
-async function execute(event: SqsEvent, collect: boolean) {
+export async function executeRecovery(
+  event: SqsEvent,
+  collect: boolean,
+  hooks: {
+    before?: (event: unknown) => Promise<void>;
+    fault?: (point: RecoveryFaultPoint) => Promise<void>;
+  } = {},
+) {
   const config = localLambdaConfig(collect ? "collector" : "worker");
   const consumer = consumerSchema.parse(process.env.CONTENT_OPS_CONSUMER);
   if (!collect && consumer === "publishContent") throw new Error("Use the publication entrypoint.");
@@ -109,6 +117,7 @@ async function execute(event: SqsEvent, collect: boolean) {
       repository,
       dispatch,
       source: config.source,
+      ...(hooks.fault ? { fault: hooks.fault } : {}),
     });
     const transport = {
       client: clients.dynamo,
@@ -121,20 +130,25 @@ async function execute(event: SqsEvent, collect: boolean) {
     return await createContentWorkerSqsHandler({
       ...transport,
       recovery: failures,
-      workers: createContentWorkers({
-        repository,
-        dispatch,
-        source: config.source,
-        notifications: createDynamoNotificationSink({
-          client: clients.dynamo,
-          tableName: config.table,
-        }),
-        recovery: failures,
-      }),
+      workers: {
+        handle: async (name, fact) => {
+          await hooks.before?.(fact);
+          return createContentWorkers({
+            repository,
+            dispatch,
+            source: config.source,
+            notifications: createDynamoNotificationSink({
+              client: clients.dynamo,
+              tableName: config.table,
+            }),
+            recovery: failures,
+          }).handle(name, fact);
+        },
+      },
     })(event);
   } finally {
     destroyClients(clients);
   }
 }
-export const collector = (event: SqsEvent) => execute(event, true);
-export const worker = (event: SqsEvent) => execute(event, false);
+export const collector = (event: SqsEvent) => executeRecovery(event, true);
+export const worker = (event: SqsEvent) => executeRecovery(event, false);

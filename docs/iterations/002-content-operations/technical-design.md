@@ -1386,8 +1386,45 @@ assertions, checks an unrelated reset sentinel, and repeats the actual applicati
 after reprovision. Earlier direct-service crash/injected-clock scenarios remain historical
 evidence and contract coverage; running them beside real consumers would race the intended
 faults. They are no longer part of this command. The comprehensive deployed fault matrix is
-Phase 22, not implied by a passing Phase 20 happy-path gate. No real-AWS mode or CDK deployment
+described below, not implied by a passing Phase 20 happy-path gate. No real-AWS mode or CDK deployment
 has been added.
+
+### Phase 22 Verification and Lifecycle Decisions
+
+Faults are verification-only dependencies, not product command options or environment
+switches. `buildVerification` creates a separate archive containing the shared production
+execution factories plus an owner/run-scoped DynamoDB fault controller. The gate validates
+all eight worker/collector function tags, handler names, owner environment, and standard
+archive hashes before swapping any code. It restores all changed archives, checks restored
+hashes, and attempts every restoration even if one fails. Standard lab/infra builds never
+import the controller. Import/unit/build remain credential- and network-free.
+
+Actual Lambda invocations persist receipt identity, event identity, and SQS receive count.
+One-shot faults are consumed conditionally. A terminal control is explicitly disabled after
+redrive evidence, before obsolete-generation diagnostics. The gate observes normal 180-second
+visibility and publication leases, not an injected clock, direct host consumer, Lambda invoke,
+or visibility change. It checks durable state, private immutable bytes/counts, expired/succeeded
+attempts, failed-collector source retention and automatic reconciliation, HTTP generation-two
+retry, and a real CLI replay through transactional outbox/stream routing. Exact committed old
+facts may be republished via EventBridge and copied to an owned DLQ for duplicate/out-of-order/
+late-collector diagnostics. These are separately identified, not claimed as automatic sources.
+Deleting selected completion markers makes permanent business guards observable.
+
+`LAMBDA_DOCKER_FLAGS` assigns manifest-owner, lab and runtime-kind labels to child runtimes.
+The manifest records `runtimeOwnershipVersion: 1`; older labs require reset/reprovision.
+Cleanup inventories running and exited/created children, validates labels plus exact declared
+function naming and immutable container IDs, and refuses foreign lookalikes before mutation.
+Down stops the creator before reconciling its children, then verifies emulator/runtime/network
+absence before manifest removal. Natural disappearance races are tolerated only after a second
+exact-ID lookup proves absence. No prefix-only adoption/removal or image pruning is permitted.
+
+The integration gate includes a separate-owner Docker lookalike refusal and owned running/
+exited shell-entrypoint runtime fixtures using the actual cached Lambda image, ownership-safe service reset with a
+sentinel, reprovision and repeat workflow, and final down. Evidence stays running until all
+cleanup assertions pass; any scenario/restoration/teardown failure produces failed/no-go.
+Finally blocks attempt safe cleanup on failure, with the manifest retained for unresolved
+ownership or runtime errors. Successful verification now ends the disposable lab rather than
+leaving it running. SDK emulation remains distinct from IAM/CDK/real-AWS deployment evidence.
 
 ### Phase 21 Composition Decisions
 

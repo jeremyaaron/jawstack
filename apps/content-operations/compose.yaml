@@ -7,6 +7,7 @@ services:
       LOCALSTACK_AUTH_TOKEN: ${LOCALSTACK_AUTH_TOKEN:?LocalStack token required}
       LOCALSTACK_HOST: localstack:4566
       LAMBDA_DOCKER_NETWORK: ${CONTENT_OPS_PROJECT:?Project required}-lab
+      LAMBDA_DOCKER_FLAGS: --label jawstack.owner=${CONTENT_OPS_OWNER_ID:?Owner required} --label jawstack.lab=${CONTENT_OPS_PROJECT:?Project required} --label jawstack.runtime=lambda
       SQS_ENDPOINT_STRATEGY: "off"
       LS_LOG: warn
       PERSISTENCE: "0"

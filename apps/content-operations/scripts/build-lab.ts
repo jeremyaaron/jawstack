@@ -4,13 +4,13 @@ import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { zipSync } from "fflate";
 
-export async function buildLab(): Promise<void> {
+async function buildEntries(entries: [string, string][]): Promise<void> {
   const root = fileURLToPath(new URL("../", import.meta.url));
   await mkdir(`${root}/dist`, { recursive: true });
-  for (const entry of ["spine", "publication", "jobs", "recovery"]) {
+  for (const [entry, source] of entries) {
     const result = await build({
       absWorkingDir: root,
-      entryPoints: [`src/aws/${entry}.ts`],
+      entryPoints: [source],
       bundle: true,
       write: false,
       platform: "node",
@@ -24,12 +24,22 @@ export async function buildLab(): Promise<void> {
     if (!output) throw new Error("Lambda build produced no output.");
     const temp = `${root}/dist/.${entry}-${randomUUID()}.zip`;
     try {
-      await writeFile(temp, zipSync({ "index.mjs": output.contents }), { flag: "wx" });
+      await writeFile(
+        temp,
+        zipSync({ "index.mjs": [output.contents, { mtime: new Date(2000, 0, 1) }] }),
+        { flag: "wx" },
+      );
       await rename(temp, `${root}/dist/${entry}.zip`);
     } finally {
       await rm(temp, { force: true });
     }
   }
 }
+export const buildLab = () =>
+  buildEntries(
+    ["spine", "publication", "jobs", "recovery"].map((entry) => [entry, `src/aws/${entry}.ts`]),
+  );
+export const buildVerification = () =>
+  buildEntries([["verification", "src/lab/verification-entry.ts"]]);
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) await buildLab();
