@@ -8,6 +8,7 @@ import {
   LucideLayers,
   LucideClipboardCheck,
   LucideCalendarDays,
+  LucideActivity,
 } from "@lucide/angular";
 import { Workspace } from "./workspace";
 
@@ -22,6 +23,7 @@ import { Workspace } from "./workspace";
     LucideLayers,
     LucideClipboardCheck,
     LucideCalendarDays,
+    LucideActivity,
     ReactiveFormsModule,
   ],
   template: `
@@ -45,6 +47,9 @@ import { Workspace } from "./workspace";
           >
           <a routerLink="/calendar" routerLinkActive="active"
             ><svg lucideCalendarDays aria-hidden="true"></svg>Calendar</a
+          >
+          <a routerLink="/operations" routerLinkActive="active"
+            ><svg lucideActivity aria-hidden="true"></svg>Operations</a
           >
         </nav>
         <div class="sidebar-footer">

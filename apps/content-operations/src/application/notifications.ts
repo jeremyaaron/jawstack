@@ -10,73 +10,34 @@ import {
   type ProjectionWrite,
 } from "@jawstack/core";
 import { projectionKey } from "@jawstack/aws-runtime";
-import { eventIdentitySchema, type ContentEvent } from "../shared/events";
+import type { ContentEvent } from "../shared/events";
 import { fixtureIds, type FixtureId } from "../shared/identities";
-import { idSchema, instantSchema, jsonBytes } from "../shared/validation";
+import { jsonBytes } from "../shared/validation";
+import { notificationViewSchema } from "../shared/operation-views";
 import {
   reviewTaskStateSchema,
   publicationOutcomeSchema,
   reviewReminderFactSchema,
 } from "../shared/contracts";
 
-export const notificationSchema = z
-  .strictObject({
-    deliveryId: z
-      .string()
-      .length(64)
-      .regex(/^[a-f0-9]+$/),
-    sourceEventId: eventIdentitySchema,
-    transportEventId: eventIdentitySchema,
-    eventType: z.enum([
-      "contentItem.reviewReminderRecorded",
-      "contentItem.reviewRequested",
-      "contentItem.reviewDecided",
-      "contentItem.published",
-      "contentItem.publicationFailed",
-    ]),
-    contentId: idSchema,
-    reviewId: idSchema.nullable(),
-    publicationId: idSchema.optional(),
-    recipientId: z.enum(fixtureIds),
-    template: z.enum([
-      "review-reminder.v1",
-      "review-requested.v1",
-      "review-approved.v1",
-      "review-changes-requested.v1",
-      "publication-succeeded.v1",
-      "publication-failed.v1",
-    ]),
-    channel: z.literal("local"),
-    status: z.literal("succeeded"),
-    subject: z.string().min(1).max(220),
-    message: z.string().min(1).max(1000),
-    payloadHash: z
-      .string()
-      .length(64)
-      .regex(/^[a-f0-9]+$/),
-    occurredAt: instantSchema,
-    deliveredAt: instantSchema,
-    correlationId: eventIdentitySchema,
-    causationId: eventIdentitySchema,
-  })
-  .refine(
-    (value) =>
-      value.deliveryId === notificationId(value.sourceEventId, value.recipientId, value.template) &&
-      jsonBytes(value) <= 8192 &&
-      (value.eventType === "contentItem.published" ||
-      value.eventType === "contentItem.publicationFailed"
-        ? value.reviewId === null &&
-          value.publicationId !== undefined &&
-          value.template ===
-            (value.eventType === "contentItem.published"
-              ? "publication-succeeded.v1"
-              : "publication-failed.v1")
-        : value.reviewId !== null &&
-          value.publicationId === undefined &&
-          !value.template.startsWith("publication-") &&
-          (value.eventType === "contentItem.reviewReminderRecorded") ===
-            (value.template === "review-reminder.v1")),
-  );
+export const notificationSchema = notificationViewSchema.refine(
+  (value) =>
+    value.deliveryId === notificationId(value.sourceEventId, value.recipientId, value.template) &&
+    jsonBytes(value) <= 8192 &&
+    (value.eventType === "contentItem.published" ||
+    value.eventType === "contentItem.publicationFailed"
+      ? value.reviewId === null &&
+        value.publicationId !== undefined &&
+        value.template ===
+          (value.eventType === "contentItem.published"
+            ? "publication-succeeded.v1"
+            : "publication-failed.v1")
+      : value.reviewId !== null &&
+        value.publicationId === undefined &&
+        !value.template.startsWith("publication-") &&
+        (value.eventType === "contentItem.reviewReminderRecorded") ===
+          (value.template === "review-reminder.v1")),
+);
 export type NotificationDelivery = z.infer<typeof notificationSchema>;
 export type NotificationQuery = Readonly<{
   recipientId?: FixtureId;

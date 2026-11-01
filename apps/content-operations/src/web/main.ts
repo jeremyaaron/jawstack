@@ -27,6 +27,12 @@ bootstrapApplication(AppComponent, {
         canDeactivate: [unsavedGuard],
       },
       {
+        path: "operations",
+        loadComponent: () => import("./operations").then((module) => module.OperationsComponent),
+        canDeactivate: [unsavedGuard],
+        runGuardsAndResolvers: "always",
+      },
+      {
         path: "calendar",
         loadComponent: () => import("./calendar").then((module) => module.CalendarComponent),
       },

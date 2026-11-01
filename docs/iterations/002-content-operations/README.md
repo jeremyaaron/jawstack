@@ -1,7 +1,8 @@
 # Iteration 2: Content Operations
 
-Status: Phases 0-18 complete. Explicit-zone scheduling, calendar/agenda, real due publication,
-desktop/mobile browser workflows, and workspace checks passed. Phase 19 is next.
+Status: Phases 0-19 complete. Editor operations/trace views, versioned publication recovery,
+visibility-aware polling, desktop/mobile browser workflows, and workspace checks passed.
+Phase 20 is next.
 
 ## Documents
 
@@ -93,4 +94,9 @@ scheduling/calendar/agenda controls, future-time and DST validation, generation-
 reschedule/reopen, protected local proposals, and visible server-driven publication outcomes.
 Month/agenda views share bounded paged UTC rows with explicit display zones and calendar/detail
 return URLs. The browser never publishes on a timer; isolated clock-driven tests exercise the
-real due jobs and publisher. Operations/recovery UI remains Phase 19.
+real due jobs and publisher. Phase 19 adds editor-only paged attempts, notification deliveries,
+failure collection/recovery history, real correlation details, and publication retry controls.
+Strong content authority and shared retry policy gate versioned recovery; live leases and
+generation budgets remain server-enforced. Pending views follow only while visible, explicit
+ledger paging preserves a snapshot, and other-consumer replay remains in the development CLI.
+Actual consumer AWS worker/Scheduler wiring is Phase 20.

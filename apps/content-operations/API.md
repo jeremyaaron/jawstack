@@ -134,6 +134,11 @@ the explicit archived-status query, not the active list. Operations are redacted
 
 ## Transport Bounds
 
+The operations client validates each view's redacted DTO, projection, item identity, and requested
+filters. UI retry eligibility uses the same pure rules as `retryPublication`, but is advisory:
+the command always reloads authority and checks the server's clock/version/generation/role.
+No browser replay, clock-control, fault-injection, or arbitrary worker-dispatch route is exposed.
+
 - Only literal `127.0.0.1` binds/hosts and exact configured API/proxy origins; no broad CORS.
   Cross-site fetches and `Origin: null` are rejected. Native CLI calls can omit Origin.
 - JSON: 256 KiB, strict UTF-8 and media type; raw uploads: 10 MiB plus the registered size

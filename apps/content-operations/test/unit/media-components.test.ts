@@ -2,6 +2,7 @@
 import "@angular/compiler";
 import { signal, provideZonelessChangeDetection, type Type } from "@angular/core";
 import { TestBed } from "@angular/core/testing";
+import { provideRouter } from "@angular/router";
 import { BrowserTestingModule, platformBrowserTesting } from "@angular/platform-browser/testing";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { Workspace } from "../../src/web/workspace";
@@ -79,7 +80,11 @@ function setup<T>(component: Type<T>) {
   };
   const fixture = TestBed.configureTestingModule({
     imports: [component],
-    providers: [provideZonelessChangeDetection(), { provide: Workspace, useValue: workspace }],
+    providers: [
+      provideZonelessChangeDetection(),
+      provideRouter([]),
+      { provide: Workspace, useValue: workspace },
+    ],
   }).createComponent(component);
   return { fixture, client: workspace.client, component: fixture.componentInstance };
 }

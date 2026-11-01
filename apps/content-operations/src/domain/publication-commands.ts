@@ -23,6 +23,7 @@ import {
 } from "../shared/publication-inputs";
 import { contentUi } from "../shared/presentation";
 import { limits } from "../shared/validation";
+import { publicationRecovery } from "../shared/publication-recovery";
 
 export const publisherIdentity = Object.freeze({
   subject: "content_publisher",
@@ -511,21 +512,14 @@ export function createPublicationCommands(d: Dependencies) {
       decide: (context) => {
         const previous = d.load(context, context.input.expectedVersion, "editor");
         const publication = active(previous, context.input);
+        const recovery = publicationRecovery(publication, context.now.getTime());
+        requireThat(!recovery.liveLease, "Cannot retry while a claim is active.", true);
         requireThat(
-          !publication.claim || Date.parse(publication.claim.leaseUntil) <= context.now.getTime(),
-          "Cannot retry while a claim is active.",
-          true,
-        );
-        requireThat(
-          publication.phase === "failed" ||
-            publication.phase === "stalled" ||
-            (publication.lastAttempt?.status === "failed" &&
-              publication.lastAttempt.generation === publication.generation) ||
-            publication.claim,
+          recovery.hasRecoverableWork,
           "Only failed or stalled publication can be retried.",
         );
         requireThat(
-          publication.generation < limits.publicationGenerations,
+          recovery.remainingGenerations > 0,
           "Manual publication retry budget exhausted.",
         );
         const expired = publication.claim

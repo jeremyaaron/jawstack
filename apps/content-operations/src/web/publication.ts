@@ -17,15 +17,31 @@ import { Workspace } from "./workspace";
 import { EditorialAction } from "./editorial-action";
 import { VisibilityPoll } from "./visibility-poll";
 import { VerifiedAttachmentComponent } from "./verified-attachment";
+import { RecoveryComponent } from "./recovery";
+import { RouterLink } from "@angular/router";
 
 @Component({
   selector: "content-publication",
   standalone: true,
-  imports: [CommonModule, LucideDownload, LucideSend, LucideRefreshCw, VerifiedAttachmentComponent],
+  imports: [
+    CommonModule,
+    LucideDownload,
+    LucideSend,
+    LucideRefreshCw,
+    VerifiedAttachmentComponent,
+    RecoveryComponent,
+    RouterLink,
+  ],
   template: `
     <section class="media-section" aria-label="Publication">
       <header class="section-heading">
         <h2>Publication</h2>
+        <a
+          class="inline-link"
+          routerLink="/operations"
+          [queryParams]="{ contentId: row.resourceId, view: 'attempts' }"
+          >Operations</a
+        >
         @if (row.state.publication; as publication) {
           <span class="attachment-state" [attr.data-state]="publication.phase" role="status">{{
             publication.phase
@@ -64,6 +80,12 @@ import { VerifiedAttachmentComponent } from "./verified-attachment";
       @if (loading()) {
         <p role="status">Loading committed artifact</p>
       }
+      <publication-recovery
+        [row]="row"
+        [blocked]="blocked || action.pending() || awaiting()"
+        (changed)="changed.emit($event)"
+        (busy)="busy.emit($event)"
+      />
       @if (preview(); as view) {
         <section class="publication-preview" aria-label="Committed publication">
           <header class="section-heading">
@@ -135,12 +157,7 @@ export class PublicationComponent implements OnChanges {
     if (!changes["row"]) return;
     if (this.row.state.status !== "approved") this.awaiting.set(false);
     this.poll.stop();
-    if (
-      this.row.state.status === "scheduled" ||
-      (this.row.state.status === "publishing" &&
-        ["queued", "running"].includes(this.row.state.publication!.phase))
-    )
-      this.watch();
+    if (this.row.state.status === "scheduled") this.watch();
     if (this.committed() && !this.preview() && !this.loading()) void this.loadPreview();
   }
   committed() {

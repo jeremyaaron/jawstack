@@ -1,8 +1,8 @@
 # Iteration 2 Implementation Plan: Content Operations
 
-Status: reviewed. Phases 0-18 are complete. Explicit-zone scheduling, calendar/agenda,
-real due publication, desktop/mobile browser workflows, and workspace checks passed.
-Phase 19 is next.
+Status: reviewed. Phases 0-19 are complete. Editor operations/trace views, versioned
+publication recovery, visibility-aware polling, desktop/mobile browser workflows, and
+workspace checks passed. Phase 20 is next.
 
 ## Purpose
 
@@ -1442,6 +1442,70 @@ integration gate, documentation walkthrough, local links, and `git diff --check`
   page errors or horizontal overflow. Test-owned APIs and browser servers stopped. No
   dependencies, versions, CI triggers, releases, or commits changed. Docker/LocalStack/
   real-AWS checks were not needed or claimed for this consumer UI phase. Phase 19 is next.
+
+### Phase 19: October 31, 2026
+
+- Added lazy editor-only `/operations` with publication-attempt, local notification-delivery,
+  and failed-delivery views. URL content/status/recipient filters and bounded paging use the
+  existing endpoint. The client validates view-specific records, projection/item identity,
+  and requested scope. Authors see a permission state without fetching privileged rows;
+  the API independently rejects their reads and recovery commands. Empty continuation,
+  sanitized errors, refresh, loaded counts, and fixture-bound cursor reset are explicit.
+- Native disclosures show real attempt/notification/failure trace IDs, dates, failure codes,
+  and bounded collection/recovery history. Body/message text is interpolated, never embedded
+  as HTML. Rows link to strong content, review history and actual review snapshots. No raw
+  original payload, private object key or fencing token is exposed. Equal-time attempt rows
+  retain their existing stable UUID tiebreaker, not an invented generation ordering.
+- Added a reusable strong-authority publication recovery widget on content detail and scoped
+  operations views. It displays loaded version, publication identity, recorded phase, active/
+  expired lease, attempt and manual-generation budgets. Expired claims display stalled with
+  completion explicitly unconfirmed. UI clock-based eligibility is advisory; the command
+  rechecks server time, editor role, exact content version, publication ID/generation and budget.
+- Extracted pure operation field schemas into a browser-safe shared module with compatible
+  server reexports. Server notification hashing/cross-field checks and original failure/
+  transition validation remain intact. The existing domain retry gates now use the same pure
+  lease/recoverable-work/budget policy as the UI, without changing eligibility or adding commands.
+- Retry uses stable intent keys/inputs across ambiguous responses and retains the loaded base
+  after conflicts. An acknowledged retry whose following read fails waits for real status;
+  it is not treated as completed publication. Pending mutation/read state blocks competing
+  controls, fixture switching, route/query navigation and unload. Explicit refresh is required
+  after a stale conflict. Publication identity/frozen bytes remain stable across generations.
+- Recovery follows pending strong state through the existing serialized visible-only poll:
+  two seconds initially, ten after a minute, hidden abort/pause and settled/expired/destroy
+  cleanup. Scheduled detail retains its own observation but hands publication phases to this
+  widget instead of running duplicate publication loops. The initial ledger page also follows
+  pending records/selected publication; explicit load-more stops ledger following and labels a
+  snapshot so background refresh cannot drop loaded pages or scan all history. Strong selected
+  authority remains independent. Settled notification arrival still supports explicit refresh.
+- Other-consumer replay remains CLI-only. Failure views show real reconciling/replayQueued/
+  failed/resolved states and recovery actors, but expose no replay, arbitrary worker-dispatch,
+  clock-control or fault-injection HTTP action. Publication failures use publication retry,
+  not replay of obsolete delivery work. Existing three-cycle consumer replay limits remain.
+- Added 11 policy/session/HTTP/component/client tests (473 consumer / 758 workspace total).
+  They cover live/expired/exhausted eligibility, server authorization/rejection, stable lost-
+  response replay, preserved stale generations, actual stored artifact reuse, DTO partition/
+  filter/identity validation, resumable collection, CLI-only routing, escaped text, permission/
+  pending guards, empty paging, initial-page follow versus appended snapshots, hidden/backoff/
+  abort and timer cleanup. Existing editorial/publication/recovery adapter regressions pass.
+- Expanded Playwright from 20 to 24 desktop/mobile scenarios. Test-host publisher/collector
+  faults produce real queued/running/terminal/stalled states in memory persistence over HTTP.
+  Browser retry recovers a terminal failure, reuses an ambiguous command key and retains the
+  same stored artifact; actual attempts and notifications are paged/inspected. Failure history
+  progresses through resumable collection and host-invoked CLI-service recovery, never a UI
+  replay endpoint. Native trace disclosures, author denial, scoped filters, and 1440x900 /
+  390x844 layouts are covered. Screenshots were inspected. A final four-scenario operations
+  rerun passed after adding loaded-version and publication-replay-policy metadata.
+- `pnpm verify:release` passed formatting, typecheck, all tests, lint, app/workspace builds,
+  zero pkg-guard findings, generated-app verification and six package dry runs. All 24 browser
+  scenarios passed. The browser module graph requires real operations/recovery modules and
+  reports zero server imports. Markdown links and `git diff --check` passed. Browser test
+  hosts use native HTTP fixture helpers rather than importing decorated Angular source into
+  Playwright's Node transformer; the actual client still runs in the page and HTTP unit tests.
+- Existing web 4336 / API 4337 remain available with prior data preserved. Its real notification
+  view rendered 11 records in mobile Chromium with no page errors/overflow. Test-owned APIs
+  and browser servers stopped. No dependencies, public framework/template implementations,
+  package versions, CI triggers, releases or commits changed. No Docker/LocalStack/real-AWS
+  run was needed or claimed for this UI phase. Actual consumer AWS wiring remains Phase 20.
 
 For later phases, append the date, meaningful behavior delivered, commands/results,
 not-run checks, design changes, and remaining limitations. Do not replace observed

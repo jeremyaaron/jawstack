@@ -1,4 +1,3 @@
-import { z } from "zod";
 import { isDeepStrictEqual } from "node:util";
 import {
   JawStackRuntimeError,
@@ -9,10 +8,9 @@ import {
   contentStateSchema,
   publicationAttemptFactSchema,
   publicationAttemptView,
-  publicationAttemptViewSchema,
 } from "../shared/contracts";
-import { eventIdentitySchema } from "../shared/events";
-import { idSchema } from "../shared/validation";
+import { publicationOperationSchema, type PublicationOperation } from "../shared/operation-views";
+export { publicationOperationSchema, type PublicationOperation } from "../shared/operation-views";
 
 const stages = {
   "contentItem.publicationClaimed": "claimed",
@@ -20,15 +18,6 @@ const stages = {
   "contentItem.publicationAttemptFailed": "failed",
   "contentItem.publicationLeaseExpired": "expired",
 } as const;
-export const publicationOperationSchema = z.strictObject({
-  kind: z.literal("publicationAttempt"),
-  contentId: idSchema,
-  publicationId: idSchema,
-  attempt: publicationAttemptViewSchema,
-  transitionEventId: eventIdentitySchema,
-  causationId: eventIdentitySchema,
-});
-export type PublicationOperation = z.infer<typeof publicationOperationSchema>;
 export function publicationOperationKey(record: PublicationOperation) {
   return {
     PK: "OPS#publicationAttempt",

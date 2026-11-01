@@ -9,6 +9,17 @@ async function fit(page: Page) {
       ).toBe(true);
   }
 }
+async function editorSectionSpacing(page: Page) {
+  const gaps = await page.evaluate(() => {
+    const box = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
+    return [
+      box("content-attachments .media-section").top - box(".editor-footer").bottom,
+      box("content-attachments .media-section").top - box(".item-properties button").bottom,
+      box("content-scheduling .media-section").top - box(".submission-form fieldset").bottom,
+    ];
+  });
+  for (const gap of gaps) expect(Math.round(gap)).toBeGreaterThanOrEqual(24);
+}
 test("workbench filters, board, paging, empty states and draft creation/editing", async ({
   page,
 }, info) => {
@@ -41,6 +52,7 @@ test("workbench filters, board, paging, empty states and draft creation/editing"
   await page.getByRole("button", { name: "Save draft", exact: true }).click();
   await expect(page.getByText("Saved", { exact: true })).toBeVisible();
   await fit(page);
+  await editorSectionSpacing(page);
   await page.screenshot({ path: info.outputPath("editor.png"), fullPage: true });
   await page.reload();
   await expect(page.getByLabel("Body", { exact: true })).toHaveValue(

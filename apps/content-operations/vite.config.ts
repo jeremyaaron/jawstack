@@ -42,6 +42,8 @@ export function browserBoundary(): Plugin {
         "src/web/publication.ts",
         "src/web/calendar.ts",
         "src/web/scheduling.ts",
+        "src/web/operations.ts",
+        "src/web/recovery.ts",
         "src/shared/presentation.ts",
         "packages/angular/src/index.ts",
       ])

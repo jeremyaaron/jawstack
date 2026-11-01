@@ -10,10 +10,12 @@ import {
   contentQueryInput,
   reviewQueryInput,
   calendarQueryInput,
+  operationsQueryInput,
   pageInput,
   type ContentQuery,
   type ReviewQuery,
   type CalendarQuery,
+  type OperationsQuery,
   type PublicValue,
 } from "../shared/api";
 import { contentStatuses, reviewStatuses, type ContentState } from "../shared/contracts";
@@ -21,6 +23,14 @@ import { fixtureIds, editorIds, type FixtureId } from "../shared/identities";
 import { reviewViewSchema, activityViewSchema, type ReviewView } from "../shared/review-views";
 import { idSchema, instantSchema, versionSchema, timeZoneSchema } from "../shared/validation";
 import { contentUi } from "../shared/presentation";
+import {
+  publicationOperationSchema,
+  notificationViewSchema,
+  failureSummarySchema,
+  type PublicationOperation,
+  type NotificationView,
+  type FailureSummary,
+} from "../shared/operation-views";
 import { assetViewSchema, publicationViewSchema, type AttachmentView } from "../shared/media-views";
 
 export const contentSummarySchema = z.object({
@@ -50,6 +60,14 @@ const calendarRowSchema = z.object({
 });
 export type CalendarRow = z.infer<typeof calendarRowSchema>;
 export type CalendarPage = { items: CalendarRow[]; nextCursor?: string | undefined };
+export type OperationData = PublicationOperation | NotificationView | FailureSummary;
+export type OperationRow = {
+  projectionName: string;
+  itemId: string;
+  sort: string;
+  data: OperationData;
+};
+export type OperationsPage = { items: OperationRow[]; nextCursor?: string | undefined };
 export type CommandName = keyof typeof contentUi.commands;
 export type CommandInput<N extends CommandName> = z.input<(typeof contentUi.commands)[N]["input"]>;
 export type CommandResult = { resourceId: string; version: number; assetId?: string | undefined };
@@ -284,6 +302,58 @@ export class ContentOperationsClient implements JawStackApiClient {
         status: 200,
       });
     return data.resource as ContentResource;
+  }
+  async operations(query: OperationsQuery = {}, signal?: AbortSignal): Promise<OperationsPage> {
+    const q = operationsQueryInput.parse(query);
+    const params = new URLSearchParams(
+      Object.entries(q)
+        .filter(([, value]) => value !== undefined)
+        .map(([key, value]) => [key, String(value)]),
+    );
+    const projection =
+      q.view === "attempts"
+        ? `contentItem.publicationAttempts${q.contentId ? `.${q.contentId}` : ""}`
+        : q.view === "notifications"
+          ? `contentItem.notifications${q.recipientId ? `.${q.recipientId}` : ""}`
+          : "contentItem.failures";
+    const schema =
+      q.view === "attempts"
+        ? publicationOperationSchema
+        : q.view === "notifications"
+          ? notificationViewSchema
+          : failureSummarySchema;
+    const page = z
+      .object({
+        items: z.array(
+          z.object({
+            projectionName: z.literal(projection),
+            itemId: z.string(),
+            sort: z.string(),
+            data: schema,
+          }),
+        ),
+        nextCursor: z.string().optional(),
+      })
+      .parse(await this.request(`/operations?${params}`, signal ? { signal } : {}));
+    for (const row of page.items) {
+      const data = row.data;
+      const id =
+        "attempt" in data
+          ? data.attempt.claim.attemptId
+          : "deliveryId" in data
+            ? data.deliveryId
+            : data.id;
+      const contentId = "resourceId" in data ? data.resourceId : data.contentId;
+      const status = "attempt" in data ? data.attempt.status : data.status;
+      if (
+        row.itemId !== id ||
+        (q.contentId && q.contentId !== contentId) ||
+        (q.status && q.status !== status) ||
+        (q.recipientId && (!("recipientId" in data) || data.recipientId !== q.recipientId))
+      )
+        throw new Error("The API returned a different operation.");
+    }
+    return page;
   }
   async reviews(query: ReviewQuery = {}, signal?: AbortSignal): Promise<ReviewPage> {
     const params = new URLSearchParams(

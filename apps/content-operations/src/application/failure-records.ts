@@ -12,39 +12,15 @@ import {
 import { projectionKey } from "@jawstack/aws-runtime";
 import { contentWorkers, type ContentWorkerName } from "../domain/subscriptions";
 import { parseContentWire, parseContentEvent, eventIdentitySchema } from "../shared/events";
-import { editorIds } from "../shared/identities";
-import { instantSchema, jsonBytes, idSchema, versionSchema } from "../shared/validation";
+import { instantSchema, jsonBytes, versionSchema } from "../shared/validation";
+import {
+  failureIdSchema,
+  consumerSchema,
+  failureCollectionSchema as collectionSchema,
+  failureRecoverySchema as recoverySchema,
+} from "../shared/operation-views";
+export { failureIdSchema, consumerSchema, failureSummarySchema } from "../shared/operation-views";
 
-export const failureIdSchema = z.string().regex(/^[a-f0-9]{64}$/);
-export const consumerSchema = z.enum([
-  "materializeReview",
-  "materializeAsset",
-  "deliverNotification",
-  "publishContent",
-]);
-const collectionSchema = z
-  .strictObject({
-    generation: z.number().int().min(0).max(3),
-    eventId: eventIdentitySchema,
-    collectedAt: instantSchema,
-    reconciledAt: instantSchema.nullable(),
-    resolution: z.enum([
-      "pending",
-      "notApplicable",
-      "stalled",
-      "failed",
-      "superseded",
-      "succeeded",
-    ]),
-  })
-  .refine((c) => (c.resolution === "pending") === (c.reconciledAt === null));
-const recoverySchema = z.strictObject({
-  generation: z.number().int().min(1).max(3),
-  eventId: eventIdentitySchema,
-  requestedAt: instantSchema,
-  requestedBy: z.enum(editorIds),
-  requestId: idSchema,
-});
 const recordSchema = z.strictObject({
   id: failureIdSchema,
   version: versionSchema,
@@ -167,22 +143,6 @@ export function failureSummary(record: FailureRecord) {
     collections: structuredClone(record.collections),
   };
 }
-export const failureSummarySchema = z.object({
-  id: failureIdSchema,
-  version: versionSchema,
-  consumer: consumerSchema,
-  originalEventId: eventIdentitySchema,
-  correlationId: eventIdentitySchema,
-  eventType: z.string().min(1).max(200),
-  resourceType: z.enum(["contentItem", "reviewTask", "asset"]),
-  resourceId: idSchema,
-  firstCollectedAt: instantSchema,
-  generation: z.number().int().min(0).max(3),
-  status: z.enum(["resolved", "replayQueued", "reconciling", "failed"]),
-  resolution: collectionSchema.shape.resolution.nullable(),
-  recoveries: z.array(recoverySchema).max(3),
-  collections: z.array(collectionSchema).max(4),
-});
 export const failureKey = (id: string) => ({
   PK: `FAILURE#${failureIdSchema.parse(id)}`,
   SK: "DELIVERY",

@@ -8,6 +8,52 @@ const id = "10000000-0000-4000-8000-000000000001";
 const envelope = (data: unknown) =>
   new Response(JSON.stringify({ ok: true, data, meta: { correlationId: "client-proof" } }));
 describe("Content Operations client", () => {
+  it("rejects operation rows outside their requested partition, identity or filter", async () => {
+    const other = "10000000-0000-4000-8000-000000000002";
+    const row = {
+      projectionName: `contentItem.publicationAttempts.${id}`,
+      itemId: id,
+      sort: id,
+      data: {
+        kind: "publicationAttempt",
+        contentId: other,
+        publicationId: id,
+        transitionEventId: "transition",
+        causationId: "cause",
+        attempt: {
+          generation: 1,
+          claim: {
+            attemptId: id,
+            startedAt: "2027-03-01T12:00:00.000Z",
+            leaseUntil: "2027-03-01T12:01:30.000Z",
+          },
+          status: "claimed",
+          finishedAt: null,
+          failureCode: null,
+          sourceEventId: "source",
+          correlationId: "correlation",
+        },
+      },
+    };
+    const network = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async () => envelope({ items: [row] }));
+    const client = new ContentOperationsClient({ fixture: () => "editor_1", fetch: network });
+    await expect(client.operations({ view: "attempts", contentId: id })).rejects.toThrow(
+      "different operation",
+    );
+    row.data.contentId = id;
+    row.itemId = other;
+    await expect(client.operations({ view: "attempts", contentId: id })).rejects.toThrow(
+      "different operation",
+    );
+    row.itemId = id;
+    await expect(
+      client.operations({ view: "attempts", contentId: id, status: "failed" }),
+    ).rejects.toThrow("different operation");
+    row.projectionName = "contentItem.failures";
+    await expect(client.operations({ view: "attempts", contentId: id })).rejects.toThrow();
+  });
   it("normalizes calendar UTC bounds and rejects oversized ranges and out-of-range rows", async () => {
     const network = vi.fn<typeof fetch>().mockResolvedValue(envelope({ items: [] }));
     const client = new ContentOperationsClient({ fixture: () => "author_1", fetch: network });

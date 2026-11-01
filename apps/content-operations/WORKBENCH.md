@@ -4,7 +4,7 @@ The Angular consumer runs against the real [loopback API](API.md). It supports
 content list/board browsing, URL filters and bounded paging, create/detail, and versioned
 draft editing, submission, review queues/snapshots/decisions, paged activity, attachment
 uploads/downloads, committed publication previews, scheduling, and a zoned month/agenda.
-Operations screens remain Phase 19; no placeholder destination is shown for them.
+It also includes editor-only operations views and versioned publication recovery.
 
 ## Run Locally
 
@@ -181,6 +181,51 @@ context on return, including after reload. Fixture changes reset scoped continua
 when the fixture was changed on a linked detail page. Calendar
 refresh is explicit; rows that leave scheduled state disappear from its next query rather than
 becoming invented publication-history entries.
+
+## Operations and Recovery
+
+`/operations` has publication-attempt, notification, and failure views. URL filters select
+`view`, optional content UUID, status, notification recipient, bounded `limit`, and scoped
+`cursor`. Invalid view/status combinations fail before fetching. Authors see an access-denied
+state, not an empty privileged dataset; the API independently requires an editor. Switching
+fixtures clears privileged rows and resets fixture-bound continuations.
+
+Records are actual redacted server DTOs. Attempts show generation, recorded stage, claim/finish
+times, failure code, source/transition/correlation/causation IDs. Notifications describe the
+local sink's completed deliveries, not external email or invented pending notifications.
+Failure details include resumable collection and recorded recovery history, without the stored
+original payload. Native disclosure controls expose trace details; links lead to strong content,
+review history, and retained review snapshots where a review reference is present.
+
+Selecting a content UUID also loads its strong publication authority. The same recovery widget
+appears on content detail. It distinguishes queued/running/succeeded/failed from an expired-lease
+stalled display, retaining the recorded phase and lease deadline. A stalled display does not
+claim execution definitely failed. Lease-age display uses the browser clock; the server always
+rechecks its own clock, active claim, version, publication ID, generation, role, and budgets.
+
+Eligible editors can explicitly retry failed/stalled work, including an expired claim or a
+current failed attempt awaiting automatic delivery retry. A live claim forbids retry. Each
+generation permits three execution attempts; the four-generation ceiling allows at most three
+manual generation advances. The UI displays these separate budgets. Retry preserves the frozen
+publication identity and artifact; a stored-but-uncommitted object is still not a preview.
+Unchanged retries after ambiguous network errors reuse the exact input/key. A 409 keeps the
+loaded base and requires explicit refresh. An acknowledged retry whose following read fails
+is displayed as awaiting status, not invented success. Pending mutations/reads protect route,
+query-view, fixture, and unload navigation and disable competing controls.
+
+Visible pending publication authority polls serially every two seconds, backing off to ten
+after one minute. It pauses/aborts while hidden and stops on settlement/expiry/destruction.
+The initial operation page also follows pending records or selected pending publication;
+appending a page deliberately makes that ledger a **Snapshot**. Background refresh never
+silently drops explicitly loaded pages. The selected strong publication can continue following
+independently. Ledger refresh is explicit after settlement; distributed notification arrival
+is not assumed complete merely because publication completed. Queries remain individually
+bounded and no background scan walks the entire history.
+
+Consumer replay remains the development [jobs CLI](README.md#failures-and-recovery),
+not a browser action or new HTTP endpoint. Publication failures use the explicit publication
+retry command rather than replaying an old publication delivery. Non-publication records retain
+the existing three-cycle replay budget, allowlisted consumer, and original business identity.
 
 ## Verification
 

@@ -23,7 +23,9 @@ decisions, read-model pending states, and paged primary activity. Phase 17 adds 
 registration/transfer/progress/retry/removal, verified thumbnails/downloads, publish-now, and
 committed stored-artifact previews with redacted JSON export. Phase 18 adds explicit-zone
 schedule/reschedule/cancel/reopen, DST rejection, due-outcome observation, and bounded URL-driven
-month/agenda views with calendar/detail return navigation. Operations screens remain Phase 19.
+month/agenda views with calendar/detail return navigation. Phase 19 adds editor-only paged
+attempt/notification/failure views, correlated trace history, shared publication retry policy,
+and visible-only recovery polling. Non-publication replay stays in the development CLI.
 The live
 lab exercises the separate event spine and shared consumer protocols on real local S3/DynamoDB.
 

@@ -1294,6 +1294,52 @@ job interval, direct publish-now substitute, or fake completion is introduced. T
 seeded browser API remains independently owned. No dependencies or public framework contract
 change is needed; the browser graph now requires the real calendar and scheduling modules.
 
+### Phase 19 Operations and Recovery Decisions
+
+The lazy `/operations` screen uses the existing editor-only query endpoint for paged attempts,
+local notification deliveries, and redacted failed-delivery summaries. Its URL preserves view,
+content/status/recipient filters and bounded paging; view/status mismatches are invalid UI
+queries. The typed client checks projection, item identity, filter scope and view-specific DTO
+before rendering. Pure operation field schemas now live in `shared/operation-views.ts`, with
+compatible server reexports. Server-only notification hashing/cross-field checks, failure-envelope
+validation, and operation-transition validation remain in their original owning modules.
+
+Native disclosures show actual trace IDs, times, failure codes and bounded collection/recovery
+history, not raw source payloads or private object/fencing references. Notification status remains
+the implemented local sink's `succeeded` contract; failures/pending replay belong to failed-delivery
+history, not fabricated notification rows. Links resolve content/review authority and snapshots.
+Attempt timestamps can tie: their stable ID tiebreaker is not a generation-order guarantee.
+
+A selected content UUID loads strong publication state; the reusable recovery widget also appears
+on content detail. The pure `publicationRecovery` policy is shared with the existing domain retry
+gates, preserving their semantics. Displayed eligibility remains advisory because browser time
+and snapshots can be stale. The command independently enforces resolved editor role, content
+version, publication ID/generation, live lease exclusion, recoverable work and the four-generation
+budget. Three attempts per generation and at most three manual advances are displayed separately.
+Expired running claims display stalled plus the recorded phase/deadline, not certain failure.
+
+Retry intents use the existing idempotent public command. Ambiguous responses retain exact
+keys/inputs; stale conflicts pin the base until explicit refresh. Acknowledged retries survive
+follow-up read failure and poll for real authority. Read/mutation pending state blocks other
+controls, fixture switches, route/query navigation and native unload. The operations route reruns
+deactivation guards on query changes, preventing browser history from discarding an active retry.
+
+`RecoverySession` owns bounded strong reads and the existing visibility-aware serialized poll.
+It pauses/aborts while hidden, backs off from two to ten seconds after a minute, stops on settled/
+expired states, and destroys timers/listeners/requests on navigation. Publication detail retains
+its separate scheduled-state observation, handing publication phases to this widget rather than
+running duplicate publication loops. The initial ledger page follows pending rows/selected pending
+publication using the same polling rules. Explicit load-more stops ledger following and labels a
+snapshot, preserving loaded pages and avoiding an unbounded multi-page background scan. Strong
+selected authority remains independent; settled deliveries can be explicitly refreshed later.
+
+Other-consumer replay remains CLI-only through the existing bounded failure service. No replay,
+clock, fault-injection, or arbitrary-dispatch HTTP route was added. Browser fixtures use test-host
+publisher/collector interruptions and clock advancement against actual memory persistence/HTTP;
+they do not seed fake operation rows or synthesize UI success. Browser hosts use HTTP fixture
+helpers rather than loading decorated Angular client source through Playwright's Node transformer;
+the actual Angular client runs in the page and also has separate HTTP-backed unit coverage.
+
 ## LocalStack Lab and Infrastructure
 
 ### Compatibility Gate and Provisioning Choice
