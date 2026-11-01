@@ -2,7 +2,7 @@
 
 Status: reviewed; Phase 0 and baseline A/B are complete. The
 [baseline review](baseline-review.md) clears the prerequisite with explicit timing
-qualifications. Phase 1 is complete; Phases 2-14 and post A/B have not started. Based on the [PRD](prd.md) and
+qualifications. Phases 1-2 are complete; Phases 3-14 and post A/B have not started. Based on the [PRD](prd.md) and
 [technical design](technical-design.md); see [Phase 0 evidence](phase-0-evidence.md).
 
 ## Purpose
@@ -232,6 +232,9 @@ Verification: pure plan/property-boundary tests, public type tests, current fixt
 affected core/AWS and legacy consumer regressions. No consumer migration yet.
 
 ## Phase 2: Scoped Commands and Memory Atomicity
+
+Status: complete; see [Phase 2 evidence](phase-2-evidence.md). Public composition remains
+in Phase 4; no application migration or live DynamoDB behavior is claimed here.
 
 Depends on: Phase 1.
 
@@ -641,7 +644,8 @@ affected live/browser/exercise reruns. Verify clean teardown and reviewable git 
 
 Phase 0 observations are recorded in [its evidence log](phase-0-evidence.md) and the
 [measurement packet](leverage/README.md); [Phase 1 evidence](phase-1-evidence.md) records
-typed records/plan verification and growth. Later phase evidence is not asserted. Update
+typed records/plan verification and growth. [Phase 2 evidence](phase-2-evidence.md) records
+scoped execution, atomic memory persistence and its clean release gate. Later phase evidence is not asserted. Update
 individual phase statuses and append dated observations rather than marking every row
 complete at the end. For each phase record:
 

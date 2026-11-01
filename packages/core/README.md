@@ -139,7 +139,14 @@ not SDK requests. Primary writes require absence or exact version; activity, out
 auxiliary creates require absence, including when a row already exists in storage.
 Scoped idempotency requires absence or logical expiry at the captured instant. Adapters
 must enforce every condition atomically, classify idempotency versus other conflicts,
-and never split the plan into separate commits. No new storage adapter is shipped here.
+and never split the plan into separate commits. No new public storage adapter is shipped here.
+
+Iteration 3's internal scoped executor and memory adapter now exercise this contract:
+mandatory subject/resource/command-scoped keys, logical expiry, conditional atomic writes
+and bounded response recovery through `executeCommand`. They are not package exports or
+application integration points yet. The complete public memory composition remains
+planned for Phase 4; consumers must not deep-import `src/workflow` to use unfinished APIs.
+See [Phase 2 evidence](../../docs/iterations/003-framework-leverage/phase-2-evidence.md).
 
 `workflowCommitLimits` exposes the shared bounds: 60 normalized actions, 192 KiB per
 logical action, 64 KiB per auxiliary action (including key/owner metadata), 1 MiB for the

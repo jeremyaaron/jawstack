@@ -104,7 +104,7 @@ const date = text.refine((value) => {
 });
 const version = z.number().int().positive().safe();
 const actor = z.strictObject({ subject: identity, displayName: text.optional() });
-const stateSchema = z.strictObject({
+export const stateSchema = z.strictObject({
   resourceType: identity,
   resourceId: identity,
   version,
@@ -141,14 +141,14 @@ const eventSchema = z.strictObject({
   occurredAt: date,
   payload: z.unknown(),
 });
-const projectionSchema = z.strictObject({
+export const projectionSchema = z.strictObject({
   projectionName: identity,
   itemId: identity,
   sort: text.min(1),
   data: z.record(z.string(), z.unknown()),
   delete: z.boolean().optional(),
 });
-const successSchema = z.strictObject({
+export const successSchema = z.strictObject({
   ok: z.literal(true),
   data: z.unknown(),
   meta: z.strictObject({ requestId: identity, correlationId: identity }),
