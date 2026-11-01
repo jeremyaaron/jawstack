@@ -8,6 +8,47 @@ const id = "10000000-0000-4000-8000-000000000001";
 const envelope = (data: unknown) =>
   new Response(JSON.stringify({ ok: true, data, meta: { correlationId: "client-proof" } }));
 describe("Content Operations client", () => {
+  it("normalizes calendar UTC bounds and rejects oversized ranges and out-of-range rows", async () => {
+    const network = vi.fn<typeof fetch>().mockResolvedValue(envelope({ items: [] }));
+    const client = new ContentOperationsClient({ fixture: () => "author_1", fetch: network });
+    const query = {
+      from: "2027-03-01T00:00:00.000-05:00",
+      before: "2027-04-01T00:00:00.000-04:00",
+      limit: 1,
+    };
+    await client.calendar(query);
+    const params = new URL(String(network.mock.calls[0]![0]), "http://localhost").searchParams;
+    expect(params.get("from")).toBe("2027-03-01T05:00:00.000Z");
+    expect(params.get("before")).toBe("2027-04-01T04:00:00.000Z");
+    await expect(
+      client.calendar({ ...query, before: "2028-01-01T00:00:00.000Z" }),
+    ).rejects.toThrow();
+    expect(network).toHaveBeenCalledTimes(1);
+    network.mockResolvedValueOnce(
+      envelope({
+        items: [
+          {
+            projectionName: "contentItem.calendar",
+            itemId: id,
+            sort: id,
+            data: {
+              title: "Outside",
+              status: "scheduled",
+              authorId: "author_1",
+              revisionId: id,
+              version: 4,
+              createdAt: "2027-03-01T00:00:00.000Z",
+              updatedAt: "2027-03-01T00:00:00.000Z",
+              scheduledAt: "2027-04-01T04:00:00.000Z",
+              timeZone: "UTC",
+              generation: id,
+            },
+          },
+        ],
+      }),
+    );
+    await expect(client.calendar(query)).rejects.toThrow("outside the requested range");
+  });
   it("normalizes typed filters, retains empty continuation and resolves identity for each request", async () => {
     let actor: FixtureId = "author_1";
     const network = vi

@@ -35,7 +35,7 @@ import { VerifiedAttachmentComponent } from "./verified-attachment";
       @if (action.error() || error()) {
         <p class="validation" role="alert">{{ action.error() || error() }}</p>
       }
-      @if (row.state.status === "approved") {
+      @if (row.state.status === "approved" || row.state.status === "scheduled") {
         @if (workspace.fixture().startsWith("editor")) {
           <button
             class="button primary"
@@ -136,8 +136,9 @@ export class PublicationComponent implements OnChanges {
     if (this.row.state.status !== "approved") this.awaiting.set(false);
     this.poll.stop();
     if (
-      this.row.state.status === "publishing" &&
-      ["queued", "running"].includes(this.row.state.publication!.phase)
+      this.row.state.status === "scheduled" ||
+      (this.row.state.status === "publishing" &&
+        ["queued", "running"].includes(this.row.state.publication!.phase))
     )
       this.watch();
     if (this.committed() && !this.preview() && !this.loading()) void this.loadPreview();
@@ -159,6 +160,24 @@ export class PublicationComponent implements OnChanges {
         const row = await this.workspace.client.getContent(id, signal);
         if (signal.aborted || this.destroy.destroyed) return false;
         this.error.set("");
+        if (this.row.state.status === "scheduled" && row.state.status === "scheduled") {
+          if (row.state.schedule?.generation !== this.row.state.schedule?.generation) {
+            this.error.set(
+              "The schedule changed on the server. Refresh before another schedule action.",
+            );
+            return false;
+          }
+          return true;
+        }
+        if (
+          this.row.state.status === "scheduled" &&
+          !["publishing", "published", "archived"].includes(row.state.status)
+        ) {
+          this.error.set(
+            "The scheduled content changed on the server. Refresh to inspect its current state.",
+          );
+          return false;
+        }
         if (row.version !== this.row.version) this.changed.emit(row);
         return (
           row.state.status === "publishing" &&
@@ -166,7 +185,9 @@ export class PublicationComponent implements OnChanges {
         );
       } catch {
         if (!signal.aborted)
-          this.error.set("Publication status could not be loaded. Retrying while visible.");
+          this.error.set(
+            "Schedule or publication status could not be loaded. Retrying while visible.",
+          );
         return true;
       }
     });
@@ -179,7 +200,7 @@ export class PublicationComponent implements OnChanges {
       this.action.pending() ||
       this.action.conflict() ||
       this.awaiting() ||
-      row.state.status !== "approved" ||
+      !["approved", "scheduled"].includes(row.state.status) ||
       !approval ||
       !this.workspace.fixture().startsWith("editor")
     )

@@ -3,9 +3,8 @@
 The Angular consumer runs against the real [loopback API](API.md). It supports
 content list/board browsing, URL filters and bounded paging, create/detail, and versioned
 draft editing, submission, review queues/snapshots/decisions, paged activity, attachment
-uploads/downloads, and committed publication previews. Calendar and operations screens
-remain in their assigned later phases; they are
-not empty navigation destinations here.
+uploads/downloads, committed publication previews, scheduling, and a zoned month/agenda.
+Operations screens remain Phase 19; no placeholder destination is shown for them.
 
 ## Run Locally
 
@@ -142,6 +141,47 @@ fencing tokens. Its attachment references use the same guarded downloads. Displa
 artifact** size/SHA-256 describe the canonical private stored bytes, not the reformatted/redacted
 JSON export; no byte-identical canonical download is exposed to the browser.
 
+## Scheduling and Calendar
+
+Editors can schedule approved content, reschedule the current schedule, or cancel it back
+to approved. The form uses an explicit local date/time and IANA zone, with a UTC-instant
+preview. Shared Temporal conversion rejects nonexistent and repeated wall-clock times rather
+than choosing an offset. Native local inputs may shorten fractional seconds; one-to-three
+digits normalize to the same exact three-digit UTC contract. Client and server both require a future instant; the server clock
+remains authoritative. Reschedule/cancel include the loaded content version, revision, and
+exact schedule generation; schedule/reschedule also carry the approved review/revision.
+Owning authors or editors can reopen scheduled content, invalidating both schedule and approval.
+
+Dirty schedule proposals are protected on route/fixture/refresh/unload; pending commands block
+other mutations and leaving. Cancelling/reopening confirms before discarding a proposal.
+Conflicts preserve the proposed time/zone and loaded base until explicit refresh. Ambiguous
+command retries retain their intent keys, including when a committed command's following read
+is lost. Schedule success/validation focus is explicit and all actions support the keyboard.
+
+Scheduled detail pages poll visible strong authority for due outcomes, using the same serialized
+2-second/10-second backoff and cleanup as publication. Remote reschedule/cancel/reopen does not
+silently replace the loaded command base; refresh is explicit. When the actual due job starts
+publishing, controls lock; an unsubmitted local proposal remains visible/copyable/discardable.
+There is no browser publication timer or automatic publish-now request. Memory mode evaluates
+due jobs at most once per minute, so a passed scheduled instant is not immediate success.
+LocalStack requires the later deployed consumer jobs/workers, as described above.
+
+`/calendar` keeps `date=YYYY-MM-DD`, `zone`, `view=month|agenda`, optional `limit`, and an opaque
+fixture-bound `cursor` in the URL. Its API query covers the first valid local instant of the
+month through the start of the next month, converted to a half-open UTC range. Even DST-changing
+months stay below the API's 42-day bound. The fixed 42-cell Monday-first grid mutes outside-month
+dates without claiming those days were queried. Counts and day entries describe loaded rows,
+not a complete month; explicit load-more is bounded and empty pages can retain continuation.
+
+Month and agenda share exactly the same loaded instants. Display zone changes regroup the UTC
+instants into local dates; agenda timestamps include their offsets/zone abbreviations. Narrow
+month cells expose loaded counts and ordinary day buttons switch to the month agenda, with
+the selected date highlighted. Links open strong content detail and preserve calendar URL
+context on return, including after reload. Fixture changes reset scoped continuations, including
+when the fixture was changed on a linked detail page. Calendar
+refresh is explicit; rows that leave scheduled state disappear from its next query rather than
+becoming invented publication-history entries.
+
 ## Verification
 
 ```sh
@@ -166,7 +206,12 @@ dependency optimization; focused scenarios retain their 30-second bounds. Retrie
 Browser evidence covers paging/filters, list/board, create/save/reload, owner/editor
 permissions, actual concurrent-edit conflicts, explicit reconciliation, unsaved route/fixture
 guards, return URLs, invalid filters, full changes-request/resubmission/approval, historical
-snapshots, stale-review rejection, paged activity, keyboard focus, and fit. Screenshots and
+snapshots, stale-review rejection, paged activity, real media transfers/downloads/publication,
+DST validation, zoned calendar paging/navigation, schedule conflicts/reopen, keyboard focus,
+and fit. Scheduling browser tests use an additional per-test loopback memory API with an injected
+clock. Only the test host advances that clock and runs the real due jobs/publisher; there is no
+public clock-control endpoint, fake artifact, or direct publish command substituting for a due job.
+Screenshots and
 failure traces are written under Git-ignored `test-results/`; the normal unit command never
 launches Playwright. The full release gate remains credential-free; run browser verification
 explicitly until the later CI phase wires its dedicated job.
@@ -177,5 +222,5 @@ are forbidden at resolution and after compilation. Real screen/shared/presentati
 must be present, so an empty output cannot pass. Unit negative cases cover package and
 resolved imports. The browser bundle uses `@jawstack/angular` error/badge/presentation
 contracts and only the selected standalone `@lucide/angular` icons.
-Detail/review routes are lazy-loaded, and Temporal is prebundled for development to avoid a
+Detail/review/calendar routes are lazy-loaded, and Temporal is prebundled for development to avoid a
 dependency-discovery reload during navigation. Production output remains split into bounded chunks.

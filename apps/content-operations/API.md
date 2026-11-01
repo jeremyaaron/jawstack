@@ -151,6 +151,12 @@ The publication endpoint returns a redacted view of a verified **stored** artifa
 and `size` describe canonical private stored bytes, not a reserialization of `artifact`. The UI's
 redacted JSON export deliberately retains that distinction; it is not a raw S3 artifact download.
 
+The calendar UI's `date`/`zone`/`view` parameters are presentation state, not new HTTP query
+fields. Its typed client converts one local month into the existing calendar endpoint's
+half-open `from`/`before` UTC bounds and validates returned scheduled rows against that range.
+Detail commands load strong content independently of calendar projection versions. The browser
+does not request due publication or expose test clock control; only the runtime's due job does.
+
 HTTP-only workflow, authorization, conflict, paging, body-limit, private read, seeding, and
 shutdown tests live in `test/unit/http.test.ts` and `test/unit/api-queries.test.ts`.
 The opt-in owned lab gate also executes real HTTP commands/uploads/queries/downloads against

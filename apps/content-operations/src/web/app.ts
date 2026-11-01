@@ -3,7 +3,12 @@ import { Router, NavigationEnd, RouterLink, RouterLinkActive, RouterOutlet } fro
 import { takeUntilDestroyed } from "@angular/core/rxjs-interop";
 import { filter } from "rxjs";
 import { FormControl, ReactiveFormsModule } from "@angular/forms";
-import { LucideFiles, LucideLayers, LucideClipboardCheck } from "@lucide/angular";
+import {
+  LucideFiles,
+  LucideLayers,
+  LucideClipboardCheck,
+  LucideCalendarDays,
+} from "@lucide/angular";
 import { Workspace } from "./workspace";
 
 @Component({
@@ -16,6 +21,7 @@ import { Workspace } from "./workspace";
     LucideFiles,
     LucideLayers,
     LucideClipboardCheck,
+    LucideCalendarDays,
     ReactiveFormsModule,
   ],
   template: `
@@ -36,6 +42,9 @@ import { Workspace } from "./workspace";
           >
           <a routerLink="/reviews" routerLinkActive="active"
             ><svg lucideClipboardCheck aria-hidden="true"></svg>Reviews</a
+          >
+          <a routerLink="/calendar" routerLinkActive="active"
+            ><svg lucideCalendarDays aria-hidden="true"></svg>Calendar</a
           >
         </nav>
         <div class="sidebar-footer">

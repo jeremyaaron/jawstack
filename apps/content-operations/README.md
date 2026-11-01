@@ -21,8 +21,10 @@ client, list/board, URL filters/paging, and version-safe draft create/detail/edi
 adds submission, review assignment/overdue/history filters, immutable snapshots, editor
 decisions, read-model pending states, and paged primary activity. Phase 17 adds real attachment
 registration/transfer/progress/retry/removal, verified thumbnails/downloads, publish-now, and
-committed stored-artifact previews with redacted JSON export. Calendar and operations screens
-follow in their assigned phases. The live
+committed stored-artifact previews with redacted JSON export. Phase 18 adds explicit-zone
+schedule/reschedule/cancel/reopen, DST rejection, due-outcome observation, and bounded URL-driven
+month/agenda views with calendar/detail return navigation. Operations screens remain Phase 19.
+The live
 lab exercises the separate event spine and shared consumer protocols on real local S3/DynamoDB.
 
 ## Credential-Free Checks

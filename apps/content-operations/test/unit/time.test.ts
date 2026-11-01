@@ -20,6 +20,8 @@ describe("explicit temporal inputs", () => {
     expect(() => localTimeToUtc(local, zone)).toThrow();
   });
   it("converts valid local times without global Temporal patching and preserves millisecond precision", () => {
+    expect(localTimeToUtc("2027-03-01T13:00:00.1", "UTC")).toBe("2027-03-01T13:00:00.100Z");
+    expect(localTimeToUtc("2027-03-01T13:00:00.12", "UTC")).toBe("2027-03-01T13:00:00.120Z");
     expect(localTimeToUtc("2026-10-31T12:34", "America/New_York")).toBe("2026-10-31T16:34:00.000Z");
     expect(localTimeToUtc("2026-10-31T12:34:56.789", "Asia/Kathmandu")).toBe(
       "2026-10-31T06:49:56.789Z",

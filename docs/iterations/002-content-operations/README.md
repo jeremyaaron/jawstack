@@ -1,8 +1,7 @@
 # Iteration 2: Content Operations
 
-Status: Phases 0-17 complete. Attachment transfer/retry/removal, verified thumbnails/downloads,
-publish-now and committed previews, desktop/mobile browser tests, and workspace checks passed.
-Phase 18 is next.
+Status: Phases 0-18 complete. Explicit-zone scheduling, calendar/agenda, real due publication,
+desktop/mobile browser workflows, and workspace checks passed. Phase 19 is next.
 
 ## Documents
 
@@ -90,4 +89,8 @@ registration/progress/cancellation/retry/removal, private byte-verified image/PD
 and publish-now with visible-only outcome polling and actual committed-artifact previews.
 Selected files and loaded text survive conflicts; publication exports are explicitly redacted
 JSON, not canonical private artifact bytes. Published assets stay read-only. Phase 18 adds
-scheduling/calendar/agenda controls.
+scheduling/calendar/agenda controls, future-time and DST validation, generation-safe cancel/
+reschedule/reopen, protected local proposals, and visible server-driven publication outcomes.
+Month/agenda views share bounded paged UTC rows with explicit display zones and calendar/detail
+return URLs. The browser never publishes on a timer; isolated clock-driven tests exercise the
+real due jobs and publisher. Operations/recovery UI remains Phase 19.

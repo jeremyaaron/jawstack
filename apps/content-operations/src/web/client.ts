@@ -9,15 +9,17 @@ import { z } from "zod";
 import {
   contentQueryInput,
   reviewQueryInput,
+  calendarQueryInput,
   pageInput,
   type ContentQuery,
   type ReviewQuery,
+  type CalendarQuery,
   type PublicValue,
 } from "../shared/api";
 import { contentStatuses, reviewStatuses, type ContentState } from "../shared/contracts";
 import { fixtureIds, editorIds, type FixtureId } from "../shared/identities";
 import { reviewViewSchema, activityViewSchema, type ReviewView } from "../shared/review-views";
-import { idSchema, instantSchema, versionSchema } from "../shared/validation";
+import { idSchema, instantSchema, versionSchema, timeZoneSchema } from "../shared/validation";
 import { contentUi } from "../shared/presentation";
 import { assetViewSchema, publicationViewSchema, type AttachmentView } from "../shared/media-views";
 
@@ -35,6 +37,19 @@ export type ContentRow = Omit<ProjectionRecord, "data"> & {
 };
 export type ContentResource = Omit<ResourceState, "state"> & { state: PublicValue<ContentState> };
 export type ContentPage = { items: ContentRow[]; nextCursor?: string | undefined };
+const calendarRowSchema = z.object({
+  projectionName: z.literal("contentItem.calendar"),
+  itemId: idSchema,
+  sort: z.string(),
+  data: contentSummarySchema.extend({
+    status: z.literal("scheduled"),
+    scheduledAt: instantSchema,
+    generation: idSchema,
+    timeZone: timeZoneSchema,
+  }),
+});
+export type CalendarRow = z.infer<typeof calendarRowSchema>;
+export type CalendarPage = { items: CalendarRow[]; nextCursor?: string | undefined };
 export type CommandName = keyof typeof contentUi.commands;
 export type CommandInput<N extends CommandName> = z.input<(typeof contentUi.commands)[N]["input"]>;
 export type CommandResult = { resourceId: string; version: number; assetId?: string | undefined };
@@ -246,6 +261,18 @@ export class ContentOperationsClient implements JawStackApiClient {
       Object.entries(parsed).map(([key, value]) => [key, String(value)]),
     );
     return pageSchema.parse(await this.request(`/content?${params}`, signal ? { signal } : {}));
+  }
+  async calendar(query: CalendarQuery, signal?: AbortSignal): Promise<CalendarPage> {
+    const q = calendarQueryInput.parse(query);
+    const params = new URLSearchParams(
+      Object.entries(q).map(([key, value]) => [key, String(value)]),
+    );
+    const page = z
+      .object({ items: z.array(calendarRowSchema), nextCursor: z.string().optional() })
+      .parse(await this.request(`/calendar?${params}`, signal ? { signal } : {}));
+    if (page.items.some((row) => row.data.scheduledAt < q.from || row.data.scheduledAt >= q.before))
+      throw new Error("Calendar returned a row outside the requested range.");
+    return page;
   }
   async getContent(id: string, signal?: AbortSignal): Promise<ContentResource> {
     const data = resourceSchema.parse(

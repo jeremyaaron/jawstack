@@ -1246,6 +1246,54 @@ artifact digest/size are explicitly labeled: they do not describe the reformatte
 export. No raw object keys, uncommitted preview, executable document embed, or new public
 framework/API route/dependency is required.
 
+### Phase 18 Scheduling and Calendar Decisions
+
+`ScheduleSession` owns an explicit local datetime/IANA-zone reactive form, dirty state,
+validation, a pinned content base, and stable ambiguous-retry keys. Existing Temporal conversion
+rejects gaps/folds; reverse conversion preserves stored milliseconds and the schedule's zone.
+The form shows the resulting UTC instant. Native datetime controls shorten fractional seconds
+(for example `.100` to `.1`); the local converter accepts one-to-three digits and always emits
+the unchanged three-digit UTC contract. The server retains its independent future-time check.
+Schedule/reschedule carry the approved review/revision; reschedule/cancel carry the exact loaded
+generation and all mutations use the content version, never a calendar projection version.
+Cancel returns to approved; owning authors/editors may reopen scheduled content through the
+existing command, invalidating schedule/review/approval. No scheduling API/domain change is needed.
+
+Dirty proposals receive navigation/fixture/refresh/unload guards. Pending scheduling includes
+the follow-up strong read and excludes other mutations. Confirmed commands are acknowledged
+even if that read fails; unchanged retries retain the exact original command key/input. A 409
+retains time/zone/base until explicit refresh. Scheduled detail polls visible strong authority
+for the server's actual due/publishing outcome, not to silently adopt a remote reschedule or
+cancel/reopen base. Locked publication can advance the displayed content while retaining an
+unapplied local proposal as read-only/copyable/discardable. No browser timer publishes content;
+the existing runtime due job and publisher remain the only automatic execution path.
+
+The lazy `/calendar` route accepts validated URL date, IANA zone, month/agenda mode, bounded
+limit and scoped cursor. Default date is today in UTC. Its query range is the first valid instant
+of the selected local month through the first instant of the next month, not 42 local days:
+a six-week grid spanning a fall-back can exceed the API's hard 42x24-hour bound. Calendar bounds
+use Temporal's start-of-day behavior for midnight gaps/skipped dates, distinct from rejecting
+ambiguous user-entered publication times. The 42-cell Monday-first grid keeps outside-month
+dates muted/unqueried. Day slots have stable dimensions; long/multiple entries scroll within
+their day, and mobile count buttons expose the ordinary month agenda without drag/drop.
+
+Both modes use the same loaded UTC rows, regrouped by the selected display zone; agenda labels
+retain offset/zone abbreviations. Loaded counts never imply completeness. Explicit load-more,
+empty continuation, request abort/sequence fencing, fixture cursor reset, error/retry, and URL
+return navigation follow existing consumer patterns. Detail return context includes the source
+fixture solely to discard a continuation after an off-calendar identity change; it grants no
+authority. A view-only toggle preserves loaded pages.
+Calendar reads remain explicit-refresh snapshots of scheduled membership, not publication
+history. Strong content detail gates all mutations. Agenda stretched links are contained to
+their own positioned row, with arbitrary long titles wrapping rather than covering controls.
+
+Browser scheduling verification injects a clock into a per-test loopback memory API, routes
+actual browser HTTP traffic to it, and lets only the Node test host advance the clock and run
+the existing due-job/publisher protocols. No production clock endpoint, shorter production
+job interval, direct publish-now substitute, or fake completion is introduced. The ordinary
+seeded browser API remains independently owned. No dependencies or public framework contract
+change is needed; the browser graph now requires the real calendar and scheduling modules.
+
 ## LocalStack Lab and Infrastructure
 
 ### Compatibility Gate and Provisioning Choice

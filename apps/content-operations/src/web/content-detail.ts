@@ -27,6 +27,9 @@ import { ActivityComponent } from "./activity";
 import { AttachmentSession } from "./attachment-session";
 import { AttachmentsComponent } from "./attachments";
 import { PublicationComponent } from "./publication";
+import { ScheduleSession } from "./schedule-session";
+import { SchedulingComponent } from "./scheduling";
+import { calendarState } from "../shared/calendar";
 import { editorIds } from "../shared/identities";
 import { localTimeToUtc } from "../shared/time";
 import { submitInput } from "../shared/contracts";
@@ -48,10 +51,14 @@ import { submitInput } from "../shared/contracts";
     ActivityComponent,
     AttachmentsComponent,
     PublicationComponent,
+    SchedulingComponent,
   ],
   template: `
-    <a class="back-link" aria-label="Back to content" [routerLink]="backLink()"
-      ><svg lucideArrowLeft aria-hidden="true"></svg>Content</a
+    <a
+      class="back-link"
+      [attr.aria-label]="'Back to ' + backLabel().toLowerCase()"
+      [routerLink]="backLink()"
+      ><svg lucideArrowLeft aria-hidden="true"></svg>{{ backLabel() }}</a
     >
     @if (loading()) {
       <div class="empty-state" role="status">
@@ -282,9 +289,23 @@ import { submitInput } from "../shared/contracts";
             </div>
           }
         </section>
+        <content-scheduling
+          [session]="schedule"
+          [blocked]="
+            editor.dirty() ||
+            editor.conflict() ||
+            editor.pending() ||
+            action.pending() ||
+            attachments.pending() ||
+            publicationBusy() ||
+            !!attachments.file()
+          "
+        />
         <content-publication
           [row]="row"
-          [blocked]="editor.dirty() || mutationPending() || !!attachments.file()"
+          [blocked]="
+            editor.dirty() || mutationPending() || !!attachments.file() || schedule.dirty()
+          "
           (changed)="editor.accept($event)"
           (busy)="publicationBusy.set($event)"
         />
@@ -306,6 +327,20 @@ export class ContentDetailComponent {
   readonly editor = new DraftEditor(this.workspace.client, () => this.workspace.fixture());
   readonly action = new EditorialAction(this.workspace.client, () => this.workspace.fixture());
   readonly publicationBusy = signal(false);
+  readonly schedule = new ScheduleSession(
+    this.workspace.client,
+    () => this.workspace.fixture(),
+    () => this.editor.resource(),
+    (row) => this.editor.accept(row),
+    () =>
+      this.editor.dirty() ||
+      this.editor.conflict() ||
+      this.editor.pending() ||
+      this.action.pending() ||
+      this.attachments.pending() ||
+      this.publicationBusy() ||
+      !!this.attachments.file(),
+  );
   readonly attachments = new AttachmentSession(
     this.workspace.client,
     () => this.workspace.fixture(),
@@ -325,6 +360,7 @@ export class ContentDetailComponent {
       this.editor.pending() ||
       this.action.pending() ||
       this.attachments.pending() ||
+      this.schedule.pending() ||
       this.publicationBusy()
     );
   }
@@ -354,6 +390,7 @@ export class ContentDetailComponent {
       this.request?.abort();
       this.editor.destroy();
       this.attachments.destroy();
+      this.schedule.destroy();
       this.workspace.canLeave = () => true;
     });
   }
@@ -364,7 +401,26 @@ export class ContentDetailComponent {
       .toLowerCase();
   }
   backLink() {
+    if (this.backLabel() === "Calendar") {
+      const params = this.route.snapshot.queryParamMap;
+      try {
+        const state = calendarState(
+          Object.fromEntries(
+            ["date", "zone", "view", "limit", "cursor"]
+              .filter((key) => params.has(key))
+              .map((key) => [key, params.get(key)]),
+          ),
+        );
+        if (params.get("calendarFixture") !== this.workspace.fixture()) delete state.cursor;
+        return this.router.createUrlTree(["/calendar"], { queryParams: state });
+      } catch {
+        return this.router.parseUrl("/calendar");
+      }
+    }
     return this.router.parseUrl(this.workspace.listUrl);
+  }
+  backLabel() {
+    return this.route.snapshot.queryParamMap.get("from") === "calendar" ? "Calendar" : "Content";
   }
   @HostListener("window:beforeunload", ["$event"])
   beforeUnload(event: BeforeUnloadEvent) {
@@ -375,6 +431,8 @@ export class ContentDetailComponent {
       this.attachments.pending() ||
       !!this.attachments.file() ||
       this.publicationBusy() ||
+      this.schedule.dirty() ||
+      this.schedule.pending() ||
       this.submission.dirty
     )
       event.preventDefault();
@@ -382,7 +440,12 @@ export class ContentDetailComponent {
   canLeave() {
     return (
       !this.mutationPending() &&
-      (!(this.editor.dirty() || this.submission.dirty || this.attachments.file()) ||
+      (!(
+        this.editor.dirty() ||
+        this.submission.dirty ||
+        this.attachments.file() ||
+        this.schedule.dirty()
+      ) ||
         window.confirm("Discard unsaved changes?"))
     );
   }
@@ -403,6 +466,7 @@ export class ContentDetailComponent {
       if (sequence !== this.sequence) return;
       this.editor.accept(row);
       this.attachments.reset();
+      this.schedule.reset(row);
       this.action.reset();
       this.submission.reset({ assignedEditorId: "editor_1", dueAt: this.defaultDue() });
       this.submissionError.set("");
@@ -414,7 +478,13 @@ export class ContentDetailComponent {
     }
   }
   async save() {
-    if (this.action.pending() || this.attachments.pending() || this.publicationBusy()) return;
+    if (
+      this.action.pending() ||
+      this.attachments.pending() ||
+      this.publicationBusy() ||
+      this.schedule.pending()
+    )
+      return;
     const isNew = !this.id();
     const id = await this.editor.save();
     if (this.editor.validationField())
@@ -431,7 +501,7 @@ export class ContentDetailComponent {
     const row = this.editor.resource();
     return (
       !!row &&
-      ["inReview", "approved"].includes(row.state.status) &&
+      ["inReview", "approved", "scheduled"].includes(row.state.status) &&
       (row.state.authorId === this.workspace.fixture() ||
         this.workspace.fixture().startsWith("editor"))
     );
@@ -468,6 +538,11 @@ export class ContentDetailComponent {
   }
   async reopen() {
     const row = this.editor.resource();
+    if (
+      this.schedule.dirty() &&
+      !window.confirm("Discard unsaved schedule changes and reopen the draft?")
+    )
+      return;
     if (
       row &&
       !this.mutationPending() &&

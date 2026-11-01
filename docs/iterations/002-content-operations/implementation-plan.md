@@ -1,8 +1,8 @@
 # Iteration 2 Implementation Plan: Content Operations
 
-Status: reviewed. Phases 0-17 are complete. Attachment transfer/retry/removal, verified
-thumbnails/downloads, publish-now and committed previews, browser tests, and workspace checks
-passed. Phase 18 is next.
+Status: reviewed. Phases 0-18 are complete. Explicit-zone scheduling, calendar/agenda,
+real due publication, desktop/mobile browser workflows, and workspace checks passed.
+Phase 19 is next.
 
 ## Purpose
 
@@ -1384,6 +1384,64 @@ integration gate, documentation walkthrough, local links, and `git diff --check`
 - No dependencies, public framework/template implementation, HTTP routes, package versions,
   CI triggers, releases, or commits changed. No Docker/LocalStack/real-AWS run was needed or
   claimed for this consumer browser phase. Scheduling/calendar UI remains Phase 18.
+
+### Phase 18: October 31, 2026
+
+- Added explicit local datetime/IANA-zone scheduling with a UTC-instant preview, future-time
+  validation, and shared Temporal gap/fold rejection. Native shortened fractional seconds
+  (`.1`/`.12`) normalize to the unchanged three-digit stored UTC contract, preserving
+  milliseconds. No implicit offset is chosen for repeated/nonexistent local times.
+- Editors can schedule approved content, reschedule/cancel its exact generation, or publish
+  an approved/scheduled snapshot now. Owning authors/editors can reopen scheduled content
+  through the existing command, invalidating its schedule and approval. All commands use
+  loaded content versions and current approval/revision/generation references, not calendar
+  projection versions. No domain command, public framework contract, or HTTP route changed.
+- `ScheduleSession` preserves proposals and pinned bases on conflicts; unchanged ambiguous
+  retries reuse their original keys, including after a committed command's strong read fails.
+  Route/fixture/refresh/unload guards include dirty proposals; pending operations include the
+  following read and exclude other mutations. Cancellation/reopen confirms before dropping
+  a proposal. Actual reactive forms and success/validation focus support keyboard operation.
+- Scheduled detail watches visible strong authority through the existing serialized
+  2-second/10-second backoff helper. Remote reschedules/cancel/reopen are reported without
+  silently replacing the loaded command base. Actual due publication locks editing and
+  reopening; unapplied local time/zone remain visible/copyable/discardable. There is no
+  browser publication timer, automatic publish-now call, or fake completed artifact.
+- Added lazy `/calendar` with URL date/zone/month-or-agenda/limit/cursor, month navigation,
+  Today, explicit refresh, bounded load-more and empty continuation/error states. Queries
+  cover one local month as half-open UTC bounds, safely below 42 days across DST. The stable
+  42-cell Monday-first grid mutes unqueried outside-month dates; narrow cells show loaded
+  counts with keyboard-accessible agenda navigation. Both views regroup the same UTC rows
+  into the selected zone, with offset/zone-aware agenda times and truthful loaded counts.
+  Detail links carry calendar return context across reload; fixture changes reset scoped
+  cursors. Calendar is scheduled membership, not fabricated publication history.
+- Added 16 helper/session/component/client/HTTP tests (462 consumer / 747 workspace total),
+  plus precision assertions in the existing time test. Coverage includes DST/month bounds,
+  unusual offsets/skipped dates/leap years, invalid URL/range/row rejection, shared view
+  instants, stale-read abort/fencing, cursor reset, guarded/pending forms, immutable command
+  bases, lost command/read responses, role exclusion, timer cleanup, and real due-job outcomes.
+  Six new desktop/mobile Playwright scenarios bring the full suite to 20. Browser workflows
+  prove reschedule/cancel invalidates old due work, owner reopen prevents publication, and a
+  current generation produces the actual committed artifact through the real due job/publisher.
+- Scheduling browser tests own an additional per-test loopback memory API with an injected
+  clock. Only the Node test host advances time and drives the existing jobs/pump; browser
+  requests still use actual HTTP. No production clock-control endpoint, shorter production
+  job interval, cloud account/token, or direct publication substitute was introduced.
+  URL boundary/paging, long-title wrapping, stale proposals, fixture/navigation guards,
+  keyboard focus, read-only due completion, and desktop/mobile screenshots were verified.
+  A stretched-link regression caught during paging was fixed by positioning each agenda row;
+  long titles now wrap without intercepting pagination. Month day slots and status space
+  have stable dimensions. Native select labels are explicit for accessible exact targeting.
+- `pnpm verify:release` passed formatting, typecheck, all tests, lint, app/workspace builds,
+  zero pkg-guard findings, generated-app verification, and six package dry runs. All 20
+  browser scenarios passed; a final six-scenario scheduling rerun also passed after native
+  fractional-second normalization was verified in Chromium. Screenshots at 1440x900 and
+  390x844 were inspected. The module-graph gate requires real calendar/scheduling modules
+  and still reports zero server imports. Markdown links and `git diff --check` passed.
+- Existing web 4336 / API 4337 remain available with their prior memory data preserved.
+  The actual review server's empty zoned agenda was checked in mobile Chromium with no
+  page errors or horizontal overflow. Test-owned APIs and browser servers stopped. No
+  dependencies, versions, CI triggers, releases, or commits changed. Docker/LocalStack/
+  real-AWS checks were not needed or claimed for this consumer UI phase. Phase 19 is next.
 
 For later phases, append the date, meaningful behavior delivered, commands/results,
 not-run checks, design changes, and remaining limitations. Do not replace observed
