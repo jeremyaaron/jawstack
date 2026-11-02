@@ -2,8 +2,8 @@ import { join } from "node:path";
 import { archiveIdentity, parseProfile } from "@jawstack/local-lab";
 import { applicationProfile } from "../src/aws/profile";
 import { labFunctions, type LabConfig } from "../src/lab/config";
+import { contentServicePlan } from "../src/lab/application-topology";
 
-// Transitional data registration; service providers/reset stay app-owned until Phase 9.
 export async function contentLabProfile(root: string, config: LabConfig) {
   const app = applicationProfile(config);
   const archives = Object.fromEntries(
@@ -47,5 +47,6 @@ export async function contentLabProfile(root: string, config: LabConfig) {
       buckets: [config.bucket],
       scheduleGroups: [config.scheduleGroup],
     },
+    services: contentServicePlan(config),
   });
 }

@@ -20,6 +20,10 @@ import { cleanupRuntimes, inspectRuntimes, type DockerCommand } from "./containe
 import { waitFor } from "./lifecycle";
 import { profileHash, verifyArchives } from "./profile";
 import { createLabTransport } from "./transport";
+import { createClients, destroyClients } from "./clients";
+import { provisionServices, resetServices } from "./providers";
+import { serviceContext } from "./service-plan";
+import { removeRouting, writeRouting } from "./routing";
 
 const exec = promisify(execFile);
 const idSchema = z.string().regex(/^[a-f0-9]{64}$/);
@@ -200,6 +204,7 @@ export async function openLab(input: {
       )
         throw new LabError("Lab profile changed; explicit owned down/recreation required.");
       await verifyArchives(manifest.profile);
+      if (manifest.profile.services) serviceContext(manifest);
     }
     const session = new LabSession(options, manifest, close, persisted);
     return session;
@@ -460,6 +465,7 @@ export class LabSession {
   async down() {
     await this.assertManifestOnDisk();
     const initial = await this.inspect();
+    await removeRouting(`${this.options.statePath}.routing.json`, this.manifest);
     // Preflight all candidates/network before stopping the creator; then reconcile children again.
     for (const c of initial.containers)
       if (c.status === "running") await this.docker(["stop", "--time", "30", c.id]);
@@ -498,6 +504,54 @@ export class LabSession {
       (onDisk.schemaVersion === 2 ? onDisk.profileHash : "legacy-down-only") !== this.identity
     )
       throw new LabError("Manifest changed; refusing removal.");
+  }
+  async provision() {
+    this.current();
+    serviceContext(this.manifest);
+    if (this.manifest.status !== "starting")
+      throw new LabError(
+        "Lab already or partially provisioned; use ownership-checked reset first.",
+      );
+    await this.assertManifestOnDisk();
+    await this.ready();
+    await removeRouting(`${this.options.statePath}.routing.json`, this.manifest);
+    const clients = createClients();
+    try {
+      await provisionServices(clients, this.manifest, () => this.save());
+      await writeRouting(`${this.options.statePath}.routing.json`, this.manifest);
+      this.manifest.routingVersion = 1;
+      await this.save();
+    } finally {
+      destroyClients(clients);
+    }
+  }
+  async reset() {
+    this.current();
+    serviceContext(this.manifest);
+    await this.assertManifestOnDisk();
+    await this.ready();
+    const clients = createClients();
+    try {
+      await resetServices(clients, this.manifest, async () => {
+        await removeRouting(`${this.options.statePath}.routing.json`, this.manifest);
+        await this.save();
+      });
+      await cleanupRuntimes(this.docker, this.runtimeProfile(), this.ownerId);
+      this.manifest.status = "starting";
+      this.manifest.mappings = [];
+      for (const key of [
+        "queueUrl",
+        "streamArn",
+        "capabilitiesVersion",
+        "applicationVersion",
+        "runtimeOwnershipVersion",
+        "routingVersion",
+      ] as const)
+        delete this.manifest[key];
+      await this.save();
+    } finally {
+      destroyClients(clients);
+    }
   }
   async close() {
     if (!this.closed) {

@@ -322,6 +322,30 @@ importers:
 
   tooling/local-lab:
     dependencies:
+      '@aws-sdk/client-cloudwatch-logs':
+        specifier: 3.1075.0
+        version: 3.1075.0
+      '@aws-sdk/client-dynamodb':
+        specifier: 3.1075.0
+        version: 3.1075.0
+      '@aws-sdk/client-eventbridge':
+        specifier: 3.1075.0
+        version: 3.1075.0
+      '@aws-sdk/client-iam':
+        specifier: 3.1075.0
+        version: 3.1075.0
+      '@aws-sdk/client-lambda':
+        specifier: 3.1075.0
+        version: 3.1075.0
+      '@aws-sdk/client-s3':
+        specifier: 3.1075.0
+        version: 3.1075.0
+      '@aws-sdk/client-scheduler':
+        specifier: 3.1075.0
+        version: 3.1075.0
+      '@aws-sdk/client-sqs':
+        specifier: 3.1075.0
+        version: 3.1075.0
       '@jawstack/aws-runtime':
         specifier: workspace:*
         version: link:../../packages/aws-runtime
@@ -332,12 +356,6 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
-      '@aws-sdk/client-iam':
-        specifier: 3.1075.0
-        version: 3.1075.0
-      '@aws-sdk/client-lambda':
-        specifier: 3.1075.0
-        version: 3.1075.0
       '@smithy/node-http-handler':
         specifier: 4.8.2
         version: 4.8.2

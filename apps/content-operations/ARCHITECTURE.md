@@ -492,6 +492,13 @@ lifecycle generates its own bounded Compose document; the app no longer owns a s
 Compose topology. This does not use a paid asset-deployment feature or real AWS deployment.
 The lab is ephemeral; recreation discards data, and images remain cached after teardown.
 
+Finite service provisioning/reset also belongs to that private tooling. Content registers
+its resource configurations and grants in `src/lab/application-topology.ts` and captures
+prebuilt archive identities in `scripts/lab-profile.ts`. The launcher delegates ordered,
+ownership-checked provisioning/reset; application scenarios and sentinels stay app-owned.
+The private routing inventory is not the public workflow runtime's bindings document;
+Content's runtime/protocol migrations remain separate work.
+
 Docker socket access gives the emulator substantial privileges on the local Docker host.
 Use the trusted pinned image on a development machine or isolated runner, not as a sandbox
 for untrusted code. Do not mount real credential directories.

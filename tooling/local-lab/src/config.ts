@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { copyWorkflowJson } from "@jawstack/core";
+import { servicesSchema } from "./services-schema";
 
 export const localstackImage =
   "localstack/localstack:2026.10.0@sha256:aa5632e041ca54ff61a0a25e17b1c898b09a1eb7f611bfc05f73ef53b7266872";
@@ -51,6 +52,7 @@ export const profileSchema = z
         scheduleGroups: names,
       })
       .strict(),
+    services: servicesSchema.optional(),
   })
   .strict()
   .superRefine((p, ctx) => {
@@ -90,7 +92,7 @@ const fields = {
   instanceId: z.string().regex(/^[a-z][a-z0-9-]{0,15}$/),
   ownerId: z.uuid(),
   image: z.literal(localstackImage),
-  status: z.enum(["starting", "provisioning", "ready"]),
+  status: z.enum(["starting", "provisioning", "ready", "resetting"]),
   architecture: z.enum(["arm64", "x86_64"]),
   queueUrl: z.string().max(2048).optional(),
   streamArn: z.string().max(2048).optional(),
@@ -98,6 +100,7 @@ const fields = {
   capabilitiesVersion: z.literal(1).optional(),
   applicationVersion: z.literal(1).optional(),
   runtimeOwnershipVersion: z.literal(1).optional(),
+  routingVersion: z.literal(1).optional(),
 };
 export const legacyManifestSchema = z.object({ schemaVersion: z.literal(1), ...fields }).strict();
 export const currentManifestSchema = z

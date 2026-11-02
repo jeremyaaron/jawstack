@@ -14,7 +14,7 @@ import {
 import { proofResource } from "./resource";
 import { LabError, type LabConfig } from "./config";
 import type { LabClients } from "./clients";
-import { waitFor } from "./provision";
+import { waitFor } from "./lifecycle";
 import { proofArtifact } from "./artifact";
 
 export async function verifySpine(c: LabClients, config: LabConfig) {

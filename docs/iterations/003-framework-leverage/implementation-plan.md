@@ -2,7 +2,8 @@
 
 Status: reviewed; Phase 0 and baseline A/B are complete. The
 [baseline review](baseline-review.md) clears the prerequisite with explicit timing
-qualifications. Phases 1-8 are complete; Phases 9-14 and post A/B have not started. Based on the [PRD](prd.md) and
+qualifications. Phases 1-9 are complete;
+Phases 10-14 and post A/B have not started. Based on the [PRD](prd.md) and
 [technical design](technical-design.md); see [Phase 0 evidence](phase-0-evidence.md).
 
 ## Purpose
@@ -147,14 +148,14 @@ Planning approval does not authorize remote environment changes, secret setup or
 | ----- | -------------------------- | --------------------------------------------------------------- | -------- |
 | 0     | Measurement/tooling        | Frozen inventory, golden fixtures and baseline exercise packets | Complete |
 | 1     | Core                       | Typed records and normalized adapter-neutral commit plans       | Complete |
-| 2     | Core                       | Scoped command execution and atomic memory persistence          | Planned  |
-| 3     | Core                       | Durable failure collection, inspection and replay decisions     | Planned  |
-| 4     | Core                       | Validated delivery, bounded memory pump and public composition  | Planned  |
-| 5     | AWS runtime                | DynamoDB workflow storage and atomic recovery                   | Planned  |
-| 6     | AWS runtime                | SQS workflow handlers and safe public local composition         | Planned  |
-| 7     | AWS CDK                    | Opt-in collector topology and stable named bindings             | Planned  |
-| 8     | Shared lab                 | App-neutral ownership, startup and teardown                     | Planned  |
-| 9     | Shared lab/Content tooling | Finite provisioning/reset and Content lab migration             | Planned  |
+| 2     | Core                       | Scoped command execution and atomic memory persistence          | Complete |
+| 3     | Core                       | Durable failure collection, inspection and replay decisions     | Complete |
+| 4     | Core                       | Validated delivery, bounded memory pump and public composition  | Complete |
+| 5     | AWS runtime                | DynamoDB workflow storage and atomic recovery                   | Complete |
+| 6     | AWS runtime                | SQS workflow handlers and safe public local composition         | Complete |
+| 7     | AWS CDK                    | Opt-in collector topology and stable named bindings             | Complete |
+| 8     | Shared lab                 | App-neutral ownership, startup and teardown                     | Complete |
+| 9     | Shared lab/Content tooling | Finite provisioning/reset and Content lab migration             | Complete |
 | 10    | Content Operations         | Command/record migration with preserved publication authority   | Planned  |
 | 11    | Content Operations         | Shared delivery/recovery migration and protocol retirement      | Planned  |
 | 12    | Report Runs                | Complete headless memory/local consumer                         | Planned  |
@@ -452,6 +453,9 @@ sanitized evidence. Existing app lifecycle/regression tests remain valid.
 
 ## Phase 9: Finite Providers and Content Lab Migration
 
+Status: complete; see [Phase 9 evidence](phase-9-evidence.md). Shared finite providers,
+Content registration and the actual sentinel/reset/reprovision/teardown gate are verified.
+
 Depends on: Phase 8.
 
 Goal: make supported consumers declarative lab profiles rather than copied SDK provisioners.
@@ -668,7 +672,11 @@ scoped execution, atomic memory persistence and its clean release gate.
 [Phase 3 evidence](phase-3-evidence.md) records failure/recovery services, compatible
 memory storage and verification. [Phase 4 evidence](phase-4-evidence.md) records public
 memory composition, delivery/lifecycle, browser regression and installed-package proof.
-Later phase evidence is not asserted. Update
+[Phase 5 evidence](phase-5-evidence.md), [Phase 6 evidence](phase-6-evidence.md) and
+[Phase 7 evidence](phase-7-evidence.md) record AWS storage, local runtime and CDK boundaries.
+[Phase 8 evidence](phase-8-evidence.md) and [Phase 9 evidence](phase-9-evidence.md) record
+shared lab lifecycle/providers and actual Content reset/reprovision/teardown. Later phase
+evidence is not asserted. Update
 individual phase statuses and append dated observations rather than marking every row
 complete at the end. For each phase record:
 

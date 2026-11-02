@@ -15,19 +15,15 @@ import {
   ListObjectsV2Command,
 } from "@aws-sdk/client-s3";
 import { GetQueueAttributesCommand, GetQueueUrlCommand } from "@aws-sdk/client-sqs";
-import { GetFunctionCommand } from "@aws-sdk/client-lambda";
-import { ListTagsLogGroupCommand } from "@aws-sdk/client-cloudwatch-logs";
-import { DescribeEventBusCommand } from "@aws-sdk/client-eventbridge";
-import { GetRoleCommand } from "@aws-sdk/client-iam";
 import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
 import { workerIdempotencyKey } from "@jawstack/aws-runtime";
-import { assertOwned, labFunctions, LabError, localQueueUrl, type LabConfig } from "./config";
+import { assertOwned, LabError, localQueueUrl, type LabConfig, type LabManifest } from "./config";
 import type { LabClients } from "./clients";
-import { missing, waitFor } from "./lifecycle";
-import { preflightCapabilities, setSchedule } from "./capabilities";
+import { waitFor } from "./lifecycle";
+import { setSchedule } from "./capabilities";
 import { proofArtifact, putProofArtifact } from "./artifact";
 import { executeProof } from "./resource";
-import { inspectApplication } from "./application-topology";
+import { inspectServices } from "@jawstack/local-lab";
 
 async function getRecord(c: LabClients, config: LabConfig, PK: string, SK: string) {
   const result = await c.dynamo.send(
@@ -167,38 +163,11 @@ export async function verifyCapabilities(c: LabClients, config: LabConfig) {
   }
 }
 
-export async function assertResourcesAbsent(c: LabClients, config: LabConfig, ownerId: string) {
-  const application = await inspectApplication(c, config, ownerId);
-  if (Object.values(application).some((items) => items.length))
-    throw new LabError("Owned application resources remain after cleanup.");
-  const capabilities = await preflightCapabilities(c, config, ownerId);
-  if (
-    capabilities.bucket ||
-    capabilities.group ||
-    capabilities.role ||
-    capabilities.dlqUrl ||
-    capabilities.schedule
-  )
-    throw new LabError("Owned capability resources remain after cleanup.");
-  const requests: Array<() => Promise<unknown>> = [
-    () => c.dynamo.send(new DescribeTableCommand({ TableName: config.table })),
-    () => c.events.send(new DescribeEventBusCommand({ Name: config.bus })),
-    () => c.iam.send(new GetRoleCommand({ RoleName: config.role })),
-    () => c.sqs.send(new GetQueueUrlCommand({ QueueName: config.queue })),
-    ...labFunctions(config).map(
-      ({ name }) =>
-        () =>
-          c.lambda.send(new GetFunctionCommand({ FunctionName: name })),
-    ),
-    ...labFunctions(config).map(
-      ({ name }) =>
-        () =>
-          c.logs.send(new ListTagsLogGroupCommand({ logGroupName: `/aws/lambda/${name}` })),
-    ),
-  ];
-  for (const request of requests) {
-    if (await missing(request)) throw new LabError("Owned spine resources remain after cleanup.");
-  }
+export async function assertResourcesAbsent(c: LabClients, manifest: LabManifest) {
+  const { streams: _streams, ...inventory } = await inspectServices(c, manifest, "reset");
+  void _streams;
+  if (Object.values(inventory).some((items) => items.length))
+    throw new LabError("Owned resources remain after cleanup.");
 }
 
 export async function verifySentinelReset(
@@ -206,6 +175,7 @@ export async function verifySentinelReset(
   config: LabConfig,
   ownerId: string,
   reset: () => Promise<void>,
+  getManifest: () => LabManifest,
 ) {
   const token = randomUUID();
   const tableName = `${config.project}-sentinel-${token.slice(0, 8)}`;
@@ -250,7 +220,7 @@ export async function verifySentinelReset(
       }),
     );
     await reset();
-    await assertResourcesAbsent(c, config, ownerId);
+    await assertResourcesAbsent(c, getManifest());
     await check();
     return {
       table: tableName,

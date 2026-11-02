@@ -9,13 +9,12 @@ import {
   selectRuntime,
   type LabManifest,
 } from "../src/lab/config";
-import { createClients, destroyClients } from "../src/lab/clients";
-import { cleanupSpine, provisionSpine } from "../src/lab/provision";
+import { createClients, destroyClients, requestFailure } from "@jawstack/local-lab/clients";
 import { verifySpine } from "../src/lab/verify";
 import { verifyApi } from "../src/lab/verify-api";
 import { verifyCapabilities, verifySentinelReset } from "../src/lab/verify-capabilities";
 import { buildLab, buildVerification } from "./build-lab";
-import { cleanupRuntimes, inspectRuntimes, runtimeProfile } from "../src/lab/containers";
+import { inspectRuntimes, runtimeProfile } from "../src/lab/containers";
 import { verifyRuntimeCleanup } from "../src/lab/verify-runtime-cleanup";
 import { verifyDelivery } from "../src/lab/verify-delivery";
 import { verifyIsolation } from "../src/lab/verify-isolation";
@@ -77,17 +76,17 @@ async function main() {
       return;
     }
     await session.ready();
-    const clients = createClients(config);
+    const clients = createClients();
     const reset = async () => {
-      await session.inspect();
-      await cleanupSpine(clients, config, manifest);
-      await cleanupRuntimes(docker, config, manifest.ownerId);
-      manifest = { ...manifest, status: "starting", mappings: [] };
-      delete manifest.queueUrl;
-      delete manifest.streamArn;
-      delete manifest.capabilitiesVersion;
-      delete manifest.applicationVersion;
-      delete manifest.runtimeOwnershipVersion;
+      await session.reset();
+      manifest = session.manifest;
+    };
+    const provision = async () => {
+      await session.provision();
+      manifest = session.manifest;
+      manifest.capabilitiesVersion = 1;
+      manifest.applicationVersion = 1;
+      manifest.runtimeOwnershipVersion = 1;
       await save();
     };
     try {
@@ -100,7 +99,7 @@ async function main() {
           throw new LabError(
             "Rebuilt application archives differ from the live profile; down/recreate the lab.",
           );
-        await provisionSpine(clients, config, manifest, save);
+        await provision();
         console.log(
           "Owned application and feasibility spine provisioned; application schedules enabled.",
         );
@@ -160,14 +159,21 @@ async function main() {
           evidence.capabilities = await verifyCapabilities(clients, config);
           console.log("Checking ownership-safe reset with an unrelated-resource sentinel...");
           evidence.cleanup = {
-            ...(await verifySentinelReset(clients, config, manifest.ownerId, reset)),
+            ...(await verifySentinelReset(
+              clients,
+              config,
+              manifest.ownerId,
+              reset,
+              () => manifest,
+            )),
             lambdaContainersAfterReset: 0,
           };
-          await provisionSpine(clients, config, manifest, save);
+          await provision();
           evidence.reprovisionProof = await verifySpine(clients, config);
           evidence.reprovisionApplication = await verifyApi(config);
         } catch (error) {
           failure = error;
+          evidence.requestFailure = requestFailure(error);
           evidence.error =
             error instanceof LabError
               ? error.message

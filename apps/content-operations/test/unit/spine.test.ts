@@ -2,9 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createInMemoryPersistence, executeCommand, TestAuthProvider } from "@jawstack/core";
 import { buildCommandTransactWriteItems } from "@jawstack/aws-runtime";
 import { proofResource } from "../../src/lab/resource";
-import { createLabConfig, localstackImage, type LabManifest } from "../../src/lab/config";
-import type { LabClients } from "../../src/lab/clients";
-import { cleanupSpine, missing, provisionSpine, waitFor } from "../../src/lab/provision";
+import { missing, waitFor } from "../../src/lab/provision";
 
 describe("transactional spine harness", () => {
   it("uses real public command contracts and atomically commits every proof record", async () => {
@@ -74,28 +72,6 @@ describe("transactional spine harness", () => {
     expect(memory.store.outbox).toHaveLength(0);
   });
 
-  it("cleanup preflights ownership before performing any deletes", async () => {
-    const calls: string[] = [];
-    const send = vi.fn(async (command: { constructor: { name: string } }) => {
-      calls.push(command.constructor.name);
-      if (command.constructor.name === "GetFunctionCommand")
-        return { Tags: { "jawstack:owner": "somebody-else" } };
-      return {};
-    });
-    const clients = { lambda: { send } } as unknown as LabClients;
-    const manifest: LabManifest = {
-      schemaVersion: 1,
-      instanceId: "dev",
-      ownerId: "7dc55154-f37c-499a-90a6-841fbc0cbe1c",
-      image: localstackImage,
-      status: "ready",
-      architecture: "arm64",
-      mappings: [],
-    };
-    await expect(cleanupSpine(clients, createLabConfig(), manifest)).rejects.toThrow("not owned");
-    expect(calls).toEqual(["GetFunctionCommand"]);
-  });
-
   it("does not swallow transport failures as missing resources", async () => {
     await expect(
       missing(async () => {
@@ -107,100 +83,6 @@ describe("transactional spine harness", () => {
         throw new Error("transport failure");
       }),
     ).rejects.toThrow("transport failure");
-  });
-
-  it("checks late ownership failures before deleting earlier owned resources", async () => {
-    const ownerId = "7dc55154-f37c-499a-90a6-841fbc0cbe1c";
-    const send = vi.fn(async (command: { constructor: { name: string } }) => {
-      switch (command.constructor.name) {
-        case "GetFunctionCommand":
-          return { Tags: { "jawstack:owner": ownerId } };
-        case "ListTagsLogGroupCommand":
-          return { tags: { "jawstack:owner": ownerId } };
-        case "DescribeTableCommand":
-          return { Table: { TableArn: "table-arn" } };
-        case "ListTagsOfResourceCommand":
-          return { Tags: [{ Key: "jawstack:owner", Value: "foreign" }] };
-        default:
-          throw new Error("Unexpected SDK call.");
-      }
-    });
-    const clients = { lambda: { send }, logs: { send }, dynamo: { send } } as unknown as LabClients;
-    const manifest: LabManifest = {
-      schemaVersion: 1,
-      instanceId: "dev",
-      ownerId,
-      image: localstackImage,
-      status: "ready",
-      architecture: "arm64",
-      mappings: [],
-    };
-    await expect(cleanupSpine(clients, createLabConfig(), manifest)).rejects.toThrow("not owned");
-    expect(
-      send.mock.calls.every(([command]) => !command.constructor.name.startsWith("Delete")),
-    ).toBe(true);
-  });
-
-  it("does not adopt an existing queue through idempotent CreateQueue", async () => {
-    const send = vi.fn(async (command: { constructor: { name: string } }) => {
-      if (command.constructor.name === "GetQueueUrlCommand") return { QueueUrl: "existing" };
-      throw Object.assign(new Error(), { name: "ResourceNotFoundException" });
-    });
-    const clients = Object.fromEntries(
-      ["lambda", "logs", "dynamo", "events", "iam", "sqs"].map((name) => [name, { send }]),
-    ) as unknown as LabClients;
-    const manifest: LabManifest = {
-      schemaVersion: 1,
-      instanceId: "dev",
-      ownerId: "7dc55154-f37c-499a-90a6-841fbc0cbe1c",
-      image: localstackImage,
-      status: "starting",
-      architecture: "arm64",
-      mappings: [],
-    };
-    await expect(
-      provisionSpine(clients, createLabConfig(), manifest, async () => undefined),
-    ).rejects.toThrow("already exists");
-    expect(
-      send.mock.calls.every(([command]) => !command.constructor.name.startsWith("Create")),
-    ).toBe(true);
-    expect(manifest.status).toBe("starting");
-  });
-
-  it("refuses unexpected event mappings before any deletion", async () => {
-    const ownerId = "7dc55154-f37c-499a-90a6-841fbc0cbe1c";
-    const send = vi.fn(async (command: { constructor: { name: string } }) => {
-      switch (command.constructor.name) {
-        case "GetFunctionCommand":
-          return { Tags: { "jawstack:owner": ownerId } };
-        case "ListTagsLogGroupCommand":
-          return { tags: { "jawstack:owner": ownerId } };
-        case "ListEventSourceMappingsCommand":
-          return {
-            EventSourceMappings: [{ UUID: "unexpected", EventSourceArn: "foreign-source" }],
-          };
-        default:
-          throw Object.assign(new Error(), { name: "ResourceNotFoundException" });
-      }
-    });
-    const clients = Object.fromEntries(
-      ["lambda", "logs", "dynamo", "events", "iam", "sqs"].map((name) => [name, { send }]),
-    ) as unknown as LabClients;
-    const manifest: LabManifest = {
-      schemaVersion: 1,
-      instanceId: "dev",
-      ownerId,
-      image: localstackImage,
-      status: "ready",
-      architecture: "arm64",
-      mappings: [],
-    };
-    await expect(cleanupSpine(clients, createLabConfig(), manifest)).rejects.toThrow(
-      "Unexpected event source mapping",
-    );
-    expect(
-      send.mock.calls.every(([command]) => !command.constructor.name.startsWith("Delete")),
-    ).toBe(true);
   });
 
   it("bounds polling and succeeds without a fixed readiness sleep", async () => {

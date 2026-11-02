@@ -324,6 +324,7 @@ export async function verifyDelivery(clients: LabClients, config: LabConfig, own
     const crashFact = await committedFact(crashId, "contentItem.publicationRequested");
     const terminalFact = await committedFact(terminalId, "contentItem.publicationRequested");
     const notificationFact = await committedFact(notificationId, "contentItem.reviewRequested");
+    console.log("Waiting for the verification worker's transient-failure receipt...");
     await poll("real transient Lambda failure", async () =>
       (await receipts(transientId, "publishContent", "before")).length ? true : undefined,
     );
@@ -332,6 +333,7 @@ export async function verifyDelivery(clients: LabClients, config: LabConfig, own
         !(await marker("publishContent", transientFact.eventId)),
       "transient failure falsely completed",
     );
+    console.log("Waiting for the verification publisher's object-crash receipt...");
     await poll("real crash after S3 object write", async () =>
       (await receipts(crashId, "publishContent", "afterObjectWrite")).length ? true : undefined,
     );
@@ -615,6 +617,12 @@ export async function verifyDelivery(clients: LabClients, config: LabConfig, own
       ],
       standardCodeRestored: true,
     };
+  } catch (error) {
+    console.error(
+      "Delivery proof failed before archive restoration:",
+      error instanceof LabError ? error.message : error instanceof Error ? error.name : "unknown",
+    );
+    throw error;
   } finally {
     try {
       await api.close();

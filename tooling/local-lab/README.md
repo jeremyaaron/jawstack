@@ -6,7 +6,7 @@ ordinary unit tests require no Docker, token, service listener or real AWS acces
 Root tests run one package at a time while retaining each package's file-level workers,
 avoiding multiple full Vitest pools competing on busy developer machines and CI runners.
 
-## Phase 8 Surface
+## Surface
 
 - Bounded, own-data profiles and versioned manifests; immutable profile/archive identity.
 - Explicit Hobby/token startup using the existing pinned image/digest and fixed local port.
@@ -14,10 +14,12 @@ avoiding multiple full Vitest pools competing on busy developer machines and CI 
 - Running/exited/already-removing Lambda runtime reconciliation and exact-ID teardown.
 - Shared tag/mapping preflight, bounded missing-resource/polling/deletion helpers.
 - Public `@jawstack/aws-runtime/local` transport policy, not another SDK destination guard.
+- Finite DynamoDB/stream, EventBridge, SQS, Lambda/roles/logs and S3/Scheduler providers.
+- Ownership/configuration/archive audits, ordered reset and verified routing publication.
 
-Service providers and provision/reset still live in Content Operations until Phase 9.
-There is no shared provision/reset command, generic cloud DSL, arbitrary shell/SDK callback
-in a profile, automatic deployment, asset-upload service or production credential provider.
+Content Operations uses these providers through its data profile and thin launcher. There
+is no generic cloud DSL, arbitrary shell/SDK callback in a profile, automatic deployment,
+asset-upload service or production credential provider.
 The SDK callbacks in the internal mapping-deletion helper are provider/test dependencies,
 not profile configuration or an authorization boundary.
 
@@ -25,9 +27,10 @@ not profile configuration or an authorization boundary.
 
 Imported profile modules must be pure. Build ZIPs explicitly, then capture identity at the
 operation boundary. A profile's finite inventory contains project-prefixed tables, buses,
-queues, roles, buckets, schedule groups and function handler/archive declarations. Phase 8
-uses this as the lifecycle identity envelope, not as a complete provisioning specification;
-Phase 9 will add the finite service configurations and workflow-derived subscriptions.
+queues, roles, buckets, schedule groups and function handler/archive declarations. Optional
+`services` supplies the exact finite configurations, grants, rules, mappings and schedules.
+Inventory and references must agree; unknown fields, unsafe grants/environment settings,
+unsupported bounds and invalid role/queue references fail before provisioning/startup.
 Profile changes require owned down/recreation, not silent live reconfiguration.
 
 ```ts
@@ -78,7 +81,7 @@ Only one lab can bind `127.0.0.1:4566`; never run over another application's lis
 ## Inspect and Down
 
 Open `operation: "inspect"` with the same profile to verify unchanged archives and call
-`ready()` before app-owned provisioning/reset. The transitional `save()` persists only a
+`ready()` before application proof work. `save()` persists only a
 valid manifest whose owner/profile identity still matches the session. A per-state-file
 exclusive lock prevents cooperating launchers from mutating the same lab concurrently.
 Always `close()` the session. A crashed process can leave a lock; investigate the exact
@@ -116,6 +119,56 @@ the shared package imports no app. Unknown/unprovable legacy inventories remain 
 An old untagged network requires an owned attached-container proof in this session. An
 empty legacy network is not adopted just because its Compose labels match.
 New acceptance uses version-2 manifests with profile hashes and timestamped Hobby attestation.
+
+## Provision and Reset
+
+For a profile with `services`, open an `inspect` session using the same profile and call
+`session.provision()` or `session.reset()`, then always `close()` it. These operations create
+and dispose their own guarded host SDK clients; neither reads a token file or needs a token.
+See [the finite schema](src/services-schema.ts),
+[Content's actual data registration](../../apps/content-operations/src/lab/application-topology.ts)
+and [asset capture](../../apps/content-operations/scripts/lab-profile.ts).
+
+Provisioning requires `starting`, immutable verified ZIPs and a fully vacant inventory. A
+named collision is not adopted even if its owner tag happens to match. The order is private
+bucket/table/stream, bus/queues, roles/logs/functions, rules/mappings and finally schedules.
+Taggable resources receive owner/lab/profile tags; mappings and schedules are proven through
+their owned endpoints/groups and exact declared targets. Optional `workflowHash` adds the
+workflow ownership tag needed by the public local workflow runtime; callers obtain it from
+their shared owned definition. Workflow-enabled service tags use the lab ID, matching the
+public runtime contract; the transitional Content profile without a workflow hash retains
+its project-valued service tag. Docker ownership labels always use the project.
+Named `ownerEnvironmentKey` and `profileEnvironmentKey`
+inject late-bound identity, not secrets or a credential provider.
+
+Before readiness, providers verify physical identity, tags, function archive hashes,
+environment, concurrency, tables, queues, rules/targets, policies, mappings, retention and
+schedule targets. Readiness is not IAM enforcement or production tuning. Source visibility
+must cover six function timeouts; supported memory/concurrency stay 256 MiB/two. Schedules
+use the existing rate-one-minute profile. No new provider is needed to register another
+supported consumer; its functions/assets, subscriptions and explicit grants are data.
+
+Only verified success emits `<manifest-path>.routing.json` with `schemaVersion: 1` and
+`kind: "lab-services"`. It contains physical resource identities, not asset paths, secrets,
+SDK options or callbacks. This lifecycle inventory is **not** the public local runtime's
+`LocalWorkflowBindings` document; runtime binding/consumer migrations remain separate.
+Repeat provisioning refuses without discarding valid routing. Reset invalidates owned
+routing only after complete preflight, checkpoints `resetting`, removes schedules/mappings
+before functions and source queues before DLQs, reconciles warm runtimes, then verifies
+absence before saving `starting`. Unrelated resources are not discovered for deletion.
+
+Every listing has finite page/item budgets and repeated/missing-cursor checks. Bucket object
+keys are gathered before the first deletion; versioned buckets are refused. Partial reset
+can resume, but remaining resources must still have matching ownership/configuration.
+An untagged create/tag crash window stays refused rather than being adopted; retain the
+manifest and investigate or use ownership-proven whole-emulator down. Errors retain state
+and never publish new routing. A wrong-owner routing file is not overwritten or removed.
+SDK failures carry only client/command diagnostic identity; raw responses are not logged.
+
+Earlier lifecycle-only schema-2 profiles remain usable for owned down, not in-place service
+plan adoption. Changed profiles/archives require down/recreation. Legacy Content runtime
+adapters/protocols remain app-owned until their scheduled migrations; the tooling imports
+none of them. The app still owns its proof scenarios, schedule test inputs and sentinels.
 
 ## Live Lifecycle Check
 

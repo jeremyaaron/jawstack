@@ -6,13 +6,7 @@ import { createLabConfig, localQueueUrl } from "../../src/lab/config";
 import type { LabClients } from "../../src/lab/clients";
 import { putProofArtifact } from "../../src/lab/artifact";
 import { collectFailure, handleProofFact } from "../../src/lab/handlers";
-import {
-  cleanupCapabilities,
-  functionArn,
-  preflightCapabilities,
-  schedulerRoleArn,
-  setSchedule,
-} from "../../src/lab/capabilities";
+import { functionArn, schedulerRoleArn, setSchedule } from "../../src/lab/capabilities";
 import { verifyCapabilities } from "../../src/lab/verify-capabilities";
 
 const config = createLabConfig();
@@ -204,37 +198,6 @@ describe("feasibility capabilities", () => {
         config.dlq,
       ),
     ).toThrow();
-  });
-
-  it("refuses a foreign bucket before any mutation", async () => {
-    const send = vi.fn(async (command: { constructor: { name: string } }) => {
-      if (command.constructor.name === "HeadBucketCommand") return {};
-      if (command.constructor.name === "GetBucketTaggingCommand")
-        return { TagSet: [{ Key: "jawstack:owner", Value: "foreign" }] };
-      throw new Error("Unexpected mutation");
-    });
-    await expect(
-      preflightCapabilities({ s3: { send } } as unknown as LabClients, config, "owner"),
-    ).rejects.toThrow("not owned");
-    expect(send).toHaveBeenCalledTimes(2);
-  });
-
-  it("bounds cleanup pagination even when the service repeats empty pages", async () => {
-    const send = vi.fn(async () => ({
-      IsTruncated: true,
-      NextContinuationToken: "repeat",
-      Contents: [],
-    }));
-    await expect(
-      cleanupCapabilities({ s3: { send } } as unknown as LabClients, config, {
-        bucket: true,
-        dlqUrl: undefined,
-        role: false,
-        group: false,
-        schedule: false,
-      }),
-    ).rejects.toThrow("repeats a cursor");
-    expect(send).toHaveBeenCalledTimes(2);
   });
 
   it("does not enable an unexpected scheduler target", async () => {

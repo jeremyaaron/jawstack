@@ -8,7 +8,8 @@
     "./config": "./src/config.ts",
     "./containers": "./src/containers.ts",
     "./lifecycle": "./src/lifecycle.ts",
-    "./ownership": "./src/ownership.ts"
+    "./ownership": "./src/ownership.ts",
+    "./clients": "./src/clients.ts"
   },
   "scripts": {
     "build": "tsc --noEmit -p tsconfig.json",
@@ -18,14 +19,20 @@
     "verify:lifecycle": "tsx scripts/verify-lifecycle.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-dynamodb": "3.1075.0",
+    "@aws-sdk/client-eventbridge": "3.1075.0",
+    "@aws-sdk/client-iam": "3.1075.0",
+    "@aws-sdk/client-lambda": "3.1075.0",
+    "@aws-sdk/client-cloudwatch-logs": "3.1075.0",
+    "@aws-sdk/client-sqs": "3.1075.0",
+    "@aws-sdk/client-s3": "3.1075.0",
+    "@aws-sdk/client-scheduler": "3.1075.0",
     "@jawstack/aws-runtime": "workspace:*",
     "@jawstack/core": "workspace:*",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@smithy/node-http-handler": "4.8.2",
-    "@aws-sdk/client-lambda": "3.1075.0",
-    "@aws-sdk/client-iam": "3.1075.0",
     "fflate": "^0.8.2",
     "tsx": "^4.20.6",
     "vitest": "^3.0.0"

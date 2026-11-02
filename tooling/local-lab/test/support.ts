@@ -9,6 +9,7 @@ import {
   parseProfile,
   profileHash,
   type LabProfile,
+  type LabManifest,
 } from "../src/index";
 import type { DockerCommand } from "../src/containers";
 
@@ -46,7 +47,7 @@ export async function fixture(label = "first") {
     clean: () => rm(root, { recursive: true, force: true }),
   };
 }
-export function manifest(profile: LabProfile) {
+export function manifest(profile: LabProfile): Extract<LabManifest, { schemaVersion: 2 }> {
   return {
     schemaVersion: 2 as const,
     instanceId: profile.instanceId,

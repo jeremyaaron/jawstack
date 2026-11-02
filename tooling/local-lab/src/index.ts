@@ -5,3 +5,7 @@ export * from "./ownership";
 export * from "./profile";
 export * from "./session";
 export { createLabTransport } from "./transport";
+export { createClients, destroyClients, type LabClients } from "./clients";
+export { inspectServices } from "./preflight";
+export { serviceContext, arn } from "./service-plan";
+export type { ServicePlan } from "./services-schema";

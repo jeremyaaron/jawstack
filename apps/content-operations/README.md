@@ -105,8 +105,11 @@ owned by [private local-lab tooling](../../tooling/local-lab/README.md).
 Startup builds the four lab archives and records their paths/hashes in a version-2 manifest.
 Changed profiles/archives require owned down/recreation; old version-1 manifests support
 down only. Set a nondefault lab ID in the command environment, not just the token file.
-Only `local:up` reads `.env.localstack`; provision/reset/down need no token. Service
-provision/reset remain app-owned until the next extraction step.
+Only `local:up` reads `.env.localstack`; provision/reset/down need no token. Creation,
+ownership/configuration checks, routing emission and reset now use shared finite providers;
+the app owns its data profile, explicit grants, assets and actual proof scenarios.
+Reset invalidates routing and checkpoints progress before deletion so partial cleanup can
+resume safely. A changed archive/profile still requires owned down/recreation.
 
 ### Service Matrix
 
