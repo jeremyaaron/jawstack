@@ -21,7 +21,8 @@ export { workflowRecordKeys } from "./workflow/keys";
 export type { WorkflowRecordKey, WorkflowCommandScope } from "./workflow/keys";
 export { workflowCommitLimits } from "./workflow/validation";
 export type { WorkflowReadonly } from "./workflow/validation";
-export { defineWorkflow } from "./workflow/definition";
+export { defineWorkflow, getWorkflowManifest } from "./workflow/definition";
+export { jsonCopy as copyWorkflowJson } from "./workflow/validation";
 export type {
   WorkflowDefinition,
   WorkflowManifest,

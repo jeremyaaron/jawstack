@@ -4,6 +4,7 @@
     "experimentalDecorators": true,
     "lib": ["ES2022", "DOM"],
     "paths": {
+      "@jawstack/aws-runtime/local": ["../../packages/aws-runtime/src/local.ts"],
       "@jawstack/angular": ["../../packages/angular/src/index.ts"],
       "@jawstack/core": ["../../packages/core/src/index.ts"],
       "@jawstack/aws-runtime": ["../../packages/aws-runtime/src/index.ts"],

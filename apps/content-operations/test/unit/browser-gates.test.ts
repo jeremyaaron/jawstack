@@ -36,12 +36,19 @@ describe("browser and integration gate boundaries", () => {
     const config = JSON.parse(await readFile(configUrl, "utf8")) as {
       compilerOptions: { paths: Record<string, string[]> };
     };
+    expect(config.compilerOptions.paths).toHaveProperty("@jawstack/aws-runtime/local");
     for (const [name, paths] of Object.entries(config.compilerOptions.paths)) {
       expect(paths).toHaveLength(1);
       const source = fileURLToPath(new URL(paths[0]!, configUrl));
-      expect(source).toMatch(/[/\\]packages[/\\][^/\\]+[/\\]src[/\\]index\.ts$/);
+      if (name === "@jawstack/aws-runtime/local")
+        expect(source).toBe(
+          fileURLToPath(new URL("../../../../packages/aws-runtime/src/local.ts", import.meta.url)),
+        );
+      else expect(source).toMatch(/[/\\]packages[/\\][^/\\]+[/\\]src[/\\]index\.ts$/);
       expect(unitConfig.resolve?.alias).toMatchObject({ [name]: source });
     }
+    const local = await import("@jawstack/aws-runtime/local");
+    expect(typeof local.createLocalWorkflow).toBe("function");
   });
   it("separates owned memory/local ports and rejects unsafe settings", () => {
     expect(unitConfig.test?.include).toEqual(["test/unit/**/*.test.ts"]);

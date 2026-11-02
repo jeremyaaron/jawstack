@@ -293,7 +293,9 @@ importers:
       '@jawstack/core':
         specifier: workspace:*
         version: link:../core
-    devDependencies:
+      '@smithy/node-http-handler':
+        specifier: 4.8.2
+        version: 4.8.2
       zod:
         specifier: ^4.4.3
         version: 4.4.3

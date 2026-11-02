@@ -4,6 +4,7 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "paths": {
+      "@jawstack/aws-runtime/local": ["./packages/aws-runtime/src/local.ts"],
       "@jawstack/core": ["./packages/core/src/index.ts"]
     },
     "lib": ["ES2022"],

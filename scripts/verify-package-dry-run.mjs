@@ -48,6 +48,9 @@ function verifyPackage(packageDirectory) {
       requiredFiles.push(binPath.replace(/^\.\//u, ""));
     }
   }
+  if (packageJson.name === "@jawstack/aws-runtime") {
+    requiredFiles.push("dist/local.js", "dist/local.d.ts");
+  }
 
   if (packageJson.name === "create-jawstack") {
     requiredFiles.push(

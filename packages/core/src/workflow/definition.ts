@@ -94,6 +94,9 @@ export function workflowDefinition(input: WorkflowDefinition) {
     );
   return value;
 }
+export function getWorkflowManifest(input: WorkflowDefinition): WorkflowManifest {
+  return workflowDefinition(input).manifest;
+}
 export function workflowDefinitionError(message: string): never {
   throw new JawStackDefinitionError("workflow.definition", message);
 }

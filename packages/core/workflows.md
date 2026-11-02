@@ -279,4 +279,10 @@ command roles/emissions, versions, subscriptions, policies and numeric bounds, n
 or function bodies. It is configuration identity, not an authentication secret or proof of
 equivalent code; deployment artifacts need their own digests. The complete memory adapter
 is shipped here; `@jawstack/aws-runtime` now ships `createDynamoWorkflow` against these
-same contracts. Strict AWS transport binding remains separate planned work.
+same contracts. Its `createWorkflowSqsHandlers` adds strict whole-batch transport binding;
+the explicit `/local` subpath supplies guarded clients and owned-table startup.
+
+`getWorkflowManifest(definition)` checks that a declaration was produced by this core
+instance before returning its immutable manifest. Adapter configuration may use
+`copyWorkflowJson(value, maximumBytes?)` for the same detached finite JSON/depth/node/byte
+checks without constructing storage. Neither helper performs I/O or grants authorization.

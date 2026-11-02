@@ -3,6 +3,10 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   resolve: {
     alias: {
+      "@jawstack/aws-runtime/local": new URL(
+        "../../packages/aws-runtime/src/local.ts",
+        import.meta.url,
+      ).pathname,
       "@jawstack/angular": new URL("../../packages/angular/src/index.ts", import.meta.url).pathname,
       "@jawstack/aws-cdk": new URL("../../packages/aws-cdk/src/index.ts", import.meta.url).pathname,
       "@jawstack/aws-runtime": new URL("../../packages/aws-runtime/src/index.ts", import.meta.url)

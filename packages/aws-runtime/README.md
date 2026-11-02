@@ -26,6 +26,12 @@ example, strong read/expiry/error semantics, ownership, marker limitations and t
 boundaries. There is no memory pump on the Dynamo runtime. Existing APIs below retain
 their legacy defaults; adopting the workflow factory is explicit.
 
+`createWorkflowSqsHandlers` binds exact source/DLQ ARNs and validates/authorizes the
+complete declared batch before markers/effects. The intentional `/local` subpath exports
+`parseLocalWorkflowBindings`, `createLocalAwsTransport` and `createLocalWorkflow` for
+bounded routing, final-destination guards and owned-table startup. See the shipped
+[local/SQS recipe](local.md); these APIs do not provision or migrate application resources.
+
 ## Paged Queries
 
 `DynamoDbRepository` implements core's `QueryRepository` in addition to its existing

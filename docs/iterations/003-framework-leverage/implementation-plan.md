@@ -2,7 +2,7 @@
 
 Status: reviewed; Phase 0 and baseline A/B are complete. The
 [baseline review](baseline-review.md) clears the prerequisite with explicit timing
-qualifications. Phases 1-5 are complete; Phases 6-14 and post A/B have not started. Based on the [PRD](prd.md) and
+qualifications. Phases 1-6 are complete; Phases 7-14 and post A/B have not started. Based on the [PRD](prd.md) and
 [technical design](technical-design.md); see [Phase 0 evidence](phase-0-evidence.md).
 
 ## Purpose
@@ -361,6 +361,9 @@ an isolated real local-table transaction probe for rollback, conditional replace
 strong replay, with owned setup/cleanup. This probe is not full stream/delivery acceptance.
 
 ## Phase 6: SQS Binding and Public Local Runtime
+
+Status: complete; see [Phase 6 evidence](phase-6-evidence.md). Strict bindings and the
+compiled public local runtime passed; actual Lambda/SQS delivery remains a later gate.
 
 Depends on: Phase 5.
 

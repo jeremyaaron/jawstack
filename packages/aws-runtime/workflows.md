@@ -126,8 +126,8 @@ Supply a configured, bounded SDK `DynamoDBClient` (structurally compatible with
 `DynamoDbClientLike`) and an explicitly selected dedicated table. There is no default
 endpoint, region, credential provider, table selection or implicit network construction.
 For LocalStack use an explicit dummy-credential client with a final-destination guard;
-the existing Content Operations lab has that guard. The reusable public local client and
-strict SQS binding are later iteration phases, not exports available in this recipe yet.
+the public `@jawstack/aws-runtime/local` factory supplies that guard and owned-table checks.
+See the [local/SQS recipe](local.md) for the supported configuration and exact queue binding.
 
 The table needs string `PK`/`SK` keys. Command storage itself needs no secondary index,
 stream or TTL configuration. An outbox dispatcher additionally needs the existing outbox
@@ -151,7 +151,7 @@ its collector calls `delivery.collect`. Authorized operators inspect through
 `operations.inspect(auth)` and request `operations.replay(id, auth, requestUuid)`.
 The replay transaction appends history and the create-only outbox fact together; an
 external dispatcher/transport must actually deliver it. These calls are not public HTTP
-endpoints and do not themselves provide SQS batch/queue-origin validation.
+endpoints. Use `createWorkflowSqsHandlers` for whole-batch validation and exact queue binding.
 
 The same core rules apply: exact registered schemas/source/identity, scoped normalized
 idempotency, authorization before cached results and recovery markers, bounded winner
