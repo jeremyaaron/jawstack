@@ -42,8 +42,9 @@ function invalid(props: JawStackResourceWorkflowAppProps) {
 describe("opt-in recoverable infrastructure", () => {
   it("preserves the complete pre-change no-opt-in template, not just resource counts/IDs", () => {
     const h = synth(legacyProps(), "RecoveryBaseline");
+    // Frozen CDK output is test data, not an editable deployment template.
     const baseline = JSON.parse(
-      readFileSync(new URL("./fixtures/no-recovery-template.json", import.meta.url), "utf8"),
+      readFileSync(new URL("./fixtures/no-recovery-template.snapshot", import.meta.url), "utf8"),
     );
     expect(h.template().toJSON()).toEqual(baseline);
     expect(Object.keys(h.workflow.collectorFunctionsByName)).toEqual([]);

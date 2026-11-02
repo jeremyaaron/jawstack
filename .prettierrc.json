@@ -1,5 +1,11 @@
 {
   "printWidth": 100,
   "semi": true,
-  "trailingComma": "all"
+  "trailingComma": "all",
+  "overrides": [
+    {
+      "files": "packages/aws-cdk/test/fixtures/*.snapshot",
+      "options": { "parser": "json" }
+    }
+  ]
 }
