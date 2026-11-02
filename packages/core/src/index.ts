@@ -21,6 +21,42 @@ export { workflowRecordKeys } from "./workflow/keys";
 export type { WorkflowRecordKey, WorkflowCommandScope } from "./workflow/keys";
 export { workflowCommitLimits } from "./workflow/validation";
 export type { WorkflowReadonly } from "./workflow/validation";
+export { defineWorkflow } from "./workflow/definition";
+export type {
+  WorkflowDefinition,
+  WorkflowManifest,
+  DefineWorkflowInput,
+  WorkflowEventDefinition,
+  WorkflowConsumerPolicy,
+} from "./workflow/definition";
+export { createWorkflowRuntime } from "./workflow/runtime";
+export type {
+  WorkflowRuntime,
+  WorkflowServices,
+  WorkflowRuntimeOptions,
+  WorkflowStorage,
+  WorkflowStorageSpec,
+  WorkflowStorageFactory,
+  WorkflowRecordRow,
+  WorkflowConsumerBinding,
+  WorkflowDeliveryEvent,
+} from "./workflow/runtime";
+export { createMemoryWorkflow } from "./workflow/memory-workflow";
+export type { MemoryWorkflow, MemoryWorkflowOptions } from "./workflow/memory-workflow";
+export type { WorkflowMarkerStore, WorkflowDeliveryResult } from "./workflow/delivery";
+export type {
+  WorkflowDrainResult,
+  WorkflowDrainUntilIdleResult,
+  WorkflowDriver,
+} from "./workflow/pump";
+export type { WorkflowResultValidator } from "./workflow/command-runtime";
+export type { WorkflowOperationsAuthorizer } from "./workflow/failures";
+export type {
+  WorkflowFailureStore,
+  FailureRecord as WorkflowFailureRecord,
+  FailureSummary as WorkflowFailureSummary,
+  FailureResolution as WorkflowFailureResolution,
+} from "./workflow/failure-records";
 
 export const packageName = "@jawstack/core";
 

@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { JawStackRuntimeError } from "../index";
 
-const validationContext = new AsyncLocalStorage<boolean>();
+const validationContext = /* @__PURE__ */ new AsyncLocalStorage<boolean>();
 
 export function assertWorkflowWritable(): void {
   if (validationContext.getStore())

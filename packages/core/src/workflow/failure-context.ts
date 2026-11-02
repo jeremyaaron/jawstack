@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { JawStackRuntimeError } from "../index";
 import { assertWorkflowWritable } from "./command-context";
 
-const reconciling = new AsyncLocalStorage<boolean>();
+const reconciling = /* @__PURE__ */ new AsyncLocalStorage<boolean>();
 export function assertFailureWritable() {
   assertWorkflowWritable();
   if (reconciling.getStore())

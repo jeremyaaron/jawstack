@@ -138,8 +138,9 @@ export function createFailureProtocol(options: {
   consumers: readonly FailureConsumer[];
   eventBytes?: number;
   validateEvent: (event: JawStackEvent<Record<string, unknown>>) => void;
+  normalizePayload?: (event: JawStackEvent<Record<string, unknown>>) => Record<string, unknown>;
 }) {
-  const { source, resourceType, projectionName, validateEvent } = options;
+  const { source, resourceType, projectionName, validateEvent, normalizePayload } = options;
   const eventBytes = options.eventBytes ?? 80 * 1024;
   const consumers = freeze(jsonCopy(options.consumers));
   const configSchema = z
@@ -178,7 +179,26 @@ export function createFailureProtocol(options: {
     try {
       const envelope = wireSchema.parse(jsonCopy(input, 128 * 1024));
       if (envelope.source !== source) throw new Error();
-      const { delivery, ...payload } = envelope.payload;
+      const { delivery, ...rawPayload } = envelope.payload;
+      const payload = normalizePayload
+        ? jsonCopy(
+            synchronous(
+              normalizePayload(
+                freeze(jsonCopy({ ...envelope, payload: rawPayload })) as JawStackEvent<
+                  Record<string, unknown>
+                >,
+              ),
+            ),
+            eventBytes,
+          )
+        : rawPayload;
+      if (
+        !payload ||
+        typeof payload !== "object" ||
+        Array.isArray(payload) ||
+        "delivery" in payload
+      )
+        throw new Error();
       jsonCopy(payload, eventBytes);
       jsonCopy(envelope.payload, eventBytes + 512);
       const metadata = delivery === undefined ? undefined : recoveryMetadataSchema.parse(delivery);

@@ -106,6 +106,18 @@ plain JSON, not dates, binary values, custom prototypes, accessors, sparse array
 functions. `PK`, `SK`, `itemKind` and `tenantId` cannot be top-level record data. Key/owner
 functions must be pure; they receive frozen data, not runtime clients.
 
+## Memory Workflows
+
+`defineWorkflow` and `createMemoryWorkflow` compose scoped commands, typed record
+contributions, validated worker delivery and authorized failure/recovery operations.
+Use the [complete public workflow recipe](workflows.md) for declaration, binding,
+delivery, replay, bounded draining and lifecycle behavior. No application transaction
+builder or custom pump is needed. Nothing starts automatically.
+
+This is an opt-in backend capability, not a migration of existing resources or a durable
+database. Memory state is process-local; the Dynamo workflow factory remains planned.
+Tenant-bearing traffic is unsupported. Legacy executors/repositories retain their defaults.
+
 ## Workflow Adapter Contract
 
 `createWorkflowCommitPlanner` is a **backend adapter-author API**, not a command endpoint,
@@ -139,20 +151,18 @@ not SDK requests. Primary writes require absence or exact version; activity, out
 auxiliary creates require absence, including when a row already exists in storage.
 Scoped idempotency requires absence or logical expiry at the captured instant. Adapters
 must enforce every condition atomically, classify idempotency versus other conflicts,
-and never split the plan into separate commits. No new public storage adapter is shipped here.
+and never split the plan into separate commits. `createMemoryWorkflow` now ships a complete
+implementation of these conditions. Consumers use that factory, not package internals.
 
-Iteration 3's internal scoped executor and memory adapter now exercise this contract:
-mandatory subject/resource/command-scoped keys, logical expiry, conditional atomic writes
-and bounded response recovery through `executeCommand`. They are not package exports or
-application integration points yet. The complete public memory composition remains
-planned for Phase 4; consumers must not deep-import `src/workflow` to use unfinished APIs.
-See [Phase 2 evidence](../../docs/iterations/003-framework-leverage/phase-2-evidence.md).
-
-The internal failure/recovery service now adds durable pending/settled collection, bounded
-history, operator-authorized replay and atomic recovery-outbox writes on that same memory
-backing/lock. It is also not a public integration point yet. Application reconciliation
-remains a separate, repeatable business operation, not part of the ledger transaction.
-See [Phase 3 evidence](../../docs/iterations/003-framework-leverage/phase-3-evidence.md).
+Backend adapter authors can use `createWorkflowRuntime(definition, createStorage, options)`.
+Its synchronous factory receives the bound `planner`, failure `protocol` and immutable
+`manifest`, and must return all `WorkflowStorage` ports: scoped command persistence,
+resource reads, keyset queries, registered record reads, failure CAS/outbox commits and
+processing/collection markers. There are no missing-service fallbacks. An optional storage
+`close` releases adapter-owned resources; caller-owned clients must not be destroyed.
+The common runtime owns binding, authorization, delivery order and lifecycle, not SDK calls.
+See the [adapter responsibilities](workflows.md#adapter-authors) and
+[Phase 4 evidence](../../docs/iterations/003-framework-leverage/phase-4-evidence.md).
 
 `workflowCommitLimits` exposes the shared bounds: 60 normalized actions, 192 KiB per
 logical action, 64 KiB per auxiliary action (including key/owner metadata), 1 MiB for the

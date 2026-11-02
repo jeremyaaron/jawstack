@@ -2,7 +2,7 @@
 
 Status: reviewed; Phase 0 and baseline A/B are complete. The
 [baseline review](baseline-review.md) clears the prerequisite with explicit timing
-qualifications. Phases 1-3 are complete; Phases 4-14 and post A/B have not started. Based on the [PRD](prd.md) and
+qualifications. Phases 1-4 are complete; Phases 5-14 and post A/B have not started. Based on the [PRD](prd.md) and
 [technical design](technical-design.md); see [Phase 0 evidence](phase-0-evidence.md).
 
 ## Purpose
@@ -298,6 +298,9 @@ bounds, rollback and ambiguous commits, application-hook failure/retry fixtures 
 failure-row golden compatibility. No alternate Content failure writer is activated yet.
 
 ## Phase 4: Delivery and Complete Public Memory Composition
+
+Status: complete; see [Phase 4 evidence](phase-4-evidence.md). The public memory factory
+and adapter contract are usable; Dynamo/live delivery and app migration remain later work.
 
 Depends on: Phase 3.
 
@@ -650,7 +653,9 @@ Phase 0 observations are recorded in [its evidence log](phase-0-evidence.md) and
 typed records/plan verification and growth. [Phase 2 evidence](phase-2-evidence.md) records
 scoped execution, atomic memory persistence and its clean release gate.
 [Phase 3 evidence](phase-3-evidence.md) records failure/recovery services, compatible
-memory storage and verification. Later phase evidence is not asserted. Update
+memory storage and verification. [Phase 4 evidence](phase-4-evidence.md) records public
+memory composition, delivery/lifecycle, browser regression and installed-package proof.
+Later phase evidence is not asserted. Update
 individual phase statuses and append dated observations rather than marking every row
 complete at the end. For each phase record:
 

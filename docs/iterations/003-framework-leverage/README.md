@@ -1,6 +1,6 @@
 # Iteration 3: Framework Leverage
 
-Status: Phases 0-3 and the reviewed baseline A/B gate are complete. Phases 4-14 remain planned.
+Status: Phases 0-4 and the reviewed baseline A/B gate are complete. Phases 5-14 remain planned.
 Baseline timings have explicit qualifications; post-extraction leverage is not yet established.
 
 ## Documents
@@ -15,6 +15,7 @@ Baseline timings have explicit qualifications; post-extraction leverage is not y
 - [Phase 1 Evidence](phase-1-evidence.md)
 - [Phase 2 Evidence](phase-2-evidence.md)
 - [Phase 3 Evidence](phase-3-evidence.md)
+- [Phase 4 Evidence](phase-4-evidence.md)
 
 ## Intended Outcome
 
