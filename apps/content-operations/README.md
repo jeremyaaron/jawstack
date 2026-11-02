@@ -100,7 +100,13 @@ In another terminal, seed with `--runtime localstack` and start `dev:web` as abo
 must report `localstack` / `external-workers`. There is no host pump or automatic mode
 fallback. Materialized reviews/assets, publication, and notifications settle asynchronously.
 The lab defaults to ID `dev`; set `CONTENT_OPS_LAB_ID` consistently for another owned lab.
-Only one lab can bind host port 4566. The image/digest are pinned in `compose.yaml`.
+Only one lab can bind host port 4566. The image/digest and generated Compose topology are
+owned by [private local-lab tooling](../../tooling/local-lab/README.md).
+Startup builds the four lab archives and records their paths/hashes in a version-2 manifest.
+Changed profiles/archives require owned down/recreation; old version-1 manifests support
+down only. Set a nondefault lab ID in the command environment, not just the token file.
+Only `local:up` reads `.env.localstack`; provision/reset/down need no token. Service
+provision/reset remain app-owned until the next extraction step.
 
 ### Service Matrix
 

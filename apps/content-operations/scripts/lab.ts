@@ -1,52 +1,30 @@
-import { execFile } from "node:child_process";
-import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseEnv, promisify } from "node:util";
+import { openLab, profileHash } from "@jawstack/local-lab";
 import {
   assertCleanAwsEnvironment,
   createLabConfig,
   LabError,
-  localstackImage,
-  manifestSchema,
   selectRuntime,
   type LabManifest,
 } from "../src/lab/config";
 import { createClients, destroyClients } from "../src/lab/clients";
-import { cleanupSpine, provisionSpine, waitFor } from "../src/lab/provision";
+import { cleanupSpine, provisionSpine } from "../src/lab/provision";
 import { verifySpine } from "../src/lab/verify";
 import { verifyApi } from "../src/lab/verify-api";
 import { verifyCapabilities, verifySentinelReset } from "../src/lab/verify-capabilities";
 import { buildLab, buildVerification } from "./build-lab";
-import { cleanupRuntimes, inspectRuntimes } from "../src/lab/containers";
+import { cleanupRuntimes, inspectRuntimes, runtimeProfile } from "../src/lab/containers";
 import { verifyRuntimeCleanup } from "../src/lab/verify-runtime-cleanup";
 import { verifyDelivery } from "../src/lab/verify-delivery";
 import { verifyIsolation } from "../src/lab/verify-isolation";
+import { contentLabProfile } from "./lab-profile";
 
-const exec = promisify(execFile);
 const root = fileURLToPath(new URL("../", import.meta.url));
-
-async function readSettings(): Promise<NodeJS.ProcessEnv> {
-  let file: NodeJS.ProcessEnv = {};
-  try {
-    file = parseEnv(await readFile(join(root, ".env.localstack"), "utf8"));
-  } catch (error) {
-    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
-  }
-  for (const key of Object.keys(file)) {
-    if (
-      !["LOCALSTACK_AUTH_TOKEN", "CONTENT_OPS_LOCALSTACK_PLAN", "CONTENT_OPS_LAB_ID"].includes(key)
-    )
-      throw new LabError("The local token file contains an unsupported setting.");
-  }
-  return { ...file, ...process.env };
-}
-
 async function main() {
   assertCleanAwsEnvironment(process.env);
-  const env = await readSettings();
-  if (selectRuntime(env.CONTENT_OPS_RUNTIME ?? "localstack") !== "localstack")
+  if (selectRuntime(process.env.CONTENT_OPS_RUNTIME ?? "localstack") !== "localstack")
     throw new LabError("Lab lifecycle commands require the localstack runtime.");
   const command = process.argv[2];
   if (!["up", "provision", "verify", "reset", "down"].includes(command ?? ""))
@@ -61,297 +39,179 @@ async function main() {
     throw new LabError(
       "This operation resets the owned application dataset. Pass --confirm-reset.",
     );
-  const config = createLabConfig(env.CONTENT_OPS_LAB_ID ?? "dev");
+  const config = createLabConfig(process.env.CONTENT_OPS_LAB_ID ?? "dev");
   const statePath = join(root, ".localstack", `${config.instanceId}.json`);
-  let manifest: LabManifest;
+  if (command === "up" || command === "provision") await buildLab();
+  const profile = command === "down" ? undefined : await contentLabProfile(root, config);
+  const session = await openLab({
+    statePath,
+    expected: { instanceId: config.instanceId, project: config.project },
+    operation: command === "up" ? "up" : command === "down" ? "down" : "inspect",
+    ...(profile ? { profile } : {}),
+    legacy: runtimeProfile(config),
+  });
   try {
-    manifest = manifestSchema.parse(JSON.parse(await readFile(statePath, "utf8")));
-  } catch (error) {
-    if (!(error instanceof Error && "code" in error && error.code === "ENOENT"))
-      throw new LabError("Invalid lab manifest; refusing to operate or overwrite it.");
-    if (command !== "up") throw new LabError("No owned lab manifest. Run local:up first.");
-    manifest = {
-      schemaVersion: 1,
-      instanceId: config.instanceId,
-      ownerId: randomUUID(),
-      image: localstackImage,
-      status: "starting",
-      architecture: process.arch === "arm64" ? "arm64" : "x86_64",
-      mappings: [],
+    let manifest: LabManifest = session.manifest;
+    const save = async () => {
+      session.manifest = manifest;
+      await session.save();
     };
-  }
-  if (manifest.instanceId !== config.instanceId)
-    throw new LabError("Lab manifest instance mismatch.");
-  const save = async () => {
-    await mkdir(join(root, ".localstack"), { recursive: true });
-    const temp = `${statePath}.tmp`;
-    await writeFile(temp, JSON.stringify(manifest, null, 2), { mode: 0o600 });
-    await rename(temp, statePath);
-  };
-  const dockerEnv = Object.fromEntries(
-    Object.entries({
-      PATH: process.env.PATH,
-      HOME: process.env.HOME,
-      DOCKER_HOST: process.env.DOCKER_HOST,
-      DOCKER_CONTEXT: process.env.DOCKER_CONTEXT,
-      TMPDIR: process.env.TMPDIR,
-      LOCALSTACK_AUTH_TOKEN: env.LOCALSTACK_AUTH_TOKEN ?? "not-needed-for-down",
-      CONTENT_OPS_PROJECT: config.project,
-      CONTENT_OPS_OWNER_ID: manifest.ownerId,
-    }).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
-  );
-  const docker = async (args: string[], timeout = 120_000) => {
+    const shutdown = () => session.down();
+    const docker = session.docker;
+    if (command === "up") {
+      console.log(
+        JSON.stringify(
+          await session.up({
+            tokenFile: join(root, ".env.localstack"),
+            planKey: "CONTENT_OPS_LOCALSTACK_PLAN",
+            labIdKey: "CONTENT_OPS_LAB_ID",
+          }),
+          null,
+          2,
+        ),
+      );
+      return;
+    }
+    if (command === "down") {
+      console.log(JSON.stringify({ status: "stopped", ...(await shutdown()) }, null, 2));
+      return;
+    }
+    await session.ready();
+    const clients = createClients(config);
+    const reset = async () => {
+      await session.inspect();
+      await cleanupSpine(clients, config, manifest);
+      await cleanupRuntimes(docker, config, manifest.ownerId);
+      manifest = { ...manifest, status: "starting", mappings: [] };
+      delete manifest.queueUrl;
+      delete manifest.streamArn;
+      delete manifest.capabilitiesVersion;
+      delete manifest.applicationVersion;
+      delete manifest.runtimeOwnershipVersion;
+      await save();
+    };
     try {
-      return (
-        await exec("docker", args, {
-          cwd: root,
-          env: dockerEnv,
-          timeout,
-          maxBuffer: 2 * 1024 * 1024,
-        })
-      ).stdout.trim();
-    } catch {
-      throw new LabError(
-        "Docker command failed or timed out. Check the container runtime and local image; no command output is printed because it may contain secrets.",
-      );
-    }
-  };
-  const assertContainerOwner = async () => {
-    const ids = await docker([
-      "ps",
-      "-aq",
-      "--filter",
-      `label=com.docker.compose.project=${config.project}`,
-    ]);
-    const containers = ids.split(/\s+/).filter(Boolean);
-    for (const id of containers) {
-      const owner = await docker([
-        "inspect",
-        "--format",
-        '{{index .Config.Labels "jawstack.owner"}}',
-        id,
-      ]);
-      if (owner !== manifest.ownerId)
-        throw new LabError("Compose project contains a container not owned by this manifest.");
-      const image = await docker(["inspect", "--format", "{{.Config.Image}}", id]);
-      if (image !== localstackImage)
-        throw new LabError("The owned container is not using the pinned image.");
-    }
-    return containers.length;
-  };
-  const compose = (args: string[]) =>
-    docker(["compose", "--project-name", config.project, "--file", "compose.yaml", ...args]);
-  const containerCount = await assertContainerOwner();
-  const shutdown = async () => {
-    await assertContainerOwner();
-    await inspectRuntimes(docker, config, manifest.ownerId);
-    // Stop the creator before reconciling both running and exited owned children.
-    await compose(["stop", "--timeout", "30"]);
-    const runtimes = await cleanupRuntimes(docker, config, manifest.ownerId);
-    await compose(["down", "--remove-orphans", "--timeout", "30"]);
-    if (
-      (await assertContainerOwner()) ||
-      (await inspectRuntimes(docker, config, manifest.ownerId)).length ||
-      (await docker([
-        "network",
-        "ls",
-        "--filter",
-        `name=^${config.project}-lab$`,
-        "--format",
-        "{{.ID}}",
-      ]))
-    )
-      throw new LabError("Owned container/network cleanup incomplete; manifest retained.");
-    await rm(statePath, { force: true });
-    return {
-      ...runtimes,
-      emulatorContainers: 0,
-      lambdaContainers: 0,
-      networks: 0,
-      imagesRetained: true,
-    };
-  };
-  if (command !== "up" && command !== "down" && containerCount !== 1)
-    throw new LabError("No unique owned emulator container; run local:up first.");
-  const ready = () =>
-    waitFor("LocalStack readiness", async () => {
-      try {
-        const response = await fetch(`${config.endpoint}/_localstack/health`, {
-          signal: AbortSignal.timeout(2_000),
-          redirect: "error",
-        });
-        return response.ok ? true : undefined;
-      } catch {
-        return undefined;
-      }
-    });
-  if (command === "up") {
-    if (!containerCount && (await inspectRuntimes(docker, config, manifest.ownerId)).length)
-      throw new LabError("Owned runtime containers remain; run local:down before restarting.");
-    if (!env.LOCALSTACK_AUTH_TOKEN?.trim())
-      throw new LabError(
-        "Set LOCALSTACK_AUTH_TOKEN in .env.localstack; never paste it into chat or Git.",
-      );
-    if (env.CONTENT_OPS_LOCALSTACK_PLAN !== "hobby")
-      throw new LabError(
-        "Confirm Hobby (not trial) using CONTENT_OPS_LOCALSTACK_PLAN=hobby in .env.localstack.",
-      );
-    await save();
-    await compose(["up", "--detach", "--wait"]);
-    await ready();
-    const image = await docker([
-      "image",
-      "inspect",
-      localstackImage,
-      "--format",
-      "{{json .RepoDigests}}",
-    ]);
-    console.log(
-      JSON.stringify(
-        {
-          status: "ready",
-          endpoint: config.endpoint,
-          project: config.project,
-          architecture: manifest.architecture,
-          imageDigests: JSON.parse(image),
-          entitlement: "Hobby (user attested)",
-        },
-        null,
-        2,
-      ),
-    );
-    return;
-  }
-  if (command === "down") {
-    console.log(JSON.stringify({ status: "stopped", ...(await shutdown()) }, null, 2));
-    return;
-  }
-  await ready();
-  const clients = createClients(config);
-  const reset = async () => {
-    await inspectRuntimes(docker, config, manifest.ownerId);
-    await cleanupSpine(clients, config, manifest);
-    await cleanupRuntimes(docker, config, manifest.ownerId);
-    manifest = { ...manifest, status: "starting", mappings: [] };
-    delete manifest.queueUrl;
-    delete manifest.streamArn;
-    delete manifest.capabilitiesVersion;
-    delete manifest.applicationVersion;
-    delete manifest.runtimeOwnershipVersion;
-    await save();
-  };
-  try {
-    if (command === "provision") {
-      await buildLab();
-      await provisionSpine(clients, config, manifest, save);
-      console.log(
-        "Owned application and feasibility spine provisioned; application schedules enabled.",
-      );
-    } else if (command === "reset") {
-      await reset();
-      console.log(
-        "Owned service resources removed; emulator remains running. Run local:provision to recreate them.",
-      );
-    } else {
-      if (manifest.status !== "ready") throw new LabError("The lab is not provisioned.");
-      if (manifest.capabilitiesVersion !== 1)
-        throw new LabError("Reset/reprovision the lab for Phase 1 capabilities first.");
-      if (manifest.applicationVersion !== 1)
-        throw new LabError("Reset/reprovision the lab for the actual application topology first.");
-      if (manifest.runtimeOwnershipVersion !== 1)
-        throw new LabError(
-          "Reset/reprovision with manifest-owner runtime labels before verification.",
-        );
-      if (env.CONTENT_OPS_LOCALSTACK_PLAN !== "hobby")
-        throw new LabError("Hobby entitlement attestation is required for verification.");
-      const started = Date.now();
-      const evidence: Record<string, unknown> = {
-        status: "running",
-        scenario: "full-deployed-application-failure-isolation-and-cleanup-gate",
-        recordedAt: new Date().toISOString(),
-        durationMs: Date.now() - started,
-        image: manifest.image,
-        architecture: manifest.architecture,
-        entitlement: "Hobby (user attested)",
-      };
-      const writeEvidence = async () => {
-        const path = join(root, ".localstack", `${config.instanceId}-evidence.json`);
-        await writeFile(`${path}.tmp`, JSON.stringify(evidence, null, 2), { mode: 0o600 });
-        await rename(`${path}.tmp`, path);
-      };
-      await writeEvidence();
-      let failure: unknown;
-      try {
-        console.log("Proving unsafe configurations stop before network transport...");
-        evidence.isolation = await verifyIsolation();
-        console.log("Checking transactional spine and worker S3 output...");
-        evidence.proof = await verifySpine(clients, config);
-        console.log(
-          "Checking actual HTTP/upload/review/Scheduler/publisher/notification Lambdas...",
-        );
-        evidence.application = await verifyApi(config);
-        const runtimes = await inspectRuntimes(docker, config, manifest.ownerId);
-        if (!runtimes.length)
-          throw new LabError("No ownership-proven application runtimes observed.");
-        evidence.ownedRuntimesObserved = runtimes.length;
-        await buildVerification();
-        console.log(
-          "Checking deployed duplicate, retry, crash, DLQ, collector and recovery scenarios...",
-        );
-        evidence.delivery = await verifyDelivery(clients, config, manifest.ownerId);
-        console.log("Waiting for automatic Scheduler and actual SQS redrive/collector...");
-        evidence.capabilities = await verifyCapabilities(clients, config);
-        console.log("Checking ownership-safe reset with an unrelated-resource sentinel...");
-        evidence.cleanup = {
-          ...(await verifySentinelReset(clients, config, manifest.ownerId, reset)),
-          lambdaContainersAfterReset: 0,
-        };
+      if (command === "provision") {
+        if (
+          !profile ||
+          manifest.schemaVersion !== 2 ||
+          profileHash(profile) !== manifest.profileHash
+        )
+          throw new LabError(
+            "Rebuilt application archives differ from the live profile; down/recreate the lab.",
+          );
         await provisionSpine(clients, config, manifest, save);
-        evidence.reprovisionProof = await verifySpine(clients, config);
-        evidence.reprovisionApplication = await verifyApi(config);
-      } catch (error) {
-        failure = error;
-        evidence.error =
-          error instanceof LabError
-            ? error.message
-            : error instanceof Error
-              ? error.name
-              : "unknown";
-      } finally {
-        destroyClients(clients);
-        try {
-          console.log("Checking foreign-lookalike refusal, orphan cleanup and final teardown...");
-          evidence.teardown = failure
-            ? await shutdown()
-            : await verifyRuntimeCleanup(docker, config, manifest.ownerId, shutdown);
-        } catch (error) {
-          failure ??= error;
-          let recovery: unknown;
-          try {
-            recovery = await shutdown();
-          } catch {
-            recovery = { status: "failed", manifestRetained: true };
-          }
-          evidence.teardown = {
-            status: "failed",
-            recovery,
-            error: error instanceof LabError ? error.message : "Cleanup failed; inspect owned lab.",
-          };
-        }
-        evidence.status = failure ? "failed" : "passed";
-        evidence.decision = failure ? "no-go" : "go";
-        evidence.durationMs = Date.now() - started;
-        evidence.completedAt = new Date().toISOString();
+        console.log(
+          "Owned application and feasibility spine provisioned; application schedules enabled.",
+        );
+      } else if (command === "reset") {
+        await reset();
+        console.log(
+          "Owned service resources removed; emulator remains running. Run local:provision to recreate them.",
+        );
+      } else {
+        if (manifest.status !== "ready") throw new LabError("The lab is not provisioned.");
+        if (manifest.capabilitiesVersion !== 1)
+          throw new LabError("Reset/reprovision the lab for Phase 1 capabilities first.");
+        if (manifest.applicationVersion !== 1)
+          throw new LabError(
+            "Reset/reprovision the lab for the actual application topology first.",
+          );
+        if (manifest.runtimeOwnershipVersion !== 1)
+          throw new LabError(
+            "Reset/reprovision with manifest-owner runtime labels before verification.",
+          );
+        const started = Date.now();
+        const evidence: Record<string, unknown> = {
+          status: "running",
+          scenario: "full-deployed-application-failure-isolation-and-cleanup-gate",
+          recordedAt: new Date().toISOString(),
+          durationMs: Date.now() - started,
+          image: manifest.image,
+          architecture: manifest.architecture,
+          entitlement: "Hobby (user attested)",
+        };
+        const writeEvidence = async () => {
+          const path = join(root, ".localstack", `${config.instanceId}-evidence.json`);
+          await writeFile(`${path}.tmp`, JSON.stringify(evidence, null, 2), { mode: 0o600 });
+          await rename(`${path}.tmp`, path);
+        };
         await writeEvidence();
+        let failure: unknown;
+        try {
+          console.log("Proving unsafe configurations stop before network transport...");
+          evidence.isolation = await verifyIsolation();
+          console.log("Checking transactional spine and worker S3 output...");
+          evidence.proof = await verifySpine(clients, config);
+          console.log(
+            "Checking actual HTTP/upload/review/Scheduler/publisher/notification Lambdas...",
+          );
+          evidence.application = await verifyApi(config);
+          const runtimes = await inspectRuntimes(docker, config, manifest.ownerId);
+          if (!runtimes.length)
+            throw new LabError("No ownership-proven application runtimes observed.");
+          evidence.ownedRuntimesObserved = runtimes.length;
+          await buildVerification();
+          console.log(
+            "Checking deployed duplicate, retry, crash, DLQ, collector and recovery scenarios...",
+          );
+          evidence.delivery = await verifyDelivery(clients, config, manifest.ownerId);
+          console.log("Waiting for automatic Scheduler and actual SQS redrive/collector...");
+          evidence.capabilities = await verifyCapabilities(clients, config);
+          console.log("Checking ownership-safe reset with an unrelated-resource sentinel...");
+          evidence.cleanup = {
+            ...(await verifySentinelReset(clients, config, manifest.ownerId, reset)),
+            lambdaContainersAfterReset: 0,
+          };
+          await provisionSpine(clients, config, manifest, save);
+          evidence.reprovisionProof = await verifySpine(clients, config);
+          evidence.reprovisionApplication = await verifyApi(config);
+        } catch (error) {
+          failure = error;
+          evidence.error =
+            error instanceof LabError
+              ? error.message
+              : error instanceof Error
+                ? error.name
+                : "unknown";
+        } finally {
+          destroyClients(clients);
+          try {
+            console.log("Checking foreign-lookalike refusal, orphan cleanup and final teardown...");
+            evidence.teardown = failure
+              ? await shutdown()
+              : await verifyRuntimeCleanup(docker, config, manifest.ownerId, shutdown);
+          } catch (error) {
+            failure ??= error;
+            let recovery: unknown;
+            try {
+              recovery = await shutdown();
+            } catch {
+              recovery = { status: "failed", manifestRetained: true };
+            }
+            evidence.teardown = {
+              status: "failed",
+              recovery,
+              error:
+                error instanceof LabError ? error.message : "Cleanup failed; inspect owned lab.",
+            };
+          }
+          evidence.status = failure ? "failed" : "passed";
+          evidence.decision = failure ? "no-go" : "go";
+          evidence.durationMs = Date.now() - started;
+          evidence.completedAt = new Date().toISOString();
+          await writeEvidence();
+        }
+        console.log(JSON.stringify(evidence, null, 2));
+        if (failure) throw failure;
       }
-      console.log(JSON.stringify(evidence, null, 2));
-      if (failure) throw failure;
+    } finally {
+      destroyClients(clients);
     }
   } finally {
-    destroyClients(clients);
+    await session.close();
   }
 }
-
 main().catch((error: unknown) => {
   console.error(
     error instanceof LabError

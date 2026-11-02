@@ -52,6 +52,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@jawstack/local-lab": "workspace:*",
     "yaml": "2.9.0",
     "@jawstack/aws-cdk": "workspace:*",
     "aws-cdk-lib": "^2.260.0",

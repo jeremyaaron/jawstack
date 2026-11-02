@@ -45,6 +45,7 @@ import {
   SetQueueAttributesCommand,
 } from "@aws-sdk/client-sqs";
 import { readFile } from "node:fs/promises";
+import { assertMapping, deleteMappings } from "@jawstack/local-lab/ownership";
 import { fileURLToPath } from "node:url";
 import {
   assertOwned,
@@ -420,25 +421,20 @@ export async function cleanupSpine(
             : name === config.collector
               ? labQueueArn(config, config.dlq)
               : undefined;
-      if (!mapping.UUID || !expectedSource || mapping.EventSourceArn !== expectedSource) {
-        throw new LabError("Unexpected event source mapping; refusing cleanup.");
-      }
-      mappingIds.push(mapping.UUID);
+      mappingIds.push(assertMapping(mapping, expectedSource));
     }
   }
   const capabilities = await preflightCapabilities(c, config, manifest.ownerId);
   const application = await inspectApplication(c, config, manifest.ownerId);
   await stopCapabilitySchedule(c, config, capabilities.schedule);
   await cleanupApplication(c, config, application);
-  for (const id of mappingIds) {
-    await missing(() => c.lambda.send(new DeleteEventSourceMappingCommand({ UUID: id })));
-    await waitFor("event mapping deletion", async () =>
-      (await missing(() => c.lambda.send(new GetEventSourceMappingCommand({ UUID: id })))) ===
-      undefined
-        ? true
-        : undefined,
-    );
-  }
+  await deleteMappings(
+    mappingIds,
+    (id) => missing(() => c.lambda.send(new DeleteEventSourceMappingCommand({ UUID: id }))),
+    async (id) =>
+      (await missing(() => c.lambda.send(new GetEventSourceMappingCommand({ UUID: id })))) !==
+      undefined,
+  );
   if (bus) {
     const removed = await c.events
       .send(

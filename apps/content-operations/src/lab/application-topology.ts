@@ -5,6 +5,7 @@ import * as logs from "@aws-sdk/client-cloudwatch-logs";
 import * as scheduler from "@aws-sdk/client-scheduler";
 import * as sqs from "@aws-sdk/client-sqs";
 import { readFile } from "node:fs/promises";
+import { assertMapping } from "@jawstack/local-lab/ownership";
 import { applicationProfile } from "../aws/profile";
 import { assertOwned, LabError, localQueueUrl, type LabConfig, type LabManifest } from "./config";
 import type { LabClients } from "./clients";
@@ -46,9 +47,13 @@ export async function inspectApplication(c: LabClients, config: LabConfig, owner
       );
       if (page.NextMarker) throw new LabError("Unexpected application mapping pagination.");
       for (const mapping of page.EventSourceMappings ?? []) {
-        if (!fn.queue || !mapping.UUID || mapping.EventSourceArn !== queueArn(config, fn.queue))
-          throw new LabError("Unexpected application event source mapping; refusing cleanup.");
-        mappings.push(mapping.UUID);
+        mappings.push(
+          assertMapping(
+            mapping,
+            fn.queue ? queueArn(config, fn.queue) : undefined,
+            "application event source mapping",
+          ),
+        );
       }
     }
     const log = await missing(() =>

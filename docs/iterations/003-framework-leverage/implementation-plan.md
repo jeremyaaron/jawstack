@@ -2,7 +2,7 @@
 
 Status: reviewed; Phase 0 and baseline A/B are complete. The
 [baseline review](baseline-review.md) clears the prerequisite with explicit timing
-qualifications. Phases 1-7 are complete; Phases 8-14 and post A/B have not started. Based on the [PRD](prd.md) and
+qualifications. Phases 1-8 are complete; Phases 9-14 and post A/B have not started. Based on the [PRD](prd.md) and
 [technical design](technical-design.md); see [Phase 0 evidence](phase-0-evidence.md).
 
 ## Purpose
@@ -419,6 +419,10 @@ Verification: topology/assertion/snapshot tests, generated Work Requests synth/d
 Content comparison fixtures and clean release/package checks. No actual AWS deployment.
 
 ## Phase 8: Shared Lab Ownership and Lifecycle
+
+Status: complete; see [Phase 8 evidence](phase-8-evidence.md). Shared owned startup/down
+and live lifecycle proofs pass. Service providers/provision/reset remain transitional
+app-owned machinery until Phase 9.
 
 Depends on: Phase 7.
 

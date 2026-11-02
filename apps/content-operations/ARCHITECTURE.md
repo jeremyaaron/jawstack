@@ -487,7 +487,9 @@ dump Compose/container environments. The plan flag records user attestation, not
 programmatic license audit. Environment variables may supply the same two settings in CI.
 
 The image is pinned to LocalStack `2026.10.0` and its multi-architecture SHA-256 digest in
-`compose.yaml`. This does not use a paid asset-deployment feature or real AWS deployment.
+[private local-lab configuration](../../tooling/local-lab/src/config.ts). The shared
+lifecycle generates its own bounded Compose document; the app no longer owns a second
+Compose topology. This does not use a paid asset-deployment feature or real AWS deployment.
 The lab is ephemeral; recreation discards data, and images remain cached after teardown.
 
 Docker socket access gives the emulator substantial privileges on the local Docker host.

@@ -1,27 +1,16 @@
-import { z } from "zod";
 import { applicationProfile } from "../aws/profile";
-
-export const localstackImage =
-  "localstack/localstack:2026.10.0@sha256:aa5632e041ca54ff61a0a25e17b1c898b09a1eb7f611bfc05f73ef53b7266872";
+import { LabError } from "@jawstack/local-lab/config";
+export {
+  LabError,
+  assertCleanAwsEnvironment,
+  localstackImage,
+  currentManifestSchema as manifestSchema,
+  type LabManifest,
+} from "@jawstack/local-lab/config";
+export { assertOwned } from "@jawstack/local-lab/ownership";
 export const hostEndpoint = "http://127.0.0.1:4566";
 export const workerEndpoint = "http://localstack:4566";
 export const region = "us-east-1";
-
-export class LabError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "LabError";
-  }
-}
-
-export function assertCleanAwsEnvironment(env: NodeJS.ProcessEnv): void {
-  for (const [key, value] of Object.entries(env)) {
-    if (!value || !key.startsWith("AWS_")) continue;
-    if ((key === "AWS_REGION" || key === "AWS_DEFAULT_REGION") && value === region) continue;
-    if (key === "AWS_EC2_METADATA_DISABLED" && value === "true") continue;
-    throw new LabError(`Remove inherited ${key} before running the isolated lab.`);
-  }
-}
 
 export function selectRuntime(value: string | undefined): "memory" | "localstack" {
   if (value !== "memory" && value !== "localstack") {
@@ -122,29 +111,6 @@ export function localQueueUrl(
   )
     throw new LabError("Unexpected queue name.");
   return `${config.endpoint}${url.pathname}`;
-}
-
-export const manifestSchema = z
-  .object({
-    schemaVersion: z.literal(1),
-    instanceId: z.string(),
-    ownerId: z.uuid(),
-    image: z.literal(localstackImage),
-    status: z.enum(["starting", "provisioning", "ready"]),
-    architecture: z.enum(["arm64", "x86_64"]),
-    queueUrl: z.string().optional(),
-    streamArn: z.string().optional(),
-    mappings: z.array(z.string()).default([]),
-    capabilitiesVersion: z.literal(1).optional(),
-    applicationVersion: z.literal(1).optional(),
-    runtimeOwnershipVersion: z.literal(1).optional(),
-  })
-  .strict();
-export type LabManifest = z.infer<typeof manifestSchema>;
-
-export function assertOwned(tags: Record<string, string> | undefined, ownerId: string): void {
-  if (tags?.["jawstack:owner"] !== ownerId)
-    throw new LabError("Refusing to modify a resource not owned by this lab manifest.");
 }
 
 export function labFunctions(config: LabConfig) {

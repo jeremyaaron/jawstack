@@ -123,6 +123,9 @@ importers:
       '@jawstack/aws-cdk':
         specifier: workspace:*
         version: link:../../packages/aws-cdk
+      '@jawstack/local-lab':
+        specifier: workspace:*
+        version: link:../../tooling/local-lab
       '@playwright/test':
         specifier: 1.64.1
         version: 1.64.1
@@ -316,6 +319,37 @@ importers:
         version: 4.4.3
 
   packages/create-jawstack: {}
+
+  tooling/local-lab:
+    dependencies:
+      '@jawstack/aws-runtime':
+        specifier: workspace:*
+        version: link:../../packages/aws-runtime
+      '@jawstack/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@aws-sdk/client-iam':
+        specifier: 3.1075.0
+        version: 3.1075.0
+      '@aws-sdk/client-lambda':
+        specifier: 3.1075.0
+        version: 3.1075.0
+      '@smithy/node-http-handler':
+        specifier: 4.8.2
+        version: 4.8.2
+      fflate:
+        specifier: ^0.8.2
+        version: 0.8.3
+      tsx:
+        specifier: ^4.20.6
+        version: 4.22.4
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.6(@types/node@22.20.0)(jsdom@26.1.0)(lightningcss@1.32.0)(sass@1.97.3)(tsx@4.22.4)(yaml@2.9.0)
 
 packages:
 

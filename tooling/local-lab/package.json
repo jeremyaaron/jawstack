@@ -1,0 +1,33 @@
+{
+  "name": "@jawstack/local-lab",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./config": "./src/config.ts",
+    "./containers": "./src/containers.ts",
+    "./lifecycle": "./src/lifecycle.ts",
+    "./ownership": "./src/ownership.ts"
+  },
+  "scripts": {
+    "build": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "eslint src test scripts *.ts",
+    "test": "vitest run",
+    "verify:lifecycle": "tsx scripts/verify-lifecycle.ts"
+  },
+  "dependencies": {
+    "@jawstack/aws-runtime": "workspace:*",
+    "@jawstack/core": "workspace:*",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@smithy/node-http-handler": "4.8.2",
+    "@aws-sdk/client-lambda": "3.1075.0",
+    "@aws-sdk/client-iam": "3.1075.0",
+    "fflate": "^0.8.2",
+    "tsx": "^4.20.6",
+    "vitest": "^3.0.0"
+  }
+}
