@@ -32,6 +32,13 @@ complete declared batch before markers/effects. The intentional `/local` subpath
 bounded routing, final-destination guards and owned-table startup. See the shipped
 [local/SQS recipe](local.md); these APIs do not provision or migrate application resources.
 
+Adapters may supply a `Pick<WorkflowRuntime, "manifest" | "events" | "delivery">` to
+`createWorkflowSqsHandlers` when their command/lifecycle owner already exists. Returned
+`parse(input, collect?)` performs the same bounded, fixed-ARN/region/source/batch validation
+without marker reads or effects, for trusted verification tooling. It does not authorize
+replay; only `worker`/`collector` perform the full durable validation and acknowledgement
+sequence. Do not use the parse-only result as permission to execute business handlers.
+
 ## Paged Queries
 
 `DynamoDbRepository` implements core's `QueryRepository` in addition to its existing

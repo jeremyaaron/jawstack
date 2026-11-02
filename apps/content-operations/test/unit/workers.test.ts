@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { failedDeliveryId } from "../../src/application/failure-records";
 import { describe, expect, it, vi } from "vitest";
 import {
   createManifest,
@@ -384,7 +386,7 @@ describe("shared application workers", () => {
 });
 
 describe("memory workflow and pump", () => {
-  it("processes healthy work beside an invalid source while retaining bounded retries for the poison event", async () => {
+  it("rejects invalid committed envelopes before admission, then processes healthy work", async () => {
     const h = await harness();
     const requested = await h.submit();
     const outbox = [{ ...requested, eventId: "bad-source", source: "not-this-app" }, requested];
@@ -393,13 +395,14 @@ describe("memory workflow and pump", () => {
       workers: h.app.workers,
       clock: h.clock.now,
     });
-    expect(await pump.drain()).toMatchObject({ succeeded: 2, retried: 2, pending: 2 });
+    await expect(pump.drain()).rejects.toMatchObject({ code: "command.validation" });
+    expect(pump.inspect().cursor).toBe(0);
+    expect(pump.inspect().jobs).toHaveLength(0);
+    expect((await h.app.notifications.query()).items).toHaveLength(0);
+    outbox.shift();
+    expect(await pump.drain()).toMatchObject({ succeeded: 2, pending: 0 });
     expect((await h.app.notifications.query()).items).toHaveLength(1);
     expect(await h.app.persistence.repository.listProjection("reviewTask.pending")).toHaveLength(1);
-    h.clock.advance(1000);
-    await pump.drain();
-    h.clock.advance(2000);
-    expect(await pump.drain()).toMatchObject({ failed: 2, terminal: 2, pending: 0 });
   });
 
   it("backpressures a whole fan-out even when one unused slot remains", async () => {
@@ -498,16 +501,12 @@ describe("memory workflow and pump", () => {
     const first = (await h.app.notifications.query()).items[0]!.data;
     h.clock.advance(workerMarkerTtlMs);
     h.app.persistence.store.outbox.push(structuredClone(requested));
-    const replay = {
-      ...requested,
-      eventId: "replay_transport",
-      occurredAt: h.clock.now().toISOString(),
-      payload: {
-        ...(requested.payload as object),
-        delivery: { originalEventId: requested.eventId, generation: 1 },
-      },
-    };
-    h.app.persistence.store.outbox.push(replay);
+    await h.app.failures.collect("deliverNotification", requested);
+    await h.app.failures.replay(
+      failedDeliveryId("deliverNotification", requested.eventId),
+      fixtureAuth("editor_1"),
+      randomUUID(),
+    );
     await h.app.drainUntilIdle();
     expect((await h.app.notifications.query()).items.map((row) => row.data)).toEqual([first]);
     expect(
@@ -523,8 +522,8 @@ describe("memory workflow and pump", () => {
     let injected = true;
     const workers = {
       ...h.app.workers,
-      handle: async (...args: Parameters<typeof h.app.workers.handle>) => {
-        const value = await h.app.workers.handle(...args);
+      execute: async (...args: Parameters<typeof h.app.workers.execute>) => {
+        const value = await h.app.workers.execute(...args);
         if (args[0] === "deliverNotification" && injected) {
           injected = false;
           throw new Error("sensitive provider details");

@@ -58,7 +58,7 @@ const unavailable = (): never => {
   );
 };
 
-// Private until the complete workflow API is assembled in Phase 4.
+// Shared by complete runtimes and trusted backend adapter composition.
 export function createWorkflowFailureService(options: {
   protocol: FailureProtocol;
   store: WorkflowFailureStore;

@@ -122,7 +122,13 @@ describe("synthesis-only JSON ingress", () => {
         vi.stubEnv("CONTENT_OPS_QUEUE_ARN", queueArn);
         const batch = {
           Records: [
-            { messageId: "bound-event", eventSourceARN: queueArn, body: JSON.stringify(source) },
+            {
+              messageId: "bound-event",
+              eventSource: "aws:sqs",
+              awsRegion: "us-east-1",
+              eventSourceARN: queueArn,
+              body: JSON.stringify(source),
+            },
           ],
         };
         expect(await worker(batch)).toMatchObject({ processed: 1 });

@@ -22,8 +22,8 @@ const profile = applicationProfile(config);
 describe("actual application AWS composition", () => {
   beforeAll(buildLab, 30_000);
   it("declares every implemented consumer, collector, and job without endpoint overrides", () => {
-    expect(profile.workers.map((worker) => worker.consumer)).toEqual(
-      contentWorkers.map((worker) => worker.name),
+    expect(profile.workers.map((worker) => worker.consumer).sort()).toEqual(
+      contentWorkers.map((worker) => worker.name).sort(),
     );
     expect(profile.functions).toHaveLength(9);
     expect(new Set(profile.functions.map((fn) => fn.name)).size).toBe(9);

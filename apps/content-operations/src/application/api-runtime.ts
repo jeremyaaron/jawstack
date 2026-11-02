@@ -28,6 +28,7 @@ export function createMemoryApiRuntime(options: { clock?: () => Date } = {}) {
     objects: app.objects,
     clock,
     process: app.drainUntilIdle,
+    close: app.close,
     tick: async () => {
       if (clock().getTime() >= nextJobsAt) {
         nextJobsAt = clock().getTime() + 60_000;

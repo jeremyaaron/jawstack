@@ -1,21 +1,13 @@
-import {
-  DynamoDbRepository,
-  DynamoDbWorkerIdempotencyStore,
-  SqsWorkerAdapter,
-  type DynamoDbClientLike,
-  type SqsEvent,
-} from "@jawstack/aws-runtime";
+import { DynamoDbRepository, type DynamoDbClientLike, type SqsEvent } from "@jawstack/aws-runtime";
 import { createContentDispatch } from "../application/dispatch";
 import { createPublisher, type PublicationFaultPoint } from "../application/publisher";
 import type { ContentEvent } from "../shared/events";
-import { parseContentEvent } from "../shared/events";
-import { validatedDeliveryBatch, deliveryMarkerTtlSeconds } from "./delivery";
 import { localLambdaConfig } from "./local-context";
 import { createClients, destroyClients } from "../lab/clients";
 import { queueArn } from "../lab/capabilities";
 import { createDynamoPersistence } from "./persistence";
 import { createLocalS3ObjectStore } from "./object-store";
-
+import { contentSqsHandlers } from "./recovery";
 export function createPublicationSqsHandler(options: {
   client: DynamoDbClientLike;
   tableName: string;
@@ -24,29 +16,12 @@ export function createPublicationSqsHandler(options: {
   publisher: ReturnType<typeof createPublisher>;
   clock?: () => Date;
 }) {
-  const adapter = new SqsWorkerAdapter({
-    workerName: "publishContent",
-    idempotencyStore: new DynamoDbWorkerIdempotencyStore({
-      client: options.client,
-      tableName: options.tableName,
-      ttlSeconds: deliveryMarkerTtlSeconds,
-      ...(options.clock ? { clock: options.clock } : {}),
-    }),
-    ...(options.clock ? { clock: options.clock } : {}),
-    handler: async ({ event }) => {
-      await options.publisher(parseContentEvent(event, options.source));
-    },
-  });
-  return async (input: SqsEvent) =>
-    adapter.handle(
-      validatedDeliveryBatch(input, {
-        queueArn: options.expectedQueueArn,
-        source: options.source,
-        consumer: "publishContent",
-      }),
-    );
+  return contentSqsHandlers({
+    ...options,
+    consumer: "publishContent",
+    handle: (_name, event) => options.publisher(event),
+  }).worker;
 }
-
 export async function executePublication(
   event: SqsEvent,
   hooks: {

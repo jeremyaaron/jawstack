@@ -200,6 +200,8 @@ export async function verifyFailures(clients: LabClients, config: LabConfig) {
       Records: [
         {
           messageId: randomUUID(),
+          eventSource: "aws:sqs",
+          awsRegion: config.region,
           eventSourceARN: queueArn(config, deliveryQueueName(config, "deliverNotification")),
           body: JSON.stringify(replay),
         },
@@ -293,6 +295,8 @@ export async function verifyFailures(clients: LabClients, config: LabConfig) {
       Records: [
         {
           messageId: randomUUID(),
+          eventSource: "aws:sqs",
+          awsRegion: config.region,
           eventSourceARN: queueArn(config, deliveryQueueName(config, "publishContent", true)),
           body: JSON.stringify(publicationFact),
         },

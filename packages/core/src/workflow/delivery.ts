@@ -1,7 +1,7 @@
-import { JawStackRuntimeError, type JawStackEvent } from "../index";
+import { JawStackDefinitionError, JawStackRuntimeError, type JawStackEvent } from "../index";
 import { envelopeFingerprint, recoveryMetadataSchema } from "./failure-records";
 import type { createWorkflowFailureService } from "./failures";
-import type { workflowDefinition } from "./definition";
+import { workflowDefinition, type WorkflowDefinition } from "./definition";
 import type { WorkflowConsumerBinding, WorkflowDeliveryEvent } from "./runtime";
 import { freeze, instant, jsonCopy } from "./validation";
 import { assertWorkflowWritable } from "./command-context";
@@ -19,15 +19,44 @@ export type WorkflowDeliveryResult = Readonly<{
   status: "processed" | "duplicate" | "ignored" | "deferred";
 }>;
 export function createWorkflowDelivery(options: {
-  data: ReturnType<typeof workflowDefinition>;
-  failures: ReturnType<typeof createWorkflowFailureService>;
+  definition: WorkflowDefinition;
+  failures: Pick<
+    ReturnType<typeof createWorkflowFailureService>,
+    "authorize" | "validateCollection" | "complete" | "collect"
+  >;
   markers: WorkflowMarkerStore;
   bindings: ReadonlyMap<string, WorkflowConsumerBinding>;
   clock: () => Date;
   signal: AbortSignal;
   run<T>(work: () => T | Promise<T>): Promise<T>;
 }) {
-  const { data, failures, markers, bindings, clock, run } = options;
+  const { failures, markers, clock, run } = options;
+  const data = workflowDefinition(options.definition);
+  const bindings = new Map(options.bindings);
+  if (
+    bindings.size !== data.consumers.length ||
+    [...bindings].some(
+      ([name, binding]) =>
+        !data.consumers.some((consumer) => consumer.name === name) ||
+        typeof binding?.handle !== "function",
+    ) ||
+    [
+      clock,
+      run,
+      markers?.check,
+      markers?.write,
+      failures?.authorize,
+      failures?.validateCollection,
+      failures?.complete,
+      failures?.collect,
+    ].some((callback) => typeof callback !== "function") ||
+    !(options.signal instanceof AbortSignal)
+  )
+    throw new JawStackDefinitionError(
+      "workflow.delivery",
+      "Complete owned consumer bindings and delivery ports are required.",
+    );
+  for (const [name, binding] of bindings) bindings.set(name, Object.freeze({ ...binding }));
   const validate = async (consumer: string, input: unknown, collection = false) => {
     const wire = data.parse(input);
     data.protocol.subscription(consumer, wire);
@@ -124,6 +153,12 @@ export function createMemoryWorkflowMarkers(
   maximum: number,
   collectionMaximum: number,
 ): WorkflowMarkerStore & { inspect(now: Date): { delivery: number; collection: number } } {
+  if (
+    [maximum, collectionMaximum].some(
+      (value) => !Number.isInteger(value) || value < 1 || value > 10000,
+    )
+  )
+    throw new JawStackDefinitionError("workflow.memory", "Marker capacities must be 1-10000.");
   const maps = [
     new Map<string, { fingerprint: string; expiresAt: number }>(),
     new Map<string, { fingerprint: string; expiresAt: number }>(),

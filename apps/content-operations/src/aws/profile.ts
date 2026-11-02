@@ -1,11 +1,12 @@
-import { contentWorkers, type ContentWorkerName } from "../domain/subscriptions";
+import { type ContentWorkerName } from "../domain/subscriptions";
+import { createContentStorageSpec } from "../application/workflow";
 import { jobNames } from "../application/job-store";
 import { deliveryQueueName } from "./delivery";
 import type { LabConfig } from "../lab/config";
 
 export const applicationTopologyVersion = 1;
 export function applicationProfile(config: LabConfig) {
-  const workers = contentWorkers.map((worker) => ({
+  const workers = createContentStorageSpec(config.source).manifest.consumers.map((worker) => ({
     consumer: worker.name as ContentWorkerName,
     eventTypes: [...worker.eventTypes],
     queue: deliveryQueueName(config, worker.name as ContentWorkerName),

@@ -103,59 +103,52 @@ export function createContentWorkers(options: {
       "Materialization exceeded its optimistic retry budget.",
     );
   };
+  const execute = async (name: ContentWorkerName, event: ContentEvent) => {
+    try {
+      if (name === "publishContent") {
+        if (!options.publisher)
+          throw new JawStackRuntimeError(
+            "runtime.unavailable",
+            "Publication execution dependency is not configured.",
+          );
+        return await options.publisher(event);
+      }
+      if (name === "deliverNotification") {
+        await options.notifications.deliver(
+          renderNotification(event, options.clock?.() ?? new Date()),
+        );
+        return "delivered" as const;
+      }
+      return await materialize(name, event);
+    } catch (error) {
+      if (error instanceof JawStackRuntimeError) throw error;
+      throw new JawStackRuntimeError(
+        "runtime.unavailable",
+        "Application worker dependency failed.",
+      );
+    }
+  };
   return {
     definitions: contentWorkers,
     subscribers,
+    execute,
+    // Direct domain invocation for focused tests; transports bind execute, never this facade.
     handle: async (name: ContentWorkerName, input: unknown) => {
-      try {
-        let event: ContentEvent;
-        try {
-          event = parseContentEvent(input, source);
-        } catch {
-          throw new JawStackRuntimeError(
-            "command.validation",
-            "Invalid application event envelope or payload.",
-          );
-        }
-        if (!subscribers(event.eventType).includes(name))
-          throw new JawStackRuntimeError(
-            "command.rejected",
-            "Worker is not subscribed to this fact.",
-          );
-        if (event.recovery) {
-          if (event.recovery.consumer !== name) return "ignored" as const;
-          if (!options.recovery)
-            throw new JawStackRuntimeError(
-              "runtime.unavailable",
-              "Durable recovery dependency is not configured.",
-            );
-          await options.recovery.authorize(name, input);
-        }
-        if (name === "publishContent") {
-          if (!options.publisher)
-            throw new JawStackRuntimeError(
-              "runtime.unavailable",
-              "Publication execution dependency is not configured.",
-            );
-          return await options.publisher(event);
-        }
-        if (name === "deliverNotification") {
-          await options.notifications.deliver(
-            renderNotification(event, options.clock?.() ?? new Date()),
-          );
-          if (event.recovery) await options.recovery!.complete(name, input);
-          return "delivered" as const;
-        }
-        const outcome = await materialize(name, event);
-        if (event.recovery) await options.recovery!.complete(name, input);
-        return outcome;
-      } catch (error) {
-        if (error instanceof JawStackRuntimeError) throw error;
+      const event = parseContentEvent(input, source);
+      if (!subscribers(event.eventType).includes(name))
         throw new JawStackRuntimeError(
-          "runtime.unavailable",
-          "Application worker dependency failed.",
+          "command.rejected",
+          "Worker is not subscribed to this fact.",
         );
+      if (event.recovery) {
+        if (event.recovery.consumer !== name) return "ignored" as const;
+        if (!options.recovery)
+          throw new JawStackRuntimeError("runtime.unavailable", "Recovery is not configured.");
+        await options.recovery.authorize(name, input);
       }
+      const outcome = await execute(name, event);
+      if (event.recovery) await options.recovery!.complete(name, input);
+      return outcome;
     },
   };
 }

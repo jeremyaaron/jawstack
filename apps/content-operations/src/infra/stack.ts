@@ -2,12 +2,11 @@ import { Construct } from "constructs";
 import { Duration, RemovalPolicy, Stack, Tags, Token } from "aws-cdk-lib";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as destinations from "aws-cdk-lib/aws-lambda-destinations";
-import * as logs from "aws-cdk-lib/aws-logs";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import * as sqs from "aws-cdk-lib/aws-sqs";
-import { SqsEventSource } from "aws-cdk-lib/aws-lambda-event-sources";
 import { PolicyStatement } from "aws-cdk-lib/aws-iam";
 import { JawStackResourceWorkflowApp } from "@jawstack/aws-cdk";
+import { createContentWorkflow } from "../application/workflow";
 import { contentInfrastructureConfig, type InfrastructureArtifact } from "./config";
 
 export class ContentOperationsInfrastructure extends Construct {
@@ -38,7 +37,6 @@ export class ContentOperationsInfrastructure extends Construct {
       throw new Error("Content synthesis uses only the dummy local account and declared region.");
     const { profile } = config;
     const bounds = profile.bounds;
-    const prefix = `${config.appName}-${config.stage}`;
     this.workflow = new JawStackResourceWorkflowApp(this, "Workflow", {
       appName: config.appName,
       stage: config.stage,
@@ -46,6 +44,10 @@ export class ContentOperationsInfrastructure extends Construct {
       costProfile: config.costProfile,
       auth: config.auth,
       removalPolicy: "destroy",
+      recoverableWorkers: {
+        definition: createContentWorkflow(config.lab.source),
+        collectorHandler: options.entrypoints.collector,
+      },
       workerOptions: {
         batchSize: bounds.batchSize,
         deadLetterVisibilityTimeoutSeconds: bounds.visibility,
@@ -116,33 +118,11 @@ export class ContentOperationsInfrastructure extends Construct {
         grantObjects(binding.workerFunction, ["s3:GetObject"], "assets");
         grantObjects(binding.workerFunction, ["s3:GetObject", "s3:PutObject"], "publications");
       }
-      const name = `${prefix}-${worker.consumer.toLowerCase()}-collector`;
-      const logGroup = new logs.LogGroup(this, `${worker.consumer}CollectorLogs`, {
-        logGroupName: `/aws/lambda/${name}`,
-        retention: logs.RetentionDays.ONE_WEEK,
-        removalPolicy: RemovalPolicy.DESTROY,
-      });
-      const collector = new lambda.Function(this, `${worker.consumer}Collector`, {
-        functionName: name,
-        code: lambda.Code.fromAsset(options.entrypoints.collector),
-        handler: "index.handler",
-        runtime: lambda.Runtime.NODEJS_22_X,
-        architecture: lambda.Architecture.ARM_64,
-        timeout: Duration.seconds(bounds.timeout),
-        memorySize: bounds.memory,
-        reservedConcurrentExecutions: bounds.concurrency,
-        logGroup,
-      });
+      const collector = this.workflow.collectorFunctionsByName[worker.consumer];
+      if (!collector) throw new Error("Missing shared collector binding.");
       environment(collector);
       collector.addEnvironment("CONTENT_OPS_CONSUMER", worker.consumer);
       collector.addEnvironment("CONTENT_OPS_QUEUE_ARN", binding.deadLetterQueue.queueArn);
-      this.workflow.table.grantReadWriteData(collector);
-      collector.addEventSource(
-        new SqsEventSource(binding.deadLetterQueue, {
-          batchSize: bounds.batchSize,
-          maxConcurrency: bounds.concurrency,
-        }),
-      );
       collectors[worker.consumer] = collector;
     }
     this.collectorsByName = Object.freeze(collectors);

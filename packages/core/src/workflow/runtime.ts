@@ -54,7 +54,10 @@ export type WorkflowStorage = Readonly<{
   close?(): void | Promise<void>;
 }>;
 export type WorkflowStorageSpec = Readonly<
-  Pick<ReturnType<typeof workflowDefinition>, "planner" | "protocol" | "manifest">
+  Pick<
+    ReturnType<typeof workflowDefinition>,
+    "planner" | "protocol" | "manifest" | "parse" | "fact"
+  >
 > &
   Readonly<{
     validation: Readonly<{
@@ -179,6 +182,8 @@ export const runtimeLifecycle = (runtime: WorkflowRuntime) => lifecycles.get(run
 export function createWorkflowStorageSpec(definition: WorkflowDefinition): WorkflowStorageSpec {
   const data = workflowDefinition(definition);
   return Object.freeze({
+    parse: data.parse,
+    fact: data.fact,
     planner: data.planner,
     protocol: data.protocol,
     manifest: data.manifest,
@@ -420,7 +425,7 @@ export function createWorkflowRuntime(
       ...(authorizeOperations ? { authorizeOperations } : {}),
     });
     const delivery = createWorkflowDelivery({
-      data,
+      definition,
       failures,
       markers: storage.markers,
       bindings,

@@ -254,6 +254,35 @@ Never drive or close a workflow from its own handler. Construction never starts 
 
 ## Adapter Authors
 
+Complete new applications should use `createMemoryWorkflow` or `createDynamoWorkflow`.
+Existing consumers with domain-owned services can compose the same implementation through
+public adapter entries, without copying its algorithms:
+
+- `createWorkflowStorageSpec(definition)` exposes the owned planner, failure protocol,
+  immutable manifest, `parse` (including EventBridge detail unwrapping), `fact` and stored
+  value validators.
+- `createMemoryWorkflowFailureStore({ persistence, protocol, maxRecords? })` mounts once
+  on shared memory persistence; failure history, its projection and replay outbox publish
+  through the same atomic lock as commands.
+- `createWorkflowFailureService({ protocol, store, authorizeOperations, hooks, clock? })`
+  owns collection, durable replay authorization/CAS and completion. Reconciliation and
+  replay policy are bound hooks, not a copied state machine. An optional programmatic
+  `fault` callback supports interrupted-commit tests; never select it from ingress or
+  production environment variables.
+- `createWorkflowDelivery({ definition, failures, markers, bindings, clock, signal, run })`
+  captures an exact consumer binding map. It owns validation-before-marker ordering and
+  replay completion. Handlers return void or `"ignored"`, not transport acknowledgements.
+- `createMemoryWorkflowMarkers(deliveryCapacity, collectionCapacity)` and
+  `createWorkflowPump({ outbox, parse, subscribers, delivery, clock, signal, maxJobs,
+markerCounts, run, check })` provide the same bounded marker/pump implementation.
+  `run` and `check` belong to the adapter's lifecycle owner. Do not start a shared driver
+  alongside an existing managed HTTP loop; stop that loop and await its drains on shutdown.
+
+These are trusted backend composition ports, not HTTP APIs. They do not confer automatic
+lifecycle ownership, validate arbitrary application effects or close borrowed clients.
+`failedDeliveryId` and `envelopeFingerprint` expose canonical identity helpers; applications
+must not construct or authorize replay metadata from those hashes alone.
+
 For command-only composition, use `createWorkflowStorageSpec(definition)` to obtain the
 same owned, frozen planner/validation specification used by `createWorkflowRuntime`.
 `createMemoryWorkflowPersistence({ planner: spec.planner, store? })` supplies scoped

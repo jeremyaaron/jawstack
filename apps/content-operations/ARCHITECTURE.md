@@ -219,7 +219,8 @@ sanitization, antivirus scanning, or permission to embed PDFs as active document
 - `deliverNotification`: review requests/reminders to the assigned editor; review decisions and
   publication success/terminal failure to the author.
 
-`src/application/workers.ts` supplies the shared transport-independent handlers. They validate
+`src/application/workers.ts` supplies domain handlers bound through the public shared delivery adapter.
+The shared protocol validates
 the exact application/stage source (default `content-operations`), version-1 envelope, bounded
 IDs/payloads, target identity, and strict fact outcome. This single-workspace consumer rejects
 tenant-scoped envelopes. Source validation is not a substitute for authenticated ingress or
@@ -244,12 +245,10 @@ deliveries (bounded override up to 10,000); capacity rejects new records but per
 views, 50 by default and 100 maximum. Rows also live in the memory repository's
 `contentItem.notifications[.<fixtureId>]` projections, matching DynamoDB. Stored records
 retain the first delivery's transport/correlation/causation metadata; replay does not rewrite
-it. Reserved payload metadata `delivery: { originalEventId, generation }` is strictly
-validated (generations 1-3) and excluded from the fact fingerprint. New durable replays also
-include `consumer` and `failureId`, validated against the persisted request before effects
-or cached-marker acknowledgement. Legacy two-field metadata remains parse-compatible for
-existing trusted fixtures, not accepted as a new durable recovery. There is no public payload
-submission/replay endpoint.
+it. Reserved payload metadata `delivery: { originalEventId, generation, consumer, failureId }`
+is strictly validated (generations 1-3) against the durable recovery request before effects
+or cached-marker acknowledgement. Incomplete legacy two-field metadata now rejects rather
+than bypassing durable replay authorization. There is no public payload submission/replay endpoint.
 
 ### Explicit Memory Processing
 
@@ -265,9 +264,10 @@ advances time or sleeps until a retry. Idle can therefore include deferred/termi
 Inspect `app.pump.inspect()` and the returned pending/terminal/next-attempt/backpressure
 fields. Uncollected failed jobs retain their original event privately but expose only sanitized summaries.
 
-The pump defaults to 200 pending/terminal jobs and 1,000 bounded seven-day transport markers
-(each capacity configurable up to 10,000). Marker capacity may evict old cache entries;
-business-level source-version/delivery checks still prevent duplicate effects. Whole event
+The shared pump defaults to 200 pending/terminal jobs and 1,000 bounded seven-day transport
+markers (each capacity configurable up to 10,000). Full marker capacity defers new work;
+it never evicts live markers. Business-level source-version/delivery checks also prevent
+duplicate effects after expiry. Whole event
 fan-out is admitted before advancing the cursor. When failed jobs fill capacity, processing
 backpressures rather than discarding events. Corrupt oversized outbox entries or changed
 content at the same transport event ID stop a drain explicitly. Recreate the runtime after
@@ -512,7 +512,13 @@ its resource configurations and grants in `src/lab/application-topology.ts` and 
 prebuilt archive identities in `scripts/lab-profile.ts`. The launcher delegates ordered,
 ownership-checked provisioning/reset; application scenarios and sentinels stay app-owned.
 The private routing inventory is not the public workflow runtime's bindings document;
-Content's runtime/protocol migrations remain separate work.
+Content command, failure stores, recovery orchestration, SQS wrappers and memory pumping now
+delegate to public workflow adapters. `application/delivery.ts` binds domain handlers;
+`application/failures.ts` retains editor authorization and publication reconciliation.
+`aws/profile.ts` derives subscriptions and queue/function bindings from the workflow manifest.
+The CDK stack opts into `recoverableWorkers`, retaining its S3/job grants. Existing local
+transport guards and finite shared lab tooling remain the local execution boundary; Content
+uses explicit borrowed clients, not a second public-local client pool or host processing loop.
 
 Docker socket access gives the emulator substantial privileges on the local Docker host.
 Use the trusted pinned image on a development machine or isolated runner, not as a sandbox

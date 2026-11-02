@@ -35,8 +35,8 @@ are planning identifiers, not framework versions.
 - [Iteration 2: Content Operations](iterations/002-content-operations/README.md): plans,
   [acceptance outcome](iterations/002-content-operations/outcome.md), and observed local evidence.
 - [Iteration 3: Framework Leverage](iterations/003-framework-leverage/README.md): reviewed
-  baselines and typed record/commit-plan primitives; scoped execution, storage, consumer
-  migration and post-extraction leverage evidence remain planned.
+  baselines, shared command/delivery/recovery adapters and the migrated Content consumer.
+  Independent Report Runs and final post-extraction leverage evidence remain planned.
 
 ## Internal Notes
 

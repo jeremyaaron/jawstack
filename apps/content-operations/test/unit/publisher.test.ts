@@ -11,6 +11,7 @@ import {
 } from "../../src/application/publication-artifact";
 import { renderNotification } from "../../src/application/notifications";
 import { parseContentEvent } from "../../src/shared/events";
+import { failedDeliveryId } from "../../src/application/failure-records";
 import { createPublicationSqsHandler } from "../../src/aws/publication";
 import { publicationHarness } from "../support/publication";
 import { buildLab } from "../../scripts/build-lab";
@@ -210,7 +211,15 @@ describe("recoverable publication", () => {
       ...failedEnvelope,
       eventId: randomUUID(),
       occurredAt: "2026-11-02T12:00:00.000Z",
-      payload: { ...failed.payload, delivery: { originalEventId: failed.eventId, generation: 1 } },
+      payload: {
+        ...failed.payload,
+        delivery: {
+          originalEventId: failed.eventId,
+          generation: 1,
+          consumer: "deliverNotification",
+          failureId: failedDeliveryId("deliverNotification", failed.eventId),
+        },
+      },
     });
     expect(renderNotification(replay, h.clock.now()).occurredAt).toBe(
       renderNotification(failed, h.clock.now()).occurredAt,
@@ -304,6 +313,8 @@ describe("publication transport markers", () => {
       Records: [
         {
           messageId: "message-1",
+          eventSource: "aws:sqs",
+          awsRegion: "us-east-1",
           eventSourceARN: queue,
           body: JSON.stringify(
             h.app.persistence.store.outbox.find(
@@ -379,7 +390,12 @@ describe("publication transport markers", () => {
       JSON.stringify({ source: "foreign", detail: JSON.parse(record.body) }),
     ])
       await expect(h.handler()({ Records: [{ ...record, body }] })).rejects.toThrow();
-    const foreignRecord = { ...record, eventSourceARN: "foreign" };
+    const foreignRecord = {
+      ...record,
+      eventSource: "aws:sqs",
+      awsRegion: "us-east-1",
+      eventSourceARN: "foreign",
+    };
     await expect(h.handler()({ Records: [foreignRecord] })).rejects.toThrow();
     h.markers.clear();
     await expect(

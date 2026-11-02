@@ -157,7 +157,7 @@ Planning approval does not authorize remote environment changes, secret setup or
 | 8     | Shared lab                 | App-neutral ownership, startup and teardown                     | Complete |
 | 9     | Shared lab/Content tooling | Finite provisioning/reset and Content lab migration             | Complete |
 | 10    | Content Operations         | Command/record migration with preserved publication authority   | Complete |
-| 11    | Content Operations         | Shared delivery/recovery migration and protocol retirement      | Planned  |
+| 11    | Content Operations         | Shared delivery/recovery migration and protocol retirement      | Complete |
 | 12    | Report Runs                | Complete headless memory/local consumer                         | Planned  |
 | 13    | Integration/tooling        | Installed consumer, final live gates and frozen candidate       | Planned  |
 | 14    | Evidence/documentation     | Leverage verdict, acceptance audit and merge readiness          | Planned  |
@@ -513,6 +513,10 @@ memory browser suite with desktop/mobile inspection, clean release regressions a
 local command/stream happy path through the transitional single delivery owner.
 
 ## Phase 11: Content Delivery and Recovery Migration
+
+Status: complete; see [Phase 11 evidence](phase-11-evidence.md). Public delivery/recovery
+adapters replaced the app algorithms; unit/API, both browser modes, clean-release and
+the complete normal-bound live failure/reset/reprovision/teardown gate passed.
 
 Depends on: Phase 10.
 

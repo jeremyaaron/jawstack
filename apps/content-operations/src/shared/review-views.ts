@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { readyAttachmentSchema } from "./assets";
 import { reviewTaskStateSchema, submittedSnapshotSchema } from "./contracts";
-import { eventIdentitySchema } from "./events";
+import { eventIdentitySchema } from "./event-policy";
 import { idSchema, instantSchema } from "./validation";
 
 // HTTP snapshots retain the domain's field contracts, but never storage references.

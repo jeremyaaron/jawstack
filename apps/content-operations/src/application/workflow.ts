@@ -3,7 +3,7 @@ import { z } from "zod";
 import { createContentOperationsResources } from "../domain/resources";
 import { contentWorkers } from "../domain/subscriptions";
 import { contentEventSchemas } from "../shared/contracts";
-import { contentEventSource, parseContentWire } from "../shared/events";
+import { contentEventSource, validateContentFact } from "../shared/event-policy";
 import { limits } from "../shared/validation";
 import {
   commandReceiptRecord,
@@ -27,7 +27,7 @@ export function createContentWorkflow(source = contentEventSource) {
       schema: schema instanceof z.ZodReadonly ? schema.unwrap() : schema,
       validateIdentity: (event) => {
         try {
-          parseContentWire(event, source);
+          validateContentFact(event);
           return true;
         } catch {
           return false;
@@ -44,5 +44,10 @@ export function createContentWorkflow(source = contentEventSource) {
     operations: { resourceType: "contentItem", projection: "contentItem.failures" },
   });
 }
-export const createContentStorageSpec = (source = contentEventSource) =>
-  createWorkflowStorageSpec(createContentWorkflow(source));
+// One-entry cache avoids retaining arbitrary source names while sharing the immutable spec.
+let current: { source: string; spec: ReturnType<typeof createWorkflowStorageSpec> } | undefined;
+export function createContentStorageSpec(source = contentEventSource) {
+  if (current?.source !== source)
+    current = { source, spec: createWorkflowStorageSpec(createContentWorkflow(source)) };
+  return current.spec;
+}

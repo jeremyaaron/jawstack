@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { publicationAttemptViewSchema } from "./contracts";
-import { eventIdentitySchema } from "./events";
+import { eventIdentitySchema } from "./event-policy";
 import { fixtureIds, editorIds } from "./identities";
 import { idSchema, instantSchema, versionSchema } from "./validation";
 

@@ -15,7 +15,7 @@ const queueArn = z
   )
   .refine((value) => value.split(":").at(-1)!.length <= 80);
 export type WorkflowSqsOptions = Readonly<{
-  runtime: WorkflowRuntime;
+  runtime: Pick<WorkflowRuntime, "manifest" | "events" | "delivery">;
   consumer: string;
   sourceQueueArn: string;
   deadLetterQueueArn: string;
@@ -66,30 +66,34 @@ export function createWorkflowSqsHandlers(options: WorkflowSqsOptions) {
       .min(1)
       .max(policy.batchSize),
   });
+  const parse = (input: unknown, collect = false) => {
+    let wires: ReturnType<WorkflowRuntime["events"]["parse"]>[];
+    try {
+      // Capture the complete transport before the first await. Metadata is bounded too.
+      const batch = schema.parse(
+        copyWorkflowJson(input, policy.batchSize * (maximumBody * 6 + 16384)),
+      );
+      const expectedArn = collect ? deadLetterQueueArn : sourceQueueArn;
+      if (new Set(batch.Records.map((record) => record.messageId)).size !== batch.Records.length)
+        throw new Error();
+      wires = batch.Records.map((record) => {
+        if (
+          record.eventSourceARN !== expectedArn ||
+          record.awsRegion !== expectedArn.split(":")[3] ||
+          Buffer.byteLength(record.body) > maximumBody
+        )
+          throw new Error();
+        return runtime.events.parse(JSON.parse(record.body));
+      });
+    } catch {
+      throw new JawStackRuntimeError("command.validation", "Invalid workflow delivery batch.");
+    }
+    return wires;
+  };
   const handler =
     (collect: boolean) =>
     async (input: unknown): Promise<SqsWorkerResult> => {
-      let wires: ReturnType<WorkflowRuntime["events"]["parse"]>[];
-      try {
-        // Capture the complete transport before the first await. Metadata is bounded too.
-        const batch = schema.parse(
-          copyWorkflowJson(input, policy.batchSize * (maximumBody * 6 + 16384)),
-        );
-        const expectedArn = collect ? deadLetterQueueArn : sourceQueueArn;
-        if (new Set(batch.Records.map((record) => record.messageId)).size !== batch.Records.length)
-          throw new Error();
-        wires = batch.Records.map((record) => {
-          if (
-            record.eventSourceARN !== expectedArn ||
-            record.awsRegion !== expectedArn.split(":")[3] ||
-            Buffer.byteLength(record.body) > maximumBody
-          )
-            throw new Error();
-          return runtime.events.parse(JSON.parse(record.body));
-        });
-      } catch {
-        throw new JawStackRuntimeError("command.validation", "Invalid workflow delivery batch.");
-      }
+      const wires = parse(input, collect);
       // Validate/authorize *every* fact before the first marker or effect, even on duplicates.
       for (const wire of wires) {
         if (collect) await runtime.delivery.validateCollection(consumer, wire);
@@ -108,5 +112,5 @@ export function createWorkflowSqsHandlers(options: WorkflowSqsOptions) {
       }
       return { seen: wires.length, processed, skipped };
     };
-  return Object.freeze({ worker: handler(false), collector: handler(true) });
+  return Object.freeze({ worker: handler(false), collector: handler(true), parse });
 }

@@ -1,7 +1,7 @@
 import {
   DynamoDbRepository,
-  DynamoDbWorkerIdempotencyStore,
-  SqsWorkerAdapter,
+  createDynamoWorkflowStorage,
+  createWorkflowSqsHandlers,
   type DynamoDbClientLike,
   type SqsEvent,
 } from "@jawstack/aws-runtime";
@@ -9,11 +9,13 @@ import { createFailureService } from "../application/failures";
 import { createContentWorkers } from "../application/workers";
 import { createContentDispatch } from "../application/dispatch";
 import { consumerSchema } from "../application/failure-records";
+import { contentDeliveryWire } from "../shared/events";
+import { createContentStorageSpec } from "../application/workflow";
+import { createContentDelivery } from "../application/delivery";
 import { localLambdaConfig } from "./local-context";
 import { createClients, destroyClients } from "../lab/clients";
 import { queueArn } from "../lab/capabilities";
-import { validatedDeliveryBatch, deliveryQueueName, deliveryMarkerTtlSeconds } from "./delivery";
-import { parseContentEvent } from "../shared/events";
+import { deliveryQueueName } from "./delivery";
 import { createDynamoFailureStore } from "./failures";
 import { createDynamoPersistence } from "./persistence";
 import { createDynamoNotificationSink } from "./notifications";
@@ -28,67 +30,73 @@ type TransportOptions = {
   consumer: ContentWorkerName;
   clock?: () => Date;
 };
-export function createFailureSqsHandler(
+type Recovery = Pick<
+  ReturnType<typeof createFailureService>,
+  "authorize" | "complete" | "collect" | "validateCollection"
+>;
+const unavailable = async (): Promise<never> => {
+  throw new Error("Recovery is not configured.");
+};
+export function contentSqsHandlers(
   options: TransportOptions & {
-    failures: Pick<ReturnType<typeof createFailureService>, "collect" | "validateCollection">;
+    failures?: Partial<Recovery>;
+    handle: Parameters<typeof createContentDelivery>[0]["handle"];
   },
+  collect = false,
 ) {
-  const adapter = new SqsWorkerAdapter({
-    workerName: `collectFailure.${options.consumer}`,
-    idempotencyStore: new DynamoDbWorkerIdempotencyStore({
-      client: options.client,
-      tableName: options.tableName,
-      ttlSeconds: deliveryMarkerTtlSeconds,
-      ...(options.clock ? { clock: options.clock } : {}),
-    }),
-    handler: async ({ event }) => {
-      await options.failures.collect(options.consumer, event);
+  const spec = createContentStorageSpec(options.source);
+  const storage = createDynamoWorkflowStorage(spec, options.client, options.tableName);
+  const bound = createContentDelivery({
+    source: options.source,
+    markers: storage.markers,
+    handle: options.handle,
+    ...(options.clock ? { clock: options.clock } : {}),
+    failures: {
+      authorize: options.failures?.authorize ?? unavailable,
+      complete: options.failures?.complete ?? unavailable,
+      collect: options.failures?.collect ?? unavailable,
+      validateCollection: options.failures?.validateCollection ?? unavailable,
     },
   });
-  return async (event: SqsEvent) => {
-    const batch = validatedDeliveryBatch(event, {
-      queueArn: options.expectedQueueArn,
-      source: options.source,
-      consumer: options.consumer,
-    });
-    for (const record of batch.Records)
-      await options.failures.validateCollection(options.consumer, JSON.parse(record.body));
-    return adapter.handle(batch);
-  };
+  const sourceQueueArn = collect
+    ? options.expectedQueueArn.replace(/-dlq$/, "")
+    : options.expectedQueueArn;
+  return createWorkflowSqsHandlers({
+    runtime: {
+      ...bound,
+      events: {
+        parse: spec.parse,
+        fact: spec.fact,
+        subscribers: (type) =>
+          spec.manifest.consumers.filter((c) => c.eventTypes.includes(type)).map((c) => c.name),
+      },
+    },
+    consumer: options.consumer,
+    sourceQueueArn,
+    deadLetterQueueArn: collect ? options.expectedQueueArn : sourceQueueArn + "-dlq",
+  });
+}
+export function createFailureSqsHandler(
+  options: TransportOptions & {
+    failures: Pick<Recovery, "collect" | "validateCollection"> & Partial<Recovery>;
+  },
+) {
+  return contentSqsHandlers({ ...options, handle: unavailable }, true).collector;
 }
 export function createContentWorkerSqsHandler(
   options: TransportOptions & {
-    workers: Pick<ReturnType<typeof createContentWorkers>, "handle">;
-    recovery: Pick<ReturnType<typeof createFailureService>, "authorize">;
+    workers: Pick<ReturnType<typeof createContentWorkers>, "handle"> &
+      Partial<Pick<ReturnType<typeof createContentWorkers>, "execute">>;
+    recovery: Pick<Recovery, "authorize"> & Partial<Recovery>;
   },
 ) {
-  const adapter = new SqsWorkerAdapter({
-    workerName: options.consumer,
-    idempotencyStore: new DynamoDbWorkerIdempotencyStore({
-      client: options.client,
-      tableName: options.tableName,
-      ttlSeconds: deliveryMarkerTtlSeconds,
-      ...(options.clock ? { clock: options.clock } : {}),
-    }),
-    handler: async ({ event }) => {
-      await options.workers.handle(options.consumer, event);
-    },
-  });
-  return async (event: SqsEvent) => {
-    const batch = validatedDeliveryBatch(event, {
-      queueArn: options.expectedQueueArn,
-      source: options.source,
-      consumer: options.consumer,
-      allowForeignRecovery: true,
-    });
-    for (const record of batch.Records) {
-      const wire: unknown = JSON.parse(record.body);
-      const parsed = parseContentEvent(wire, options.source);
-      if (parsed.recovery?.consumer === options.consumer)
-        await options.recovery.authorize(options.consumer, wire);
-    }
-    return adapter.handle(batch);
-  };
+  return contentSqsHandlers({
+    ...options,
+    failures: options.recovery,
+    handle:
+      options.workers.execute ??
+      ((name, event) => options.workers.handle(name, contentDeliveryWire(event))),
+  }).worker;
 }
 export async function executeRecovery(
   event: SqsEvent,
@@ -135,7 +143,10 @@ export async function executeRecovery(
       ...transport,
       recovery: failures,
       workers: {
-        handle: async (name, fact) => {
+        handle: async () => {
+          throw new Error("Unbound direct invocation.");
+        },
+        execute: async (name, fact) => {
           await hooks.before?.(fact);
           return createContentWorkers({
             repository,
@@ -146,7 +157,7 @@ export async function executeRecovery(
               tableName: config.table,
             }),
             recovery: failures,
-          }).handle(name, fact);
+          }).execute(name, fact);
         },
       },
     })(event);

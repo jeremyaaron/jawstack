@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { JawStackRuntimeError, type JawStackEvent } from "../index";
+import { JawStackDefinitionError, JawStackRuntimeError, type JawStackEvent } from "../index";
 import { envelopeFingerprint } from "./failure-records";
 import { boundedWait } from "./runtime";
 import type { createWorkflowDelivery } from "./delivery";
@@ -68,6 +68,28 @@ export function createWorkflowPump(options: {
   run<T>(work: () => T | Promise<T>): Promise<T>;
   check(): void;
 }) {
+  if (
+    !Number.isInteger(options.maxJobs) ||
+    options.maxJobs < 1 ||
+    options.maxJobs > 10000 ||
+    !(options.signal instanceof AbortSignal) ||
+    [
+      options.outbox,
+      options.parse,
+      options.subscribers,
+      options.clock,
+      options.markerCounts,
+      options.run,
+      options.check,
+      options.delivery?.check,
+      options.delivery?.handle,
+      options.delivery?.collect,
+    ].some((callback) => typeof callback !== "function")
+  )
+    throw new JawStackDefinitionError(
+      "workflow.memory",
+      "Complete pump ports and bounded capacity are required.",
+    );
   const jobs = new Map<string, Job>();
   const identity = (name: string, id: string) => JSON.stringify([name, id]);
   let cursor = 0,

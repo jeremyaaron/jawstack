@@ -3,7 +3,8 @@ import type { SqsEvent } from "@jawstack/aws-runtime";
 import { localLambdaConfig } from "../aws/local-context";
 import { executePublication } from "../aws/publication";
 import { executeRecovery } from "../aws/recovery";
-import { validatedDeliveryBatch, deliveryQueueName } from "../aws/delivery";
+import { deliveryQueueName } from "../aws/delivery";
+import { contentSqsHandlers } from "../aws/recovery";
 import { createClients, destroyClients } from "./clients";
 import { queueArn } from "./capabilities";
 import { consumerSchema } from "../application/failure-records";
@@ -17,35 +18,41 @@ async function execute(event: SqsEvent, kind: "publisher" | "worker" | "collecto
     kind === "publisher"
       ? "publishContent"
       : consumerSchema.parse(process.env.CONTENT_OPS_CONSUMER);
-  const batch = validatedDeliveryBatch(event, {
-    queueArn: queueArn(config, deliveryQueueName(config, consumer, kind === "collector")),
-    consumer,
-    source: config.source,
-    allowForeignRecovery: kind === "worker",
-  });
-  if (batch.Records.length !== 1)
-    throw new Error("Verification requires the declared single-message mapping.");
-  const fact = parseContentEvent(JSON.parse(batch.Records[0]!.body), config.source);
-  const original = z
-    .object({
-      Records: z.array(
-        z.object({
-          attributes: z.object({
-            ApproximateReceiveCount: z.coerce.number().int().min(1).max(100),
-          }),
-        }),
-      ),
-    })
-    .parse(event).Records[0]!;
   const clients = createClients(config);
   try {
+    const batch = contentSqsHandlers(
+      {
+        client: clients.dynamo,
+        tableName: config.table,
+        handle: async () => {},
+        expectedQueueArn: queueArn(
+          config,
+          deliveryQueueName(config, consumer, kind === "collector"),
+        ),
+        consumer,
+        source: config.source,
+      },
+      kind === "collector",
+    ).parse(event, kind === "collector");
+    const fact = parseContentEvent(batch[0]!, config.source);
+    const original = z
+      .object({
+        Records: z.array(
+          z.object({
+            attributes: z.object({
+              ApproximateReceiveCount: z.coerce.number().int().min(1).max(100),
+            }),
+          }),
+        ),
+      })
+      .parse(event).Records[0]!;
     const fault = await verificationHooks({
       client: clients.dynamo,
       table: config.table,
       ownerId,
       consumer,
       fact,
-      messageId: batch.Records[0]!.messageId,
+      messageId: event.Records![0]!.messageId,
       receiveCount: original.attributes.ApproximateReceiveCount,
       collector: kind === "collector",
     });

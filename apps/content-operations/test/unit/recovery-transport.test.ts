@@ -74,6 +74,8 @@ async function harness() {
     Records: [
       {
         messageId: "message-1",
+        eventSource: "aws:sqs",
+        awsRegion: "us-east-1",
         eventSourceARN: queue,
         body: JSON.stringify({ source, "detail-type": event.eventType, detail: event }),
       },
@@ -129,10 +131,15 @@ describe("durable collection acknowledgements", () => {
     expect(await h.handler(h.batch())).toMatchObject({ processed: 1 });
     const reads = h.client.reads;
     const record = h.batch().Records[0]!;
-    const foreign = { ...record, eventSourceARN: "foreign" };
+    const foreign = {
+      ...record,
+      eventSource: "aws:sqs",
+      awsRegion: "us-east-1",
+      eventSourceARN: "foreign",
+    };
     await expect(
       h.handler({ Records: [{ ...record, body: "private-payload-fragment" }] }),
-    ).rejects.toMatchObject({ message: "Invalid application delivery batch." });
+    ).rejects.toMatchObject({ message: "Invalid workflow delivery batch." });
     await expect(h.handler({ Records: [foreign] })).rejects.toThrow();
     await expect(
       h.handler({ Records: [record, { ...record, body: "invalid-json" }] }),
@@ -144,7 +151,7 @@ describe("durable collection acknowledgements", () => {
     ).rejects.toThrow();
     expect(h.client.reads).toBe(reads);
   });
-  it("retries a whole batch without acknowledging its live-claimed second publication", async () => {
+  it("rejects oversized batches before effects and defers the live-claimed publication", async () => {
     const h = editorialHarness();
     await h.create("scheduled");
     await h.create("scheduled");
@@ -186,14 +193,22 @@ describe("durable collection acknowledgements", () => {
     const batch = {
       Records: events.map((event, index) => ({
         messageId: `message-${index}`,
+        eventSource: "aws:sqs",
+        awsRegion: "us-east-1",
         eventSourceARN: dlq,
         body: JSON.stringify(event),
       })),
     };
-    await expect(handler(batch)).rejects.toMatchObject({ code: "resource.conflict" });
+    await expect(handler(batch)).rejects.toMatchObject({ code: "command.validation" });
+    expect(client.markers).toBe(0);
+    expect(await handler({ Records: [batch.Records[0]!] })).toMatchObject({ processed: 1 });
+    await expect(handler({ Records: [batch.Records[1]!] })).rejects.toMatchObject({
+      code: "resource.conflict",
+    });
     expect(client.markers).toBe(1);
     h.clock.advance(90_000);
-    expect(await handler(batch)).toMatchObject({ processed: 1, skipped: 1 });
+    expect(await handler({ Records: [batch.Records[0]!] })).toMatchObject({ skipped: 1 });
+    expect(await handler({ Records: [batch.Records[1]!] })).toMatchObject({ processed: 1 });
     expect(client.markers).toBe(2);
     expect(h.app.failureStore.records.size).toBe(2);
   });
@@ -221,7 +236,15 @@ describe("targeted worker replay transport", () => {
       recovery: h.failures,
     });
     const batch = {
-      Records: [{ messageId: "replay", eventSourceARN: q, body: JSON.stringify(replay) }],
+      Records: [
+        {
+          messageId: "replay",
+          eventSource: "aws:sqs",
+          awsRegion: "us-east-1",
+          eventSourceARN: q,
+          body: JSON.stringify(replay),
+        },
+      ],
     };
     h.client.failMarker = true;
     await expect(handler(batch)).rejects.toMatchObject({ code: "runtime.unavailable" });

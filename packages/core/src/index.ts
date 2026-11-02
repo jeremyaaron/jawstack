@@ -34,6 +34,12 @@ export { createWorkflowRuntime, createWorkflowStorageSpec } from "./workflow/run
 export { createWorkflowCommandDispatch } from "./workflow/command-runtime";
 export type { WorkflowPersistenceFactory } from "./workflow/command-runtime";
 export { createMemoryWorkflowPersistence } from "./workflow/memory";
+// Adapter composition uses the same protocols as the complete workflow factories.
+export { createWorkflowFailureService } from "./workflow/failures";
+export { createMemoryWorkflowFailureStore } from "./workflow/failure-memory";
+export { createWorkflowDelivery, createMemoryWorkflowMarkers } from "./workflow/delivery";
+export { createWorkflowPump } from "./workflow/pump";
+export { failedDeliveryId, envelopeFingerprint } from "./workflow/failure-records";
 export type {
   WorkflowRuntime,
   WorkflowServices,

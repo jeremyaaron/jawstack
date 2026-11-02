@@ -39,6 +39,34 @@ function harness(backend: "memory" | "dynamo" = "memory", size = 1) {
   return { ...h, ...handlers, client, handle };
 }
 describe("strict workflow SQS binding", () => {
+  it("offers the same pure bounded transport parse without reads or business authority", async () => {
+    const h = harness("dynamo");
+    h.client.calls = [];
+    expect(h.parse(batch([h.original]))).toEqual([h.original]);
+    expect(h.client.calls).toEqual([]);
+    expect(h.handle).not.toHaveBeenCalled();
+    const forged = {
+      ...h.original,
+      eventId: "forged",
+      payload: {
+        ...h.original.payload,
+        delivery: {
+          originalEventId: h.original.eventId,
+          generation: 1,
+          consumer: "process",
+          failureId: "a".repeat(64),
+        },
+      },
+    };
+    expect(h.parse(batch([forged]))).toHaveLength(1);
+    expect(h.client.calls).toEqual([]);
+    await expect(h.worker(batch([forged]))).rejects.toMatchObject({ code: "command.rejected" });
+    expect(h.handle).not.toHaveBeenCalled();
+    expect(() => h.parse(batch([h.original, h.original]))).toThrow(
+      "Invalid workflow delivery batch.",
+    );
+    await h.runtime.close();
+  });
   it.each(["memory", "dynamo"] as const)(
     "processes/collects duplicates through the shared %s runtime",
     async (backend) => {

@@ -12,6 +12,7 @@ import {
   type NotificationSink,
 } from "../../src/application/notifications";
 import { createDynamoNotificationSink } from "../../src/aws/notifications";
+import { failedDeliveryId } from "../../src/application/failure-records";
 import { parseContentEvent } from "../../src/shared/events";
 
 const instant = "2026-10-31T12:00:00.000Z";
@@ -163,7 +164,12 @@ describe.each(["memory", "dynamo"] as const)("%s notification destination", (ada
       occurredAt: "2026-11-10T12:00:00.000Z",
       payload: {
         ...(fact().payload as object),
-        delivery: { originalEventId: fact().eventId, generation: 1 },
+        delivery: {
+          originalEventId: fact().eventId,
+          generation: 1,
+          consumer: "deliverNotification",
+          failureId: failedDeliveryId("deliverNotification", fact().eventId),
+        },
       },
     });
     expect(

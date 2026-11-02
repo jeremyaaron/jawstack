@@ -80,13 +80,9 @@ export function createMemoryRuntime(options: { clock?: () => Date; source?: stri
     clock,
   });
   const drainUntilIdle = async (maxPasses = 20) => {
-    if (!Number.isInteger(maxPasses) || maxPasses < 1 || maxPasses > 100)
-      throw new Error("Invalid drain pass budget.");
-    for (let pass = 0; pass < maxPasses; pass++) {
-      const result = await pump.drain();
-      if (!result.hasMore || result.backpressured) return result;
-    }
-    throw new Error("Memory drain exceeded its pass budget.");
+    const drained = await pump.drainUntilIdle({ maxPasses });
+    if (drained.exhausted) throw new Error("Memory drain exceeded its pass budget.");
+    return drained.result;
   };
   return {
     persistence,
@@ -101,5 +97,6 @@ export function createMemoryRuntime(options: { clock?: () => Date; source?: stri
     failureStore,
     failures,
     drainUntilIdle,
+    close: () => pump.stop(),
   };
 }

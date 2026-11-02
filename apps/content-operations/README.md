@@ -1,5 +1,11 @@
 # Content Operations
 
+The reference app now delegates command persistence, delivery, failure collection/replay and
+memory pumping to public JawStack adapters. Editorial policy, publication leases/fences,
+immutable artifacts, uploads, notifications and recurring jobs remain app-owned.
+See [runtime boundaries](ARCHITECTURE.md#explicit-memory-processing) and the
+[migration ledger](../../docs/iterations/003-framework-leverage/leverage/phase-11-migration.md).
+
 Private, maintained JawStack reference application for a small editorial team: draft,
 attach files, request review, approve, schedule, publish an immutable JSON snapshot, and
 inspect asynchronous outcomes. It is an application you can modify, not a generated CMS

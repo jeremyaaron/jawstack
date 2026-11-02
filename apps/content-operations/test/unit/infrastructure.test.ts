@@ -168,7 +168,7 @@ describe("content application synthesis", () => {
       expect(workflow.collectorFunctionsByName[worker.consumer]!.node.id).toBe(
         `${worker.consumer}Collector`,
       );
-      expect(current[0]).not.toBe(old[0]); // Moving construct ownership changes logical IDs, not physical names.
+      expect(current[0]).toBe(old[0]); // Content now uses the same opt-in collector composition.
       const vars = (current[1].Properties.Environment as { Variables: Record<string, unknown> })
         .Variables;
       expect(vars).toMatchObject({
@@ -291,12 +291,20 @@ describe("content application synthesis", () => {
         VisibilityTimeout: profile.bounds.visibility,
         MessageRetentionPeriod: profile.bounds.dlqRetention,
       });
-      h.template.hasResourceProperties("AWS::Events::Rule", {
-        EventPattern: {
-          source: [h.infrastructure.config.lab.source],
-          "detail-type": worker.eventTypes,
-        },
-      });
+      const rule = h
+        .byType("AWS::Events::Rule")
+        .map(
+          ([, r]) =>
+            r.Properties.EventPattern as
+              | {
+                  source?: string[];
+                  "detail-type"?: string[];
+                }
+              | undefined,
+        )
+        .find((pattern) => pattern?.["detail-type"]?.includes(worker.eventTypes[0]!));
+      expect(rule?.source).toEqual([h.infrastructure.config.lab.source]);
+      expect([...rule!["detail-type"]!].sort()).toEqual([...worker.eventTypes].sort());
       const [workerId, workerResource] = h.fn(`${base}-worker`);
       const [collectorId, collectorResource] = h.fn(`${base}-collector`);
       for (const [targetId, resource] of [
