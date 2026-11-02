@@ -28,9 +28,15 @@ import {
 } from "./failures";
 import type { WorkflowFailureStore } from "./failure-records";
 import { createWorkflowDelivery, type WorkflowMarkerStore } from "./delivery";
-import { resolveRecord, type AtomicRecordDefinition, type AtomicRecordOwner } from "./records";
+import {
+  readRecord,
+  resolveRecord,
+  type AtomicRecordDefinition,
+  type AtomicRecordOwner,
+} from "./records";
 import { component, jsonCopy, utf8 } from "./validation";
-import { invalidStored, storedResource } from "./stored";
+import { invalidStored, storedIdempotency, storedResource } from "./stored";
+import { activitySchema, projectionSchema } from "./commit-plan";
 import { assertWorkflowWritable } from "./command-context";
 
 export type WorkflowRecordRow = Readonly<{
@@ -49,7 +55,17 @@ export type WorkflowStorage = Readonly<{
 }>;
 export type WorkflowStorageSpec = Readonly<
   Pick<ReturnType<typeof workflowDefinition>, "planner" | "protocol" | "manifest">
->;
+> &
+  Readonly<{
+    validation: Readonly<{
+      json: typeof jsonCopy;
+      resource: typeof storedResource;
+      idempotency: typeof storedIdempotency;
+      record(collection: string, logicalKey: string, value: unknown): WorkflowRecordRow;
+      activity(value: unknown): import("../index").ActivityRecord;
+      projection(value: unknown): import("../index").ProjectionWrite;
+    }>;
+  }>;
 export type WorkflowStorageFactory = (spec: WorkflowStorageSpec) => WorkflowStorage;
 export type WorkflowDeliveryEvent = JawStackEvent<Record<string, unknown>> &
   Readonly<{
@@ -202,6 +218,38 @@ export function createWorkflowRuntime(
     planner: data.planner,
     protocol: data.protocol,
     manifest: data.manifest,
+    validation: Object.freeze({
+      json: jsonCopy,
+      resource: storedResource,
+      idempotency: storedIdempotency,
+      record: (collection: string, logicalKey: string, value: unknown) => {
+        try {
+          const row = readRecord(data.registeredRecords, collection, logicalKey, value);
+          if (!data.registry.getResource(row.owner.resourceType)) invalidStored();
+          return row;
+        } catch {
+          return invalidStored();
+        }
+      },
+      activity: (value: unknown) => {
+        try {
+          const copy = jsonCopy(value, 192 * 1024);
+          activitySchema.parse(copy);
+          return copy as import("../index").ActivityRecord;
+        } catch {
+          return invalidStored();
+        }
+      },
+      projection: (value: unknown) => {
+        try {
+          const copy = jsonCopy(value, 192 * 1024);
+          projectionSchema.parse(copy);
+          return copy as import("../index").ProjectionWrite;
+        } catch {
+          return invalidStored();
+        }
+      },
+    }),
   });
   if (storage instanceof Promise) {
     void storage.catch(() => {});

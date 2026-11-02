@@ -255,7 +255,13 @@ Never drive or close a workflow from its own handler. Construction never starts 
 ## Adapter Authors
 
 `createWorkflowRuntime(definition, createStorage, options)` is a backend adapter-author API.
-Its synchronous factory receives the bound planner, failure protocol and immutable manifest.
+Its synchronous factory receives the bound planner, failure protocol, immutable manifest
+and shared `validation` helpers. Use `validation.resource`, `idempotency`, `activity`,
+`projection` and `record` to validate detached stored values; `json` enforces the same
+finite JSON/byte/depth/node bounds. Storage-specific headers/physical keys must be checked
+before removing them. Validate full idempotency rows before logical expiry. `record`
+derives and validates the registered flat value's key and owner; do not invent hidden
+fields that can collide with business schema fields.
 Implement every `WorkflowStorage` port: command scope/time factories, validated resource
 reads, keyset queries, registered auxiliary reads, monotonic failure CAS/history/projection/
 create-only outbox transactions, and processing/collection markers. Missing services reject.
@@ -272,4 +278,5 @@ The manifest is deeply frozen and function-free. Its hash covers declaration nam
 command roles/emissions, versions, subscriptions, policies and numeric bounds, not schema
 or function bodies. It is configuration identity, not an authentication secret or proof of
 equivalent code; deployment artifacts need their own digests. The complete memory adapter
-is shipped here; the Dynamo factory/transport adapter remain separate planned work.
+is shipped here; `@jawstack/aws-runtime` now ships `createDynamoWorkflow` against these
+same contracts. Strict AWS transport binding remains separate planned work.

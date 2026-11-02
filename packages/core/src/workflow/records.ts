@@ -140,3 +140,24 @@ export function resolveRecord(
     reject("Atomic record owner must match the command resource.");
   return { collection: definition.name, logicalKey: key, owner, value };
 }
+
+// Flat Dynamo records retain their business schema; ownership is derived, not stored twice.
+export function readRecord(
+  registry: ReadonlySet<object>,
+  collection: string,
+  logicalKey: string,
+  input: unknown,
+) {
+  const registered = [...registry].find((record) => definitions.get(record)?.name === collection);
+  if (!registered) reject("Unregistered atomic record collection.");
+  const definition = definitions.get(registered)!;
+  const value = definition.parse(input);
+  const owner = synchronous(definition.owner(value));
+  const resolved = resolveRecord(
+    (registered as AtomicRecordDefinition).create(value),
+    registry,
+    owner,
+  );
+  if (resolved.logicalKey !== logicalKey) reject("Atomic record key differs from its value.");
+  return { collection, owner: resolved.owner, value: resolved.value };
+}

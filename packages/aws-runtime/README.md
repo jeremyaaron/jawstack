@@ -13,6 +13,19 @@ This package contains:
 
 Status: `0.0.1` dogfood baseline. APIs are expected to change before `0.1.0`.
 
+## Workflow Composition
+
+`createDynamoWorkflow(definition, { client, tableName, bind, ...options })` composes core's
+declared command and durable recovery services with conditional DynamoDB storage. It
+compiles all command contributions into one transaction and commits recovery history,
+its projection and any replay outbox fact together. It requires an explicitly configured
+client and dedicated table; construction does no I/O and starts no delivery driver.
+
+See the shipped [DynamoDB workflow recipe](workflows.md) for a complete public-import
+example, strong read/expiry/error semantics, ownership, marker limitations and transport
+boundaries. There is no memory pump on the Dynamo runtime. Existing APIs below retain
+their legacy defaults; adopting the workflow factory is explicit.
+
 ## Paged Queries
 
 `DynamoDbRepository` implements core's `QueryRepository` in addition to its existing
@@ -69,6 +82,8 @@ The base repository's `idempotencyScope` selects resource type, command, and sub
 the corresponding commit options must use the same scope. TTL is physical cleanup, not
 automatic logical expiry or authorization.
 
-Content Operations composes typed auxiliary writes, logical expiry, and bounded/deduplicated
-transaction planning above these exports. These are consumer policies, not generic package
-defaults or a new arbitrary-write hook. See [Application Composition](../../docs/application-composition.md#core-and-persistence).
+Content Operations currently composes typed auxiliary writes, logical expiry and bounded
+transaction planning above these legacy exports. The opt-in workflow factory now provides
+the shared mechanics; it does not change the legacy constructors or migrate that consumer.
+Domain contribution schemas/decisions remain application-owned. See
+[Application Composition](../../docs/application-composition.md#core-and-persistence).

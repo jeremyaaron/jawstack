@@ -2,7 +2,7 @@
 
 Status: reviewed; Phase 0 and baseline A/B are complete. The
 [baseline review](baseline-review.md) clears the prerequisite with explicit timing
-qualifications. Phases 1-4 are complete; Phases 5-14 and post A/B have not started. Based on the [PRD](prd.md) and
+qualifications. Phases 1-5 are complete; Phases 6-14 and post A/B have not started. Based on the [PRD](prd.md) and
 [technical design](technical-design.md); see [Phase 0 evidence](phase-0-evidence.md).
 
 ## Purpose
@@ -332,6 +332,9 @@ backpressure, retry timing/close behavior, reserved metadata and no-I/O import t
 clean test-before-build release/generated/package gates and browser boundary regression.
 
 ## Phase 5: DynamoDB Workflow Storage
+
+Status: complete; see [Phase 5 evidence](phase-5-evidence.md). Shared Dynamo storage and
+the owned local-table probe passed; full transport and consumer migration remain later work.
 
 Depends on: Phase 4.
 

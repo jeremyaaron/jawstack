@@ -14,6 +14,7 @@ import {
 } from "@aws-sdk/client-dynamodb";
 import { PutEventsCommand, type PutEventsCommandOutput } from "@aws-sdk/client-eventbridge";
 import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
+export { createDynamoWorkflow, type DynamoWorkflowOptions } from "./workflow/runtime";
 import type {
   ActivityRecord,
   ActivityQuery,

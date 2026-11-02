@@ -114,7 +114,7 @@ export const stateSchema = z.strictObject({
   createdBy: identity,
   updatedBy: identity,
 });
-const activitySchema = z.strictObject({
+export const activitySchema = z.strictObject({
   activityId: identity,
   resourceType: identity,
   resourceId: identity,

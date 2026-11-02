@@ -13,6 +13,7 @@ import {
   field,
   JawStackRuntimeError,
   type WorkflowStorage,
+  type WorkflowStorageSpec,
   type WorkflowRuntimeOptions,
   type WorkflowServices,
   type JawStackEvent,
@@ -40,6 +41,7 @@ function adapter(
   options: {
     wrap?: (ports: WorkflowStorage) => WorkflowStorage;
     bind?: WorkflowRuntimeOptions["bind"];
+    spec?: (spec: WorkflowStorageSpec) => void;
   } = {},
 ) {
   const definition = defineWorkflow(publicWorkflowInput(["process", "observe"]));
@@ -47,6 +49,7 @@ function adapter(
   const runtime = createWorkflowRuntime(
     definition,
     (spec) => {
+      options.spec?.(spec);
       memory = createMemoryWorkflowPersistence({ planner: spec.planner });
       const repository = new InMemoryRepository(memory.store);
       ports = {
@@ -96,6 +99,43 @@ function adapter(
 }
 
 describe("workflow adapter ordering and faults", () => {
+  it("supplies shared strict detached read validators instead of requiring adapter schema copies", async () => {
+    let spec!: WorkflowStorageSpec;
+    const h = adapter({
+      spec: (value) => {
+        spec = value;
+      },
+    });
+    expect(Object.isFrozen(spec.validation)).toBe(true);
+    const row = spec.validation.record("receipt", "doc_1#1", { resourceId: "doc_1", version: 1 });
+    expect(row).toEqual({
+      collection: "receipt",
+      owner: { resourceType: "document", resourceId: "doc_1" },
+      value: { resourceId: "doc_1", version: 1 },
+    });
+    for (const [name, key, value] of [
+      ["unregistered", "doc_1#1", row.value],
+      ["receipt", "other#1", row.value],
+      ["receipt", "doc_1#1", { resourceId: "doc_1", version: 1, tenantId: "foreign" }],
+    ] as const)
+      expect(() => spec.validation.record(name, key, value)).toThrow(
+        expect.objectContaining({ code: "resource.invalid_state" }),
+      );
+    expect(() => spec.validation.activity({})).toThrow(
+      expect.objectContaining({ code: "resource.invalid_state" }),
+    );
+    expect(() =>
+      spec.validation.projection({
+        projectionName: "document.list",
+        itemId: "doc_1",
+        sort: "now",
+        data: {},
+        tenantId: "foreign",
+      }),
+    ).toThrow(expect.objectContaining({ code: "resource.invalid_state" }));
+    expect(() => spec.validation.json({ invalid: undefined })).toThrow(/JSON/);
+    await h.runtime.close();
+  });
   it("writes recovery completion after business completion and before the processing marker", async () => {
     const order: string[] = [];
     const h = adapter({
