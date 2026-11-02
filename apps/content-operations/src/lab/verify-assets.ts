@@ -28,7 +28,12 @@ export async function verifyAssets(c: LabClients, config: LabConfig) {
   let now = new Date();
   const clock = () => new Date(now);
   const dispatch = createContentDispatch({
-    persistence: createDynamoPersistence({ client: c.dynamo, tableName: config.table }),
+    persistence: createDynamoPersistence({
+      client: c.dynamo,
+      tableName: config.table,
+      source: config.source,
+    }),
+    source: config.source,
     clock,
   });
   let sequence = 0;

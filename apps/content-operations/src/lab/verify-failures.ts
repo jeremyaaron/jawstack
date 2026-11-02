@@ -38,7 +38,11 @@ export async function verifyFailures(clients: LabClients, config: LabConfig) {
     source: config.source,
   });
   const captured: unknown[] = [];
-  const factory = createDynamoPersistence({ client: clients.dynamo, tableName: config.table });
+  const factory = createDynamoPersistence({
+    client: clients.dynamo,
+    tableName: config.table,
+    source: config.source,
+  });
   const dispatch = createContentDispatch({
     clock: clock.now,
     source: config.source,

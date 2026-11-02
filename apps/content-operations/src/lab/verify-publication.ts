@@ -21,7 +21,11 @@ export async function verifyPublication(clients: LabClients, config: LabConfig) 
   const clock = createFixtureClock(new Date().toISOString());
   const repository = new DynamoDbRepository({ client: clients.dynamo, tableName: config.table });
   const objects = createLocalS3ObjectStore(config);
-  const factory = createDynamoPersistence({ client: clients.dynamo, tableName: config.table });
+  const factory = createDynamoPersistence({
+    client: clients.dynamo,
+    tableName: config.table,
+    source: config.source,
+  });
   const requests: unknown[] = [];
   const dispatch = createContentDispatch({
     clock: clock.now,

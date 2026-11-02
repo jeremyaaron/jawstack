@@ -61,7 +61,11 @@ export async function executePublication(
     objects = createLocalS3ObjectStore(config, { execution: "lambda" });
     const repository = new DynamoDbRepository({ client: clients.dynamo, tableName: config.table });
     const dispatch = createContentDispatch({
-      persistence: createDynamoPersistence({ client: clients.dynamo, tableName: config.table }),
+      persistence: createDynamoPersistence({
+        client: clients.dynamo,
+        tableName: config.table,
+        source: config.source,
+      }),
       source: config.source,
     });
     return await createPublicationSqsHandler({

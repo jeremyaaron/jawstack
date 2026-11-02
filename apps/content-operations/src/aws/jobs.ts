@@ -21,7 +21,11 @@ export async function scheduled(event: SchedulerEvent) {
     const jobs = createContentJobs({
       repository: new DynamoDbRepository({ client: clients.dynamo, tableName: config.table }),
       dispatch: createContentDispatch({
-        persistence: createDynamoPersistence({ client: clients.dynamo, tableName: config.table }),
+        persistence: createDynamoPersistence({
+          client: clients.dynamo,
+          tableName: config.table,
+          source: config.source,
+        }),
         source: config.source,
       }),
       objects,

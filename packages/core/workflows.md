@@ -254,6 +254,32 @@ Never drive or close a workflow from its own handler. Construction never starts 
 
 ## Adapter Authors
 
+For command-only composition, use `createWorkflowStorageSpec(definition)` to obtain the
+same owned, frozen planner/validation specification used by `createWorkflowRuntime`.
+`createMemoryWorkflowPersistence({ planner: spec.planner, store? })` supplies scoped
+`factory` and validated `repository` ports while retaining its backing `InMemoryStore`.
+The store must be empty and exclusively owned. Its maps/commit ports are low-level
+adapter/testing facilities, not an application authorization boundary or HTTP interface.
+
+```ts
+const spec = createWorkflowStorageSpec(definition);
+const memory = createMemoryWorkflowPersistence({ planner: spec.planner });
+const dispatch = createWorkflowCommandDispatch({
+  registry: resources,
+  source: spec.manifest.source,
+  persistence: memory.factory,
+  validateResult,
+});
+```
+
+`resources` must be the declaration's resource definitions; `validateResult` is optional
+and follows the read-only result-hook contract above. This composition starts no delivery
+driver and requires no placeholder consumer bindings. It is useful when migrating commands
+before an existing delivery owner. The adapter owner controls shutdown and borrowed
+dependencies; prefer `createMemoryWorkflow` for a complete new application. Request payload
+capture rejects non-JSON/invalid-UTF-8 input as `command.validation` before persistence;
+invalid mandatory identity/key components remain `command.rejected`.
+
 `createWorkflowRuntime(definition, createStorage, options)` is a backend adapter-author API.
 Its synchronous factory receives the bound planner, failure protocol, immutable manifest
 and shared `validation` helpers. Use `validation.resource`, `idempotency`, `activity`,

@@ -22,7 +22,11 @@ export async function verifyJobs(clients: LabClients, config: LabConfig) {
   const repository = new DynamoDbRepository({ client: clients.dynamo, tableName: config.table });
   const store = createDynamoJobStore({ client: clients.dynamo, tableName: config.table });
   const dispatch = createContentDispatch({
-    persistence: createDynamoPersistence({ client: clients.dynamo, tableName: config.table }),
+    persistence: createDynamoPersistence({
+      client: clients.dynamo,
+      tableName: config.table,
+      source: config.source,
+    }),
     clock: clock.now,
     source: config.source,
   });

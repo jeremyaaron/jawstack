@@ -15,7 +15,7 @@ const claimResponse = z.object({
   claim: publicationClaimSchema,
 });
 export async function validateClaimResponse(
-  request: CommandRequest,
+  request: Omit<CommandRequest, "requestContext"> & { requestContext?: unknown },
   result: CommandExecutionResult,
   repository: ResourceRepository | undefined,
   clock: () => Date,

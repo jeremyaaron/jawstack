@@ -176,6 +176,47 @@ function createLifecycle() {
 const lifecycles = new WeakMap<object, ReturnType<typeof createLifecycle>>();
 export const runtimeLifecycle = (runtime: WorkflowRuntime) => lifecycles.get(runtime)!;
 
+export function createWorkflowStorageSpec(definition: WorkflowDefinition): WorkflowStorageSpec {
+  const data = workflowDefinition(definition);
+  return Object.freeze({
+    planner: data.planner,
+    protocol: data.protocol,
+    manifest: data.manifest,
+    validation: Object.freeze({
+      json: jsonCopy,
+      resource: storedResource,
+      idempotency: storedIdempotency,
+      record: (collection: string, logicalKey: string, value: unknown) => {
+        try {
+          const row = readRecord(data.registeredRecords, collection, logicalKey, value);
+          if (!data.registry.getResource(row.owner.resourceType)) invalidStored();
+          return row;
+        } catch {
+          return invalidStored();
+        }
+      },
+      activity: (value: unknown) => {
+        try {
+          const copy = jsonCopy(value, 192 * 1024);
+          activitySchema.parse(copy);
+          return copy as import("../index").ActivityRecord;
+        } catch {
+          return invalidStored();
+        }
+      },
+      projection: (value: unknown) => {
+        try {
+          const copy = jsonCopy(value, 192 * 1024);
+          projectionSchema.parse(copy);
+          return copy as import("../index").ProjectionWrite;
+        } catch {
+          return invalidStored();
+        }
+      },
+    }),
+  });
+}
+
 // Backend adapter-author composition: all stores are required and the returned services work in full.
 export function createWorkflowRuntime(
   definition: WorkflowDefinition,
@@ -214,43 +255,7 @@ export function createWorkflowRuntime(
     typeof clock !== "function"
   )
     workflowDefinitionError("Workflow requires synchronous storage and consumer binding.");
-  const storage = createStorage({
-    planner: data.planner,
-    protocol: data.protocol,
-    manifest: data.manifest,
-    validation: Object.freeze({
-      json: jsonCopy,
-      resource: storedResource,
-      idempotency: storedIdempotency,
-      record: (collection: string, logicalKey: string, value: unknown) => {
-        try {
-          const row = readRecord(data.registeredRecords, collection, logicalKey, value);
-          if (!data.registry.getResource(row.owner.resourceType)) invalidStored();
-          return row;
-        } catch {
-          return invalidStored();
-        }
-      },
-      activity: (value: unknown) => {
-        try {
-          const copy = jsonCopy(value, 192 * 1024);
-          activitySchema.parse(copy);
-          return copy as import("../index").ActivityRecord;
-        } catch {
-          return invalidStored();
-        }
-      },
-      projection: (value: unknown) => {
-        try {
-          const copy = jsonCopy(value, 192 * 1024);
-          projectionSchema.parse(copy);
-          return copy as import("../index").ProjectionWrite;
-        } catch {
-          return invalidStored();
-        }
-      },
-    }),
-  });
+  const storage = createStorage(createWorkflowStorageSpec(definition));
   if (storage instanceof Promise) {
     void storage.catch(() => {});
     workflowDefinitionError("Storage construction must be synchronous.");

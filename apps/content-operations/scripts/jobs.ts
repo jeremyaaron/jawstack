@@ -85,7 +85,11 @@ async function main() {
       }),
       repository: new DynamoDbRepository({ client: clients.dynamo, tableName: config.table }),
       dispatch: createContentDispatch({
-        persistence: createDynamoPersistence({ client: clients.dynamo, tableName: config.table }),
+        persistence: createDynamoPersistence({
+          client: clients.dynamo,
+          tableName: config.table,
+          source: config.source,
+        }),
         source: config.source,
       }),
       source: config.source,

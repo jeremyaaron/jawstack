@@ -6,14 +6,13 @@ import {
   type WorkflowRuntimeOptions,
 } from "@jawstack/core";
 import type { DynamoDbClientLike } from "../index";
-import { createDynamoWorkflowStorage } from "./storage";
+import { createDynamoWorkflowStorage, reserveWorkflowTable } from "./storage";
 
 export type DynamoWorkflowOptions = WorkflowRuntimeOptions &
   Readonly<{
     client: DynamoDbClientLike;
     tableName: string;
   }>;
-const owners = new WeakMap<object, Map<string, string>>();
 
 export function createDynamoWorkflow(
   definition: WorkflowDefinition,
@@ -30,31 +29,18 @@ export function createDynamoWorkflow(
       "workflow.dynamo",
       "An explicit DynamoDB client and table name are required.",
     );
-  let reserved: Map<string, string> | undefined;
-  let reservationHash: string | undefined;
+  let release: (() => void) | undefined;
   try {
     return createWorkflowRuntime(
       definition,
       (spec) => {
-        const tables = owners.get(client) ?? new Map<string, string>();
-        const previous = tables.get(tableName);
-        if (previous && previous !== spec.manifest.hash)
-          throw new JawStackDefinitionError(
-            "workflow.dynamo",
-            "The client/table is already assigned to a different workflow declaration.",
-          );
-        tables.set(tableName, spec.manifest.hash);
-        owners.set(client, tables);
-        if (previous === undefined) {
-          reserved = tables;
-          reservationHash = spec.manifest.hash;
-        }
+        release = reserveWorkflowTable(client, tableName, spec.manifest.hash);
         return createDynamoWorkflowStorage(spec, client, tableName);
       },
       runtimeOptions,
     );
   } catch (error) {
-    if (reserved?.get(tableName) === reservationHash) reserved?.delete(tableName);
+    release?.();
     throw error;
   }
 }

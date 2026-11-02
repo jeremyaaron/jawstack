@@ -44,6 +44,7 @@ export class TransactionClient implements DynamoDbClientLike {
           allowed = old?.version === values[":expectedVersion"];
           break;
         case "attribute_not_exists(PK) OR expiresAt <= :now":
+        case "attribute_not_exists(PK) OR #expires <= :now":
           allowed = !old || (typeof old.expiresAt === "number" && old.expiresAt <= values[":now"]);
           break;
         default:

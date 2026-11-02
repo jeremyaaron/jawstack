@@ -1,3 +1,4 @@
+import { prepareTransaction } from "../support/command-plan";
 import { randomUUID } from "node:crypto";
 import { marshall } from "@aws-sdk/util-dynamodb";
 import { DynamoDbRepository } from "@jawstack/aws-runtime";
@@ -10,7 +11,7 @@ import { createMemoryPump } from "../../src/application/pump";
 import { createMemoryNotificationSink } from "../../src/application/notifications";
 import { createContentWorkers } from "../../src/application/workers";
 import { validateClaimResponse } from "../../src/application/publication-claim";
-import { operationKey, prepareTransaction } from "../../src/application/persistence";
+import { operationKey } from "../../src/application/persistence";
 import { createDynamoPersistence } from "../../src/aws/persistence";
 import { createContentOperationsResources } from "../../src/domain/resources";
 import { dueWorkerIdentity, publisherIdentity } from "../../src/domain/publication-commands";
@@ -143,7 +144,7 @@ async function harness(adapter: "memory" | "dynamo" = "memory") {
   const snapshot = () =>
     structuredClone(
       adapter === "memory"
-        ? { store: memory.store, operations: memory.operations, idempotency: memory.idempotency }
+        ? { store: memory.store, operations: memory.records, idempotency: memory.idempotency }
         : client.items,
     );
   expect(
@@ -654,7 +655,11 @@ describe.each(["memory", "dynamo"] as const)("%s publication domain", (adapter) 
       const plan = prepareTransaction(input, scope, h.clock.now(), "test");
       const record = plan.operations.find((operation) => operation.kind === "publicationAttempt")!;
       if (adapter === "memory")
-        h.memory.operations.set(JSON.stringify(operationKey(record)), record);
+        h.memory.records.set(JSON.stringify(operationKey(record)), {
+          collection: record.kind,
+          owner: { resourceType: "contentItem", resourceId: record.contentId },
+          value: record,
+        });
       else {
         const item = marshall({ ...operationKey(record), itemKind: "APP_OPERATION", ...record });
         h.client.items.set(itemKey(item), item);
@@ -966,7 +971,7 @@ describe("publication boundaries", () => {
     expect(plan.items).toHaveLength(60);
     expect(plan.items[0]!.Put!.ConditionExpression).toBe("#version = :expectedVersion");
     expect(plan.items[plan.idempotencyIndex]!.Put!.ConditionExpression).toBe(
-      "attribute_not_exists(PK) OR expiresAt <= :now",
+      "attribute_not_exists(PK) OR #expires <= :now",
     );
     expect(() =>
       prepareTransaction(
@@ -978,13 +983,13 @@ describe("publication boundaries", () => {
         h.clock.now(),
         "test",
       ),
-    ).toThrow("60 actions");
+    ).toThrow("action budget");
     expect(() =>
       prepareTransaction({ ...input, outbox: [] }, scope, h.clock.now(), "test"),
     ).toThrow("publication operation");
     const token = (await h.current()).state.publication!.claim!.fencingToken;
     expect(JSON.stringify(h.memory.store.outbox)).not.toContain(token);
-    expect(JSON.stringify([...h.memory.operations.values()])).not.toContain(token);
+    expect(JSON.stringify([...h.memory.records.values()])).not.toContain(token);
     expect(JSON.stringify([...h.memory.store.projections.values()])).not.toContain(token);
   });
 

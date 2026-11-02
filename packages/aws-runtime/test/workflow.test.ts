@@ -8,8 +8,18 @@ import {
 } from "@aws-sdk/client-dynamodb";
 import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
 import { describe, expect, it, vi } from "vitest";
-import { defineAtomicRecord, JawStackRuntimeError, type JawStackEvent } from "@jawstack/core";
-import { createDynamoWorkflow, projectionKey, toProjectionItem } from "../src/index";
+import {
+  createWorkflowStorageSpec,
+  defineAtomicRecord,
+  JawStackRuntimeError,
+  type JawStackEvent,
+} from "@jawstack/core";
+import {
+  createDynamoWorkflowStorage,
+  createDynamoWorkflow,
+  projectionKey,
+  toProjectionItem,
+} from "../src/index";
 import { WorkflowClient, itemKey } from "./support/workflow-client";
 import { auth, fixture, initial, receipt } from "./support/workflow";
 
@@ -307,6 +317,30 @@ describe("Dynamo workflow storage faults", () => {
     await h.runtime.close();
     await other.runtime.close();
     await runtime.close();
+  });
+  it("enforces shared table ownership through the command-only adapter entry point", async () => {
+    const client = new WorkflowClient();
+    const first = fixture("memory");
+    const second = fixture("memory", { change: (input) => ({ ...input, name: "another" }) });
+    const spec = createWorkflowStorageSpec(first.definition);
+    createDynamoWorkflowStorage(spec, client, "commands-only");
+    createDynamoWorkflowStorage(
+      createWorkflowStorageSpec(first.definition),
+      client,
+      "commands-only",
+    );
+    expect(() =>
+      createDynamoWorkflowStorage(
+        createWorkflowStorageSpec(second.definition),
+        client,
+        "commands-only",
+      ),
+    ).toThrow(/different workflow/);
+    expect(() => createDynamoWorkflowStorage(spec, client, "bad/table")).toThrow(/explicit/);
+    expect(() => createDynamoWorkflowStorage(spec, client, undefined!)).toThrow(/explicit/);
+    expect(client.calls).toEqual([]);
+    await first.runtime.close();
+    await second.runtime.close();
   });
   it("preserves ordinary business fields named owner and metadata in flat auxiliary rows", async () => {
     const client = new WorkflowClient();

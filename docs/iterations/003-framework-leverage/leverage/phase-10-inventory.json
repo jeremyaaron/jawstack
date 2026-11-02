@@ -1,0 +1,426 @@
+{
+  "schemaVersion": 1,
+  "rules": {
+    "version": 1,
+    "primary": "Unique physical lines containing nontrivia TypeScript tokens inside selected AST spans, minus excluded subtrees; shared lines count once.",
+    "formatting": "Repository Prettier; freeze formatting before counting. Types and punctuation inside selected runtime modules count, imports count only when the file is selected.",
+    "contextualTokens": "Installed TypeScript scanner with parser-provided regex/template/JSX token boundaries; whitespace-only token lines do not count.",
+    "excluded": "Tests, docs, comments, whitespace, build output and explicitly identified domain subtrees. App-maintained generated runtime source counts.",
+    "post": "All remaining/renamed/moved generic protocol code plus replacing thin composition across the whole consumer, not just old filenames. Review generated code and app-to-app copies.",
+    "denominator": "selected-protocol only; separate-lab is disclosed separately and cannot inflate the 50% protocol retirement gate.",
+    "threshold": 0.5,
+    "apiGrowth": "Freeze all framework src hashes/token-lines, package export maps and declared index export names/statements. This is not a semantic concept count; manually review star exports, new subpaths and concept burden at final audit."
+  },
+  "exerciseSettings": {
+    "sessions": "Four fresh user-mediated sessions: baseline A, baseline B, post A, post B; no automatic agents or paid model API.",
+    "activeElapsedSeconds": 1800,
+    "installWaitCeilingSeconds": 300,
+    "serviceWaitCeilingSeconds": 0,
+    "functionalMode": "Memory and narrow DynamoDB/marker SDK contract doubles; no Docker/live service required by these paired task suites. Iteration live acceptance is separate.",
+    "modelId": null,
+    "modelPolicy": "Phase-0 client does not expose an exact model/settings identifier. Before baseline A, record the user-agreed visible model label, reasoning setting and tool access; use the same for all four where possible and disclose deviations.",
+    "toolPolicy": "Same Codex client/tool access, Node/pnpm/lockfile, task fixtures and active budget; record actual versions/settings in each session result.",
+    "timing": "Visible session start/end minus union of recorded bounded install waits; ordinary test/tool duration remains active. No inferred thinking/CPU time.",
+    "tokens": "Unavailable unless client exposes actual usage; never estimate.",
+    "coordination": "Packet readiness is not baseline completion. Freeze agreed visible session settings and review both baseline observations before Phase 1."
+  },
+  "inputs": [
+    "docs/iterations/003-framework-leverage/prd.md",
+    "docs/iterations/003-framework-leverage/technical-design.md",
+    "docs/iterations/003-framework-leverage/leverage/task-a.md",
+    "docs/iterations/003-framework-leverage/leverage/task-b.md",
+    "docs/iterations/003-framework-leverage/leverage/contracts.ts",
+    "docs/iterations/003-framework-leverage/leverage/candidate.d.ts",
+    "docs/iterations/003-framework-leverage/leverage/task-a.acceptance.ts",
+    "docs/iterations/003-framework-leverage/leverage/task-b.acceptance.ts",
+    "docs/iterations/003-framework-leverage/leverage/vitest.config.ts",
+    "docs/iterations/003-framework-leverage/leverage/compatibility-input.ts",
+    "docs/iterations/003-framework-leverage/leverage/compatibility.acceptance.ts",
+    "docs/iterations/003-framework-leverage/leverage/compatibility.json",
+    "apps/content-operations/test/support/leverage-compatibility.ts",
+    "scripts/measure-leverage.mjs",
+    "scripts/leverage-exercise.mjs",
+    "scripts/test/measure-leverage.test.mjs",
+    "scripts/test/leverage-exercise.test.mjs",
+    "docs/iterations/003-framework-leverage/leverage/tsconfig.json",
+    "package.json",
+    "pnpm-lock.yaml",
+    ".nvmrc",
+    "pnpm-workspace.yaml"
+  ],
+  "files": [
+    {
+      "path": "apps/content-operations/src/application/dispatch.ts",
+      "classification": "selected-protocol",
+      "reason": "Invocation scope, bounded winner lookup and pinned core replay. Registry/source and calls to the domain claim validator are thin composition, counted before and after; validator implementation is excluded by not selecting its file.",
+      "include": [
+        {
+          "symbol": "$file"
+        }
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/application/persistence.ts",
+      "classification": "selected-protocol",
+      "reason": "Scope validation, normalized projection/transaction planning, logical expiry and atomic auxiliary mechanics. Fixed command receipt schema/key/construction and publication attempt decisions remain app-owned; their integration calls are counted as composition.",
+      "include": [
+        {
+          "symbol": "$file"
+        }
+      ],
+      "exclude": [
+        {
+          "symbol": "receiptSchema",
+          "reason": "App record schema."
+        },
+        {
+          "symbol": "operationKey",
+          "reason": "App record key policy."
+        },
+        {
+          "symbol": "contributeContentCommand/attempts",
+          "reason": "Relocated original domain attempt contribution invocation; baseline exclusion unchanged."
+        },
+        {
+          "symbol": "contributeContentCommand/receiptValue",
+          "reason": "Relocated original receipt-value construction only; record registration and create call remain counted."
+        }
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/application/memory.ts",
+      "classification": "selected-protocol",
+      "reason": "Scoped idempotency, serialized staging/atomic publication and auxiliary collisions; includes thin record-type composition.",
+      "include": [
+        {
+          "symbol": "$file"
+        }
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/aws/persistence.ts",
+      "classification": "selected-protocol",
+      "reason": "Strong scoped lookups, logical TTL, transaction submission and conflict classification.",
+      "include": [
+        {
+          "symbol": "$file"
+        }
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/application/failure-records.ts",
+      "classification": "selected-protocol",
+      "reason": "Failure history schema, IDs/fingerprints, replay construction, CAS invariants, projection/query and atomic memory failure/outbox storage. Consumer names/source/projection settings count as composition.",
+      "include": [
+        {
+          "symbol": "$file"
+        }
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/application/failures.ts",
+      "classification": "selected-protocol",
+      "reason": "Durable collection/authorization/inspection/replay orchestration excluding editor identity policy, publication reconciliation and publisher retry restriction. Hook call sites remain composition.",
+      "include": [
+        {
+          "symbol": "$file"
+        }
+      ],
+      "exclude": [
+        {
+          "symbol": "createFailureService/editor",
+          "reason": "Resolved editorial operator authorization."
+        },
+        {
+          "symbol": "createFailureService/reconcile",
+          "reason": "Publication authority, leases and domain reconciliation command."
+        },
+        {
+          "kind": "IfStatement",
+          "contains": "old.consumer === \"publishContent\"",
+          "reason": "Application-only publication recovery restriction."
+        }
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/application/pump.ts",
+      "classification": "selected-protocol",
+      "reason": "Bounded fanout/retry, marker cache, terminal collection and admission/cursor mechanics.",
+      "include": [
+        {
+          "symbol": "$file"
+        }
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/aws/failures.ts",
+      "classification": "selected-protocol",
+      "reason": "Durable failure row validation, CAS, projection and atomic recovery outbox transaction.",
+      "include": [
+        {
+          "symbol": "$file"
+        }
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/aws/delivery.ts",
+      "classification": "selected-protocol",
+      "reason": "Whole-batch fixed-ARN/identity validation and normalization; current queue suffix map counts as thin composition and its replacement must count too.",
+      "include": [
+        {
+          "symbol": "$file"
+        }
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/aws/recovery.ts",
+      "classification": "selected-protocol",
+      "reason": "Transport binding/pre-marker validation/authorization, excluding app-specific Lambda composition and entrypoints.",
+      "include": [
+        {
+          "symbol": "TransportOptions"
+        },
+        {
+          "symbol": "createFailureSqsHandler"
+        },
+        {
+          "symbol": "createContentWorkerSqsHandler"
+        },
+        {
+          "symbol": "executeRecovery/dispatch/persistence"
+        }
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/application/workers.ts",
+      "classification": "selected-protocol",
+      "reason": "Consumer subscription validation and recovery wrapper around domain handlers. Domain materialization/publication/notification branches excluded; small remaining handler call/completion sites count as composition.",
+      "include": [
+        {
+          "symbol": "createContentWorkers"
+        }
+      ],
+      "exclude": [
+        {
+          "symbol": "createContentWorkers/materialize",
+          "reason": "Domain snapshot materialization/deduplication."
+        },
+        {
+          "kind": "IfStatement",
+          "contains": "name === \"publishContent\"",
+          "reason": "Publication dependency and business delegation."
+        },
+        {
+          "kind": "IfStatement",
+          "contains": "name === \"deliverNotification\"",
+          "reason": "Notification rendering/business sink and completion integration."
+        }
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/shared/events.ts",
+      "classification": "selected-protocol",
+      "reason": "Envelope/replay normalization and strict registry/schema checks; application target selection/identity predicate excluded. Current source/enums/schema references count as configuration.",
+      "include": [
+        {
+          "symbol": "$file"
+        }
+      ],
+      "exclude": [
+        {
+          "symbol": "parseContentEvent/resourceType",
+          "reason": "Domain event naming convention."
+        },
+        {
+          "symbol": "parseContentEvent/resourceId",
+          "reason": "Domain payload-to-resource target selection."
+        },
+        {
+          "kind": "IfStatement",
+          "contains": "envelope.resourceType !== resourceType",
+          "reason": "Domain target identity predicate."
+        }
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/shared/operation-views.ts",
+      "classification": "selected-protocol",
+      "reason": "Selected failure view schemas only; publication/notification DTOs remain domain-owned. Existing enum labels count as configuration.",
+      "include": [
+        {
+          "symbol": "failureIdSchema"
+        },
+        {
+          "symbol": "consumerSchema"
+        },
+        {
+          "symbol": "failureCollectionSchema"
+        },
+        {
+          "symbol": "failureRecoverySchema"
+        },
+        {
+          "symbol": "failureSummarySchema"
+        }
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/application/runtime.ts",
+      "classification": "selected-protocol",
+      "reason": "Bounded drain-until-idle only. Other app composition/clock/services remain outside denominator; replacing selected protocols' composition must still count after migration.",
+      "include": [
+        {
+          "symbol": "createMemoryRuntime/drainUntilIdle"
+        },
+        {
+          "symbol": "createMemoryRuntime/persistence"
+        },
+        {
+          "symbol": "createMemoryRuntime/dispatch/persistence"
+        }
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/lab/clients.ts",
+      "classification": "separate-lab",
+      "reason": "Local transport/client safety; separate tooling disclosure, not protocol denominator.",
+      "include": [
+        {
+          "symbol": "$file"
+        }
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/lab/config.ts",
+      "classification": "separate-lab",
+      "reason": "Local endpoint/profile/manifest safety plus current app configuration; no token file read by measurement.",
+      "include": [
+        {
+          "symbol": "$file"
+        }
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/lab/provision.ts",
+      "classification": "separate-lab",
+      "reason": "Finite service lifecycle and ownership, reported separately.",
+      "include": [
+        {
+          "symbol": "$file"
+        }
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/lab/capabilities.ts",
+      "classification": "separate-lab",
+      "reason": "Existing storage/Scheduler/queue provider algorithms and profile configuration, reported separately.",
+      "include": [
+        {
+          "symbol": "$file"
+        }
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/lab/application-topology.ts",
+      "classification": "separate-lab",
+      "reason": "Current application service bindings/grants/provider algorithms, reported separately.",
+      "include": [
+        {
+          "symbol": "$file"
+        }
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/lab/lifecycle.ts",
+      "classification": "separate-lab",
+      "reason": "Bounded wait/missing helpers, reported separately.",
+      "include": [
+        {
+          "symbol": "$file"
+        }
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/lab/containers.ts",
+      "classification": "separate-lab",
+      "reason": "Exact-owner container inspection/removal, reported separately.",
+      "include": [
+        {
+          "symbol": "$file"
+        }
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/application/workflow.ts",
+      "classification": "selected-protocol",
+      "reason": "Count all replacing workflow declaration/command-adapter composition conservatively, including domain metadata and fact-validation integration.",
+      "include": [
+        {
+          "symbol": "$file"
+        }
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/aws/api-runtime.ts",
+      "classification": "selected-protocol",
+      "reason": "New command-only adapter wiring outside the old selected files; count replacement composition without including unrelated domain/ingress implementation.",
+      "include": [
+        {
+          "symbol": "createLocalstackApiRuntime/dispatch/persistence"
+        }
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/aws/jobs.ts",
+      "classification": "selected-protocol",
+      "reason": "New command-only adapter wiring outside the old selected files; count replacement composition without including unrelated domain/ingress implementation.",
+      "include": [
+        {
+          "symbol": "scheduled/jobs/dispatch/persistence"
+        }
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/aws/publication.ts",
+      "classification": "selected-protocol",
+      "reason": "New command-only adapter wiring outside the old selected files; count replacement composition without including unrelated domain/ingress implementation.",
+      "include": [
+        {
+          "symbol": "executePublication/dispatch/persistence"
+        }
+      ]
+    },
+    {
+      "path": "apps/content-operations/src/aws/synth/runtime.ts",
+      "classification": "selected-protocol",
+      "reason": "New command-only adapter wiring outside the old selected files; count replacement composition without including unrelated domain/ingress implementation.",
+      "include": [
+        {
+          "symbol": "createSynthesisRuntime/persistence"
+        }
+      ]
+    }
+  ],
+  "migration": {
+    "phase": 10,
+    "baselineInventory": "docs/iterations/003-framework-leverage/leverage/inventory.json",
+    "baselineProtocolTokenLines": 1589,
+    "retired": [
+      "createContentDispatch invocation capture/winner/replay loop",
+      "prepareTransaction physical compiler/expiry/deduplication/budgets",
+      "createMemoryPersistence staging/lock/publication implementation",
+      "createDynamoPersistence scoped reads/transaction/error classifier"
+    ],
+    "delegates": [
+      "createWorkflowCommandDispatch",
+      "createWorkflowStorageSpec",
+      "createMemoryWorkflowPersistence",
+      "createDynamoWorkflowStorage"
+    ],
+    "exclusionMappings": [
+      ["prepareTransaction/attempts", "contributeContentCommand/attempts"],
+      ["prepareTransaction/parsed", "contributeContentCommand/receiptValue"]
+    ],
+    "note": "Working post inventory, not a replacement or refreeze of the frozen baseline. No exclusion widened; new workflow file counted in full. Delivery/failure/pump modules remain selected and unmigrated. Explicitly count new command-adapter binding sites in runtime/API/worker/job/synthesis composition, including sites outside the original selected spans."
+  }
+}

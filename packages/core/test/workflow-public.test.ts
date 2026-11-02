@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import {
   defineWorkflow,
+  createWorkflowStorageSpec,
   createMemoryWorkflow,
   defineResource,
   defineCommand,
@@ -86,6 +87,19 @@ afterEach(() => {
 });
 
 describe("public workflow declaration and binding", () => {
+  it("builds an owned frozen adapter specification without starting delivery or binding handlers", () => {
+    const definition = defineWorkflow(publicWorkflowInput());
+    const spec = createWorkflowStorageSpec(definition);
+    expect(Object.isFrozen(spec)).toBe(true);
+    expect(Object.isFrozen(spec.validation)).toBe(true);
+    expect(spec.manifest).toBe(definition.manifest);
+    expect(createWorkflowStorageSpec(definition).planner).toBe(spec.planner);
+    expect(() =>
+      createWorkflowStorageSpec({ manifest: definition.manifest } as WorkflowDefinition),
+    ).toThrow(/owned workflow/);
+    expect(spec).not.toHaveProperty("delivery");
+    expect(spec).not.toHaveProperty("start");
+  });
   it("blocks deferred startup service calls inherited from a synchronous binding", async () => {
     const resume = deferred();
     let descendant: Promise<void> | undefined;

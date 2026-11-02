@@ -3,6 +3,7 @@ import {
   JawStackRuntimeError,
   type CommandCommitInput,
   type ProjectionWrite,
+  type WorkflowReadonly,
 } from "@jawstack/core";
 import {
   contentStateSchema,
@@ -25,7 +26,7 @@ export function publicationOperationKey(record: PublicationOperation) {
   };
 }
 export function publicationOperations(
-  input: CommandCommitInput,
+  input: WorkflowReadonly<CommandCommitInput>,
   command: string,
 ): PublicationOperation[] {
   const events = input.outbox.filter((event) => Object.hasOwn(stages, event.eventType));

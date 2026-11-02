@@ -79,6 +79,20 @@ Factories generate separate revision/review UUIDs lazily, with injectable `newId
 
 ### Dispatch and Persistence
 
+`src/application/workflow.ts` declares the shared workflow metadata, and
+`src/application/persistence.ts` registers the existing command receipt/publication-attempt
+records and pure contributions. `dispatch.ts`, `memory.ts` and `src/aws/persistence.ts`
+are delegating composition, not independent dispatch, staging or transaction compilers.
+JawStack owns scope/time capture, bounded replay, plan normalization/bounds, atomic memory
+publication and DynamoDB compilation/error handling. The live publication-claim validator
+and editorial/fact/attempt policies remain in Content.
+
+This is command-only adapter composition during Iteration 3's staged migration. The existing
+memory pump, stream dispatcher, SQS wrappers and failure service remain the sole active
+delivery/recovery path until Phase 11. No shared driver is constructed or started, and no
+second failure ledger is written. The memory notification writer shares the same backing
+store without a clone/publish race across asynchronous command work.
+
 - Every mutation requires a key of 1-200 ASCII letters, digits, `_`, `.`, `:`, or `-`.
   Retain the key for retries of the same input; generate another for a new intent. Scope is
   resource type, command, and resolved subject; the core fingerprint also includes target ID.
@@ -89,16 +103,17 @@ Factories generate separate revision/review UUIDs lazily, with injectable `newId
   correlation metadata. A conflict or ambiguous SDK failure permits at most four strong
   replay lookups (0/10/25/50 ms pauses), never another mutation attempt. Different payloads
   conflict; stale user edits without an equivalent stored command remain conflicts.
-- `src/aws/persistence.ts` composes exported JawStack builders with one bounded, typed
+- The shared planner composes one bounded, typed
   `commandReceipt` operation per successful resource version (`OPS#commandReceipt`, sort
   `<resourceType>#<resourceId>#<version>`). Its create-only condition participates in the
   primary/activity/outbox/projection/idempotency transaction. Receipts contain no bodies,
   credentials, or growing arrays. Worker-specific operation variants remain application-owned.
-- The memory adapter serializes staged commits and publishes all records together. Both
+- The shared memory adapter serializes validated plans and publishes all records together. Both
   adapters share physical-key normalization, projection delete/put coalescing, conflicting
   put/duplicate action rejection, and a 60-action limit checked before any write. Exact old
   keys are deleted; the memory adapter does not silently erase other sorts for an item.
-- No framework internals or generic arbitrary-write extension point are exposed. Supply a
+- Only public adapter APIs are imported; no caller-authored SDK fragments or conditions
+  enter the command path. Supply a
   guarded DynamoDB client and owned table to `createDynamoPersistence`; dispatch itself
   never creates clients, resolves AWS credentials, or starts a service.
 

@@ -31,7 +31,7 @@ export function createFixtureClock(instant: string) {
 export function createMemoryRuntime(options: { clock?: () => Date; source?: string } = {}) {
   const clock = options.clock ?? (() => new Date());
   const source = options.source ?? contentEventSource;
-  const persistence = createMemoryPersistence();
+  const persistence = createMemoryPersistence({ source });
   const dispatch = createContentDispatch({ persistence: persistence.factory, clock, source });
   const objects = createMemoryObjectStore({ clock });
   const upload = createUploadService({

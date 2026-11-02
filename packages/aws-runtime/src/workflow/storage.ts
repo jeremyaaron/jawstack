@@ -11,6 +11,7 @@ import {
 import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
 import {
   JawStackRuntimeError,
+  JawStackDefinitionError,
   type IdempotencyRecord,
   type WorkflowCommandScope,
   type WorkflowStorage,
@@ -43,6 +44,33 @@ import {
 function invalid(): never {
   throw new JawStackRuntimeError("resource.invalid_state", "Stored workflow record is invalid.");
 }
+const owners = new WeakMap<object, Map<string, string>>();
+export function reserveWorkflowTable(client: DynamoDbClientLike, tableName: string, hash: string) {
+  if (
+    !client ||
+    typeof client.send !== "function" ||
+    typeof tableName !== "string" ||
+    !/^[A-Za-z0-9_.-]{3,255}$/.test(tableName) ||
+    typeof hash !== "string" ||
+    !/^[a-f0-9]{64}$/.test(hash)
+  )
+    throw new JawStackDefinitionError(
+      "workflow.dynamo",
+      "An explicit DynamoDB client and table name are required.",
+    );
+  const tables = owners.get(client) ?? new Map<string, string>();
+  const previous = tables.get(tableName);
+  if (previous && previous !== hash)
+    throw new JawStackDefinitionError(
+      "workflow.dynamo",
+      "The client/table is already assigned to a different workflow declaration.",
+    );
+  tables.set(tableName, hash);
+  owners.set(client, tables);
+  return () => {
+    if (previous === undefined && tables.get(tableName) === hash) tables.delete(tableName);
+  };
+}
 function conflict(): never {
   throw new JawStackRuntimeError("resource.conflict", "Workflow condition failed.");
 }
@@ -65,6 +93,7 @@ export function createDynamoWorkflowStorage(
   client: DynamoDbClientLike,
   tableName: string,
 ): WorkflowStorage {
+  reserveWorkflowTable(client, tableName, spec.manifest.hash);
   const send = client.send.bind(client);
   const request = async <T>(command: { input: unknown }): Promise<T> => {
     try {

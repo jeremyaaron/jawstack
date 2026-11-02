@@ -30,7 +30,10 @@ export type {
   WorkflowEventDefinition,
   WorkflowConsumerPolicy,
 } from "./workflow/definition";
-export { createWorkflowRuntime } from "./workflow/runtime";
+export { createWorkflowRuntime, createWorkflowStorageSpec } from "./workflow/runtime";
+export { createWorkflowCommandDispatch } from "./workflow/command-runtime";
+export type { WorkflowPersistenceFactory } from "./workflow/command-runtime";
+export { createMemoryWorkflowPersistence } from "./workflow/memory";
 export type {
   WorkflowRuntime,
   WorkflowServices,

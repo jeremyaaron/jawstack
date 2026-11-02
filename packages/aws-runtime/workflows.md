@@ -162,6 +162,22 @@ the borrowed client. The owner must close its client after all runtimes are clos
 
 ## Atomicity and Bounds
 
+For command-only adapter composition, `createDynamoWorkflowStorage(spec, client, tableName)`
+accepts the owned specification from core's `createWorkflowStorageSpec(definition)`.
+Pass its `command` factory to `createWorkflowCommandDispatch`; use the same declaration's
+resources and source. No driver starts and no consumer binding is required. Construction
+performs no SDK calls, and the same client/table declaration-ownership guard applies as
+with `createDynamoWorkflow`. The owner supplies and closes the client and owns authorization.
+Do not expose raw storage ports to untrusted callers. Prefer the full workflow factory for
+new applications that also need delivery/recovery.
+
+`compileWorkflowCommit(spec.planner, ownedPlan, tableName)` is the corresponding adapter-author
+compiler. It accepts only a plan owned by that exact planner, enforces the existing bounds
+and returns the SDK input plus ordered condition roles. It is not an arbitrary transaction
+builder, and the normal storage adapter remains responsible for strong preflight reads,
+condition/error handling and atomic send. Applications contribute registered records and
+projections, not caller-authored SDK fragments or conditions.
+
 Each command compiles its own planner's opaque plan into one `TransactWriteItems` call:
 primary version/create condition, create-only activity/outbox/auxiliary contributions,
 exact projection deletes/puts, and absent-or-expired scoped idempotency. All categories

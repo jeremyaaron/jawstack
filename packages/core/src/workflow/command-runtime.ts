@@ -51,7 +51,7 @@ function failure(error: unknown, meta: CommandExecutionResult["meta"]): ApiError
   };
 }
 
-// Internal until the complete workflow surface is assembled in Phase 4.
+// Adapter-author composition for commands without starting a delivery runtime.
 export function createWorkflowCommandDispatch(options: {
   registry: CommandExecutorOptions["registry"];
   persistence: WorkflowPersistenceFactory;
@@ -101,7 +101,15 @@ export function createWorkflowCommandDispatch(options: {
       component(captured.commandName);
       if (captured.resourceId !== undefined) component(captured.resourceId);
       const key = component(captured.idempotencyKey);
-      const cleanRequest = freeze(jsonCopy(captured));
+      let cleanRequest: WorkflowReadonly<CapturedRequest>;
+      try {
+        cleanRequest = freeze(jsonCopy(captured));
+      } catch {
+        throw new JawStackRuntimeError(
+          "command.validation",
+          "Command input must be bounded finite JSON with valid UTF-8 text.",
+        );
+      }
       const resolvedAuth = captureWorkflowIdentity(identity);
       const scope = freeze({
         resourceType: cleanRequest.resourceType,

@@ -1,24 +1,13 @@
+import { createContentStorageSpec } from "../../src/application/workflow";
+import { prepareTransaction, legacyComparableItems } from "../support/command-plan";
 import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { z } from "zod";
 import { describe, expect, it } from "vitest";
-import {
-  createWorkflowCommitPlanner,
-  defineAtomicRecord,
-  type CommandCommitInput,
-  type WorkflowCommitPlan,
-} from "@jawstack/core";
+import { type CommandCommitInput, type WorkflowCommitPlan } from "@jawstack/core";
 import { DynamoDbRepository } from "@jawstack/aws-runtime";
 import { unmarshall } from "@aws-sdk/util-dynamodb";
 import { createContentDispatch } from "../../src/application/dispatch";
 import { createMemoryPersistence } from "../../src/application/memory";
-import { prepareTransaction } from "../../src/application/persistence";
-import {
-  publicationOperationKey,
-  publicationOperationProjections,
-  publicationOperations,
-} from "../../src/application/publication-operations";
-import { publicationOperationSchema } from "../../src/shared/operation-views";
 import { createDynamoPersistence } from "../../src/aws/persistence";
 import { createMemoryObjectStore } from "../../src/application/object-store";
 import { createPublisher } from "../../src/application/publisher";
@@ -27,50 +16,7 @@ import { fixtureAuth } from "../../src/shared/identities";
 import type { ContentState } from "../../src/shared/contracts";
 import { TransactionClient } from "../support/transaction-client";
 
-const commandReceipt = defineAtomicRecord({
-  name: "commandReceipt",
-  schema: z.strictObject({
-    kind: z.literal("commandReceipt"),
-    resourceType: z.string(),
-    resourceId: z.string(),
-    commandName: z.string(),
-    subject: z.string(),
-    version: z.number().int().positive(),
-    committedAt: z.string(),
-  }),
-  key: (r) => `${r.resourceType}#${r.resourceId}#${r.version}`,
-  owner: (r) => ({ resourceType: r.resourceType, resourceId: r.resourceId }),
-});
-const attempt = defineAtomicRecord({
-  name: "publicationAttempt",
-  schema: publicationOperationSchema,
-  key: (r) => publicationOperationKey(r).SK,
-  owner: (r) => ({ resourceType: "contentItem", resourceId: r.contentId }),
-});
-function planner() {
-  return createWorkflowCommitPlanner({
-    workflowName: "content-operations",
-    source: "content-operations",
-    idempotencyTtlSeconds: 604800,
-    records: [commandReceipt, attempt],
-    contribute: ({ invocation, commit }) => {
-      const operations = publicationOperations(commit, invocation.scope.commandName);
-      return {
-        records: [
-          commandReceipt.create({
-            kind: "commandReceipt",
-            ...invocation.scope,
-            resourceId: commit.resource.resourceId,
-            version: commit.resource.next.version,
-            committedAt: invocation.now,
-          }),
-          ...operations.map((r) => attempt.create(r)),
-        ],
-        projections: publicationOperationProjections(operations),
-      };
-    },
-  });
-}
+const planner = () => createContentStorageSpec().planner;
 function compareKeys(plan: WorkflowCommitPlan, legacy: ReturnType<typeof prepareTransaction>) {
   const actual = plan.actions.map((a) => JSON.stringify([a.key.partition, a.key.sort])).sort();
   const expected = legacy.items
@@ -88,7 +34,7 @@ function compareKeys(plan: WorkflowCommitPlan, legacy: ReturnType<typeof prepare
   }
 }
 
-describe("pre-migration workflow planner compatibility", () => {
+describe("migrated workflow planner compatibility", () => {
   it("preserves frozen command rows/keys and canonical wire order without recapturing the golden", () => {
     const golden = JSON.parse(
       readFileSync(
@@ -115,7 +61,7 @@ describe("pre-migration workflow planner compatibility", () => {
       "compatibility-table",
     );
     compareKeys(result, legacy);
-    expect(legacy.items).toEqual(golden.transaction);
+    expect(legacyComparableItems(legacy.items)).toEqual(golden.transaction);
     expect(JSON.stringify(result.actions.find((a) => a.kind === "outbox")!.value)).toBe(
       golden.wireJson,
     );
@@ -125,7 +71,7 @@ describe("pre-migration workflow planner compatibility", () => {
   });
 
   it.each(["memory", "dynamo"] as const)(
-    "fits actual editorial and publication fixtures in %s without migrating storage",
+    "fits actual editorial and publication fixtures in %s through shared command storage",
     async (backend) => {
       const clock = () => new Date("2026-11-01T12:00:00.000Z");
       const memory = createMemoryPersistence(),

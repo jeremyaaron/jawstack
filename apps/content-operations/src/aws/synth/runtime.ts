@@ -22,6 +22,7 @@ export function createSynthesisRuntime(context: ReturnType<typeof synthesisConte
     const persistence = createDynamoPersistence({
       client: clients.dynamo,
       tableName: config.table,
+      source: config.source,
     });
     const dispatch = createContentDispatch({ persistence, source: config.source, clock });
     const objects = createS3ObjectStore(clients.s3, config.bucket);

@@ -36,17 +36,25 @@ export async function verifyScopedTransactions(c: LabClients, config: LabConfig)
     ).Item;
   const results = [];
   for (const adapter of ["memory", "dynamo"] as const) {
-    const memory = createMemoryPersistence();
+    const memory = createMemoryPersistence({ source: config.source });
     const factory =
       adapter === "memory"
         ? memory.factory
-        : createDynamoPersistence({ client: c.dynamo, tableName: config.table });
+        : createDynamoPersistence({
+            client: c.dynamo,
+            tableName: config.table,
+            source: config.source,
+          });
     const repository =
       adapter === "memory"
         ? memory.repository
         : new DynamoDbRepository({ client: c.dynamo, tableName: config.table });
     let now = new Date(started);
-    const dispatch = createContentDispatch({ persistence: factory, clock: () => now });
+    const dispatch = createContentDispatch({
+      persistence: factory,
+      clock: () => now,
+      source: config.source,
+    });
     const run = (
       commandName: string,
       input: unknown,
@@ -157,7 +165,11 @@ export async function verifyScopedTransactions(c: LabClients, config: LabConfig)
       committedAt: now.toISOString(),
     };
     if (adapter === "memory")
-      memory.operations.set(JSON.stringify(operationKey(operation)), operation);
+      memory.records.set(JSON.stringify(operationKey(operation)), {
+        collection: "commandReceipt",
+        owner: { resourceType: operation.resourceType, resourceId: operation.resourceId },
+        value: operation,
+      });
     else
       await c.dynamo.send(
         new PutItemCommand({

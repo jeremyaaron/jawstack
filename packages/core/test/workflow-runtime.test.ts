@@ -293,6 +293,28 @@ describe("scoped command execution", () => {
     expect(seen).not.toHaveProperty("auth");
     expect(JSON.stringify(h.snapshot())).not.toMatch(/secret|private/);
   });
+  it.each(["bad\ud800", NaN, () => undefined, new Date()])(
+    "classifies invalid captured input as validation before persistence: %s",
+    async (title) => {
+      const called = vi.fn();
+      const h = harness({
+        persistence:
+          (factory) =>
+          (...args) => {
+            called();
+            return factory(...args);
+          },
+      });
+      const request = h.request();
+      const result = await h.dispatch(
+        { ...request, input: { ...(request.input as object), title } },
+        auth(),
+      );
+      expect(result).toMatchObject({ ok: false, error: { code: "command.validation" } });
+      expect(called).not.toHaveBeenCalled();
+      expect(h.memory.store.resources.size).toBe(0);
+    },
+  );
   it.each([undefined, "", " ", "x".repeat(201), "key#unsafe", "key\n", "\u00e9"])(
     "rejects invalid mandatory key before persistence: %s",
     async (key) => {

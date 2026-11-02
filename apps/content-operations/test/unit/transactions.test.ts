@@ -1,3 +1,4 @@
+import { prepareTransaction } from "../support/command-plan";
 import { GetItemCommand, QueryCommand, TransactWriteItemsCommand } from "@aws-sdk/client-dynamodb";
 import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
 import {
@@ -12,7 +13,6 @@ import { createMemoryPersistence } from "../../src/application/memory";
 import {
   idempotencyTtlSeconds,
   operationKey,
-  prepareTransaction,
   type CommandScope,
   type OperationRecord,
 } from "../../src/application/persistence";
@@ -68,6 +68,7 @@ class TransactionClient implements DynamoDbClientLike {
             allowed = old?.version === values[":expectedVersion"];
             break;
           case "attribute_not_exists(PK) OR expiresAt <= :now":
+          case "attribute_not_exists(PK) OR #expires <= :now":
             allowed =
               !old || (typeof old.expiresAt === "number" && old.expiresAt <= values[":now"]);
             break;
@@ -124,18 +125,27 @@ function harness(adapter: "memory" | "dynamo") {
   const snapshot = () =>
     structuredClone(
       adapter === "memory"
-        ? { store: memory.store, operations: memory.operations, idempotency: memory.idempotency }
+        ? { store: memory.store, operations: memory.records, idempotency: memory.idempotency }
         : client.items,
     );
   const records = () =>
     adapter === "memory"
-      ? [...memory.operations.values()]
+      ? [...memory.records.values()].map((row) => row.value)
       : [...client.items.values()]
           .map((v) => unmarshall(v))
           .filter((v) => v.itemKind === "APP_OPERATION");
   const seedOperation = (operation: OperationRecord) => {
     if (adapter === "memory")
-      memory.operations.set(JSON.stringify(operationKey(operation)), operation);
+      memory.records.set(JSON.stringify(operationKey(operation)), {
+        collection: operation.kind,
+        owner: {
+          resourceType:
+            operation.kind === "commandReceipt" ? operation.resourceType : "contentItem",
+          resourceId:
+            operation.kind === "commandReceipt" ? operation.resourceId : operation.contentId,
+        },
+        value: operation,
+      });
     else {
       const item = marshall({
         ...operationKey(operation),
@@ -211,7 +221,7 @@ describe.each(["memory", "dynamo"] as const)("scoped %s persistence", (adapter) 
     const before = h.snapshot();
     expect((await h.dispatch(request, identity)).ok).toBe(false);
     expect(h.snapshot()).toEqual(before);
-    if (adapter === "memory") h.memory.operations.delete(JSON.stringify(operationKey(collision)));
+    if (adapter === "memory") h.memory.records.delete(JSON.stringify(operationKey(collision)));
     else h.client.items.delete(keyOf(marshall(operationKey(collision))));
     const results = await Promise.all(
       Array.from({ length: 4 }, () => h.dispatch(request, identity)),
@@ -442,7 +452,7 @@ describe.each(["memory", "dynamo"] as const)("scoped %s persistence", (adapter) 
       })),
     };
     await expect(h.factory(scope, new Date(instant)).unitOfWork.commit(overBudget)).rejects.toThrow(
-      "60 actions",
+      "action budget",
     );
     expect(h.snapshot()).toEqual(before);
   });
@@ -566,11 +576,16 @@ describe("transaction composition", () => {
     expect(plan.commit.projections).toEqual([{ ...row, sort: `${instant}#${uuid(1)}` }]);
     expect(plan.items[0]!.Put!.ConditionExpression).toBe("attribute_not_exists(PK)");
     expect(plan.items[plan.idempotencyIndex]!.Put!.ConditionExpression).toBe(
-      "attribute_not_exists(PK) OR expiresAt <= :now",
+      "attribute_not_exists(PK) OR #expires <= :now",
     );
     const update = {
       ...commitInput(),
-      resource: { ...commitInput().resource, create: false, expectedVersion: 1 },
+      resource: {
+        ...commitInput().resource,
+        create: false,
+        expectedVersion: 1,
+        next: { ...commitInput().resource.next, version: 2 },
+      },
     };
     expect(
       prepareTransaction(update, scope, new Date(instant), "test").items[0]!.Put,
@@ -589,7 +604,7 @@ describe("transaction composition", () => {
         new Date(instant),
         "test",
       ),
-    ).toThrow("Conflicting projection");
+    ).toThrow("Conflicting workflow projection");
     expect(() =>
       prepareTransaction(
         commitInput(),
@@ -597,7 +612,7 @@ describe("transaction composition", () => {
         new Date(instant),
         "test",
       ),
-    ).toThrow("scope");
+    ).toThrow("Commit does not match");
     const activity = {
       activityId: "activity",
       resourceType: "contentItem",
@@ -614,7 +629,7 @@ describe("transaction composition", () => {
         new Date(instant),
         "test",
       ),
-    ).toThrow("Duplicate physical");
+    ).toThrow("Duplicate physical workflow");
   });
 
   it("allows exactly 60 distinct actions and rejects 61 before sending", async () => {
@@ -635,7 +650,7 @@ describe("transaction composition", () => {
         ...input,
         projections: [...input.projections, { ...input.projections[0]!, itemId: uuid(999) }],
       }),
-    ).rejects.toThrow("60 actions");
+    ).rejects.toThrow("action budget");
     expect(client.transactions).toHaveLength(0);
   });
 

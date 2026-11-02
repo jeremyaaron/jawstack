@@ -79,7 +79,11 @@ export async function createLocalstackApiRuntime(
     const dispatch = createContentDispatch({
       clock,
       source: config.source,
-      persistence: createDynamoPersistence({ client: clients.dynamo, tableName: config.table }),
+      persistence: createDynamoPersistence({
+        client: clients.dynamo,
+        tableName: config.table,
+        source: config.source,
+      }),
     });
     objects = createLocalS3ObjectStore(config);
     const store = objects;

@@ -1,0 +1,48 @@
+import { createWorkflowStorageSpec, defineWorkflow } from "@jawstack/core";
+import { z } from "zod";
+import { createContentOperationsResources } from "../domain/resources";
+import { contentWorkers } from "../domain/subscriptions";
+import { contentEventSchemas } from "../shared/contracts";
+import { contentEventSource, parseContentWire } from "../shared/events";
+import { limits } from "../shared/validation";
+import {
+  commandReceiptRecord,
+  publicationAttemptRecord,
+  contributeContentCommand,
+  idempotencyTtlSeconds,
+  transactionActionLimit,
+} from "./persistence";
+
+export function createContentWorkflow(source = contentEventSource) {
+  return defineWorkflow({
+    name: "content-operations",
+    source,
+    resources: createContentOperationsResources(),
+    commands: { idempotencyTtlSeconds, maxActions: transactionActionLimit },
+    records: [commandReceiptRecord, publicationAttemptRecord],
+    contribute: contributeContentCommand,
+    events: Object.entries(contentEventSchemas).map(([eventType, schema]) => ({
+      eventType,
+      schemaVersion: 1,
+      schema: schema instanceof z.ZodReadonly ? schema.unwrap() : schema,
+      validateIdentity: (event) => {
+        try {
+          parseContentWire(event, source);
+          return true;
+        } catch {
+          return false;
+        }
+      },
+    })),
+    eventBytes: limits.eventBytes,
+    consumers: Object.fromEntries(
+      contentWorkers.map(({ name }) => [
+        name,
+        { recovery: name === "publishContent" ? "application" : "replay" },
+      ]),
+    ),
+    operations: { resourceType: "contentItem", projection: "contentItem.failures" },
+  });
+}
+export const createContentStorageSpec = (source = contentEventSource) =>
+  createWorkflowStorageSpec(createContentWorkflow(source));

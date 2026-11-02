@@ -6,7 +6,7 @@ import {
   toProjectionItem,
   toWorkerIdempotencyItem,
 } from "@jawstack/aws-runtime";
-import { prepareTransaction } from "../../src/application/persistence";
+import { prepareTransaction, legacyComparableItems } from "./command-plan";
 import { publicationOperationKey } from "../../src/application/publication-operations";
 import {
   envelopeFingerprint,
@@ -162,7 +162,7 @@ export function captureCompatibility() {
   return {
     fixtureVersion: 1,
     commandInput: input,
-    transaction: plan.items,
+    transaction: legacyComparableItems(plan.items),
     decodedRows: plan.items.map((item) => unmarshall(item.Put!.Item!)),
     publicationAttempt: { record: attempt, key: publicationOperationKey(attempt) },
     wireJson: JSON.stringify(wire),

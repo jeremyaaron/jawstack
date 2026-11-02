@@ -105,7 +105,11 @@ export async function executeRecovery(
   try {
     const repository = new DynamoDbRepository({ client: clients.dynamo, tableName: config.table });
     const dispatch = createContentDispatch({
-      persistence: createDynamoPersistence({ client: clients.dynamo, tableName: config.table }),
+      persistence: createDynamoPersistence({
+        client: clients.dynamo,
+        tableName: config.table,
+        source: config.source,
+      }),
       source: config.source,
     });
     const failures = createFailureService({

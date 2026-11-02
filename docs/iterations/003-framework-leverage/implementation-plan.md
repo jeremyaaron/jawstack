@@ -2,8 +2,8 @@
 
 Status: reviewed; Phase 0 and baseline A/B are complete. The
 [baseline review](baseline-review.md) clears the prerequisite with explicit timing
-qualifications. Phases 1-9 are complete;
-Phases 10-14 and post A/B have not started. Based on the [PRD](prd.md) and
+qualifications. Phases 1-10 are complete.
+Phases 11-14 and post A/B have not started. Based on the [PRD](prd.md) and
 [technical design](technical-design.md); see [Phase 0 evidence](phase-0-evidence.md).
 
 ## Purpose
@@ -156,7 +156,7 @@ Planning approval does not authorize remote environment changes, secret setup or
 | 7     | AWS CDK                    | Opt-in collector topology and stable named bindings             | Complete |
 | 8     | Shared lab                 | App-neutral ownership, startup and teardown                     | Complete |
 | 9     | Shared lab/Content tooling | Finite provisioning/reset and Content lab migration             | Complete |
-| 10    | Content Operations         | Command/record migration with preserved publication authority   | Planned  |
+| 10    | Content Operations         | Command/record migration with preserved publication authority   | Complete |
 | 11    | Content Operations         | Shared delivery/recovery migration and protocol retirement      | Planned  |
 | 12    | Report Runs                | Complete headless memory/local consumer                         | Planned  |
 | 13    | Integration/tooling        | Installed consumer, final live gates and frozen candidate       | Planned  |
@@ -484,6 +484,9 @@ no Docker/token. Shared tooling participates in root lint/typecheck/test/build c
 
 ## Phase 10: Content Command and Record Migration
 
+Status: complete; see [Phase 10 evidence](phase-10-evidence.md). Shared command composition,
+registered records, preserved fencing and both-adapter/browser/local happy-path checks pass.
+
 Depends on: Phase 9.
 
 Goal: delete app-owned scoped dispatch/transaction machinery without changing editorial policy.
@@ -675,7 +678,10 @@ memory composition, delivery/lifecycle, browser regression and installed-package
 [Phase 5 evidence](phase-5-evidence.md), [Phase 6 evidence](phase-6-evidence.md) and
 [Phase 7 evidence](phase-7-evidence.md) record AWS storage, local runtime and CDK boundaries.
 [Phase 8 evidence](phase-8-evidence.md) and [Phase 9 evidence](phase-9-evidence.md) record
-shared lab lifecycle/providers and actual Content reset/reprovision/teardown. Later phase
+shared lab lifecycle/providers and actual Content reset/reprovision/teardown.
+[Phase 10 evidence](phase-10-evidence.md) records command/record migration, its
+[migration ledger](leverage/phase-10-migration.md), browser acceptance and real local commands.
+Later phase
 evidence is not asserted. Update
 individual phase statuses and append dated observations rather than marking every row
 complete at the end. For each phase record:
