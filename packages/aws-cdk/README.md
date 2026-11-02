@@ -14,15 +14,26 @@ The `JawStackResourceWorkflowApp` construct creates the MVP resource workflow ba
 
 Status: `0.0.1` dogfood baseline. APIs are expected to change before `0.1.0`.
 
+## Recoverable Workers
+
+Opt-in `recoverableWorkers: { definition, collectorHandler }` composes one bounded collector
+per existing worker DLQ and exposes readonly `collectorFunctionsByName`. The workflow
+manifest, resources, handlers and selected delivery/cost profile must agree. No opt-in means
+an empty collector map and identical legacy infrastructure/policies. See the shipped
+[recovery recipe](recovery.md) for working composition, exact grants, migration caveats
+and the distinction between local test bounds and production tuning.
+
 ## Named Bindings
 
-`JawStackResourceWorkflowApp` exposes two additive readonly records:
+`JawStackResourceWorkflowApp` exposes these readonly records:
 
 - `workerBindingsByName[workerName]` returns a `JawStackWorkerBinding` containing
   `workerFunction: lambda.Function`, `queue: sqs.Queue`, and `deadLetterQueue: sqs.Queue`.
 - `schedulerFunctionsByName[scheduleName]` returns that schedule's `lambda.Function`.
   Keys are the declared schedule names, not `targetHandler` names. Multiple schedules may
   share a handler entrypoint while retaining their own functions and bindings.
+- `collectorFunctionsByName[workerName]` returns the opt-in collector's `lambda.Function`;
+  it is empty when `recoverableWorkers` is omitted.
 
 Keys use exact, case-sensitive declared names, not normalized AWS physical names. Worker
 names must be unique across all resource definitions; schedule names must likewise be
@@ -49,7 +60,7 @@ options fail before service resources are created. Omitted settings retain batch
 the SQS default DLQ visibility, and the original detail-type-only rules. Existing logical
 IDs, named bindings, generated consumers, and default policies remain unchanged.
 
-These settings let an application-owned collector share its worker's bounded timeout/DLQ
+Without `recoverableWorkers`, these settings let an application-owned collector share its worker's bounded timeout/DLQ
 visibility and let local integration use single-message batches without editing child
 constructs. Applications still own collector functions, grants, and event sources.
 

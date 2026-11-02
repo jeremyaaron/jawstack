@@ -18,6 +18,13 @@ import type {
   WorkerDefinition,
 } from "@jawstack/core";
 import { Construct } from "constructs";
+import { safeName } from "./names";
+import {
+  createWorkflowCollectors,
+  prepareRecoverableWorkers,
+  type JawStackRecoverableWorkers,
+} from "./recovery";
+export type { JawStackRecoverableWorkers } from "./recovery";
 
 export const packageName = "@jawstack/aws-cdk";
 
@@ -50,6 +57,7 @@ export type JawStackResourceWorkflowAppProps = Readonly<{
   entrypoints: JawStackResourceWorkflowEntrypoints;
   removalPolicy?: JawStackRemovalPolicy;
   workerOptions?: JawStackWorkerOptions;
+  recoverableWorkers?: JawStackRecoverableWorkers;
 }>;
 
 export type JawStackWorkerOptions = Readonly<{
@@ -71,6 +79,7 @@ export class JawStackResourceWorkflowApp extends Construct {
   readonly schedulerFunctions: readonly lambda.Function[];
   readonly schedulerFunctionsByName: Readonly<Record<string, lambda.Function | undefined>>;
   readonly schedulerDlqs: readonly sqs.Queue[];
+  readonly collectorFunctionsByName: Readonly<Record<string, lambda.Function | undefined>>;
 
   constructor(scope: Construct, id: string, props: JawStackResourceWorkflowAppProps) {
     super(scope, id);
@@ -96,6 +105,14 @@ export class JawStackResourceWorkflowApp extends Construct {
     const queueDefaults = queueDefaultsFromCostProfile(props.costProfile);
     const schedulerDefaults = schedulerDefaultsFromCostProfile(props.costProfile);
     validateWorkerOptions(props.workerOptions, lambdaDefaults.timeout.toSeconds());
+    const recovery = prepareRecoverableWorkers(props, {
+      timeoutSeconds: lambdaDefaults.timeout.toSeconds(),
+      memorySize: lambdaDefaults.memorySize,
+      reservedConcurrency: lambdaDefaults.reservedConcurrency,
+      ...queueDefaults,
+    });
+    const workerOptions = recovery?.workerOptions ?? props.workerOptions;
+    validateWorkerOptions(workerOptions, lambdaDefaults.timeout.toSeconds());
 
     const tableConstruct = new JawStackTableConstruct(this, "Table", {
       tableName: names.tableName,
@@ -137,7 +154,7 @@ export class JawStackResourceWorkflowApp extends Construct {
       eventBus: eventBusConstruct.eventBus,
       lambdaDefaults,
       queueDefaults,
-      ...(props.workerOptions ? { workerOptions: props.workerOptions } : {}),
+      ...(workerOptions ? { workerOptions } : {}),
       removalPolicy,
     });
     const schedulerConstruct = new JawStackSchedulerConstruct(this, "Schedulers", {
@@ -163,6 +180,24 @@ export class JawStackResourceWorkflowApp extends Construct {
     this.schedulerFunctions = schedulerConstruct.schedulerFunctions;
     this.schedulerFunctionsByName = schedulerConstruct.schedulerFunctionsByName;
     this.schedulerDlqs = schedulerConstruct.schedulerDlqs;
+    this.collectorFunctionsByName = recovery
+      ? createWorkflowCollectors(this, {
+          config: recovery,
+          appName: props.appName,
+          stage: props.stage,
+          table: this.table,
+          eventBusName: this.eventBus.eventBusName,
+          workers: this.workerBindingsByName,
+          functions: [
+            this.apiFunction,
+            this.outboxDispatcherFunction,
+            this.outboxSweeperFunction,
+            ...this.workerFunctions,
+            ...this.schedulerFunctions,
+          ],
+          removalPolicy,
+        })
+      : Object.freeze(Object.create(null) as Record<string, lambda.Function | undefined>);
 
     new CfnOutput(this, "ApiUrl", {
       value: this.httpApi.apiEndpoint,
@@ -678,15 +713,6 @@ function resourceNames(
     outboxDispatcherFunctionName: `${prefix}-outbox-dispatcher`,
     outboxSweeperFunctionName: `${prefix}-outbox-sweeper`,
   };
-}
-
-function safeName(value: string): string {
-  return value
-    .trim()
-    .replaceAll(/[^A-Za-z0-9-]/g, "-")
-    .replaceAll(/-+/g, "-")
-    .replace(/^-|-$/g, "")
-    .toLowerCase();
 }
 
 function removalPolicyFor(

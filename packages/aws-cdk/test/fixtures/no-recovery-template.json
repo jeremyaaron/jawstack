@@ -1,0 +1,1160 @@
+{
+  "Resources": {
+    "WorkflowTableResourceTable7031C5AD": {
+      "Type": "AWS::DynamoDB::Table",
+      "Properties": {
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "PK",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "SK",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "GSI1PK",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "GSI1SK",
+            "AttributeType": "S"
+          }
+        ],
+        "BillingMode": "PAY_PER_REQUEST",
+        "GlobalSecondaryIndexes": [
+          {
+            "IndexName": "GSI1",
+            "KeySchema": [
+              {
+                "AttributeName": "GSI1PK",
+                "KeyType": "HASH"
+              },
+              {
+                "AttributeName": "GSI1SK",
+                "KeyType": "RANGE"
+              }
+            ],
+            "Projection": {
+              "ProjectionType": "ALL"
+            }
+          }
+        ],
+        "KeySchema": [
+          {
+            "AttributeName": "PK",
+            "KeyType": "HASH"
+          },
+          {
+            "AttributeName": "SK",
+            "KeyType": "RANGE"
+          }
+        ],
+        "PointInTimeRecoverySpecification": {
+          "PointInTimeRecoveryEnabled": false
+        },
+        "StreamSpecification": {
+          "StreamViewType": "NEW_AND_OLD_IMAGES"
+        },
+        "TableName": "recovery-test-dev-resources",
+        "TimeToLiveSpecification": {
+          "AttributeName": "expiresAt",
+          "Enabled": true
+        }
+      },
+      "UpdateReplacePolicy": "Delete",
+      "DeletionPolicy": "Delete"
+    },
+    "WorkflowEventBusAE6D71FF": {
+      "Type": "AWS::Events::EventBus",
+      "Properties": {
+        "Name": "recovery-test-dev-events"
+      }
+    },
+    "WorkflowApiApiLogGroup700C3837": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "LogGroupName": "/aws/lambda/recovery-test-dev-api",
+        "RetentionInDays": 7
+      },
+      "UpdateReplacePolicy": "Delete",
+      "DeletionPolicy": "Delete"
+    },
+    "WorkflowApiApiFunctionServiceRole4480F95E": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition"
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    "WorkflowApiApiFunctionServiceRoleDefaultPolicy7EB1F319": {
+      "Type": "AWS::IAM::Policy",
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "dynamodb:BatchGetItem",
+                "dynamodb:Query",
+                "dynamodb:GetItem",
+                "dynamodb:Scan",
+                "dynamodb:ConditionCheckItem",
+                "dynamodb:BatchWriteItem",
+                "dynamodb:PutItem",
+                "dynamodb:UpdateItem",
+                "dynamodb:DeleteItem",
+                "dynamodb:DescribeTable"
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": ["WorkflowTableResourceTable7031C5AD", "Arn"]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": ["WorkflowTableResourceTable7031C5AD", "Arn"]
+                      },
+                      "/index/*"
+                    ]
+                  ]
+                }
+              ]
+            },
+            {
+              "Action": ["dynamodb:GetRecords", "dynamodb:GetShardIterator"],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": ["WorkflowTableResourceTable7031C5AD", "Arn"]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": ["WorkflowTableResourceTable7031C5AD", "Arn"]
+                      },
+                      "/index/*"
+                    ]
+                  ]
+                }
+              ]
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "PolicyName": "WorkflowApiApiFunctionServiceRoleDefaultPolicy7EB1F319",
+        "Roles": [
+          {
+            "Ref": "WorkflowApiApiFunctionServiceRole4480F95E"
+          }
+        ]
+      }
+    },
+    "WorkflowApiApiFunctionFC006D1A": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Architectures": ["arm64"],
+        "Code": {
+          "S3Bucket": "cdk-hnb659fds-assets-000000000000-us-east-1",
+          "S3Key": "d3d7d18ff7e8349fe2a2ba7d18e68e8c49a9831769343276a051740a8dc75b65.zip"
+        },
+        "Environment": {
+          "Variables": {
+            "JAWSTACK_APP_NAME": "recovery-test",
+            "JAWSTACK_STAGE": "dev",
+            "JAWSTACK_TABLE_NAME": {
+              "Ref": "WorkflowTableResourceTable7031C5AD"
+            },
+            "JAWSTACK_EVENT_BUS_NAME": {
+              "Ref": "WorkflowEventBusAE6D71FF"
+            },
+            "JAWSTACK_AUTH_MODE": "external",
+            "JAWSTACK_AUTH_PROVIDER": "header"
+          }
+        },
+        "FunctionName": "recovery-test-dev-api",
+        "Handler": "index.handler",
+        "MemorySize": 384,
+        "ReservedConcurrentExecutions": 7,
+        "Role": {
+          "Fn::GetAtt": ["WorkflowApiApiFunctionServiceRole4480F95E", "Arn"]
+        },
+        "Runtime": "nodejs22.x",
+        "Timeout": 12
+      },
+      "DependsOn": [
+        "WorkflowApiApiFunctionServiceRoleDefaultPolicy7EB1F319",
+        "WorkflowApiApiFunctionServiceRole4480F95E"
+      ]
+    },
+    "WorkflowApiHttpApiEBE617C3": {
+      "Type": "AWS::ApiGatewayV2::Api",
+      "Properties": {
+        "Name": "recovery-test-dev-api",
+        "ProtocolType": "HTTP"
+      }
+    },
+    "WorkflowApiHttpApiDefaultStageE8E09683": {
+      "Type": "AWS::ApiGatewayV2::Stage",
+      "Properties": {
+        "ApiId": {
+          "Ref": "WorkflowApiHttpApiEBE617C3"
+        },
+        "AutoDeploy": true,
+        "StageName": "$default"
+      }
+    },
+    "WorkflowApiHttpApiANYproxyApiIntegration394A5C90": {
+      "Type": "AWS::ApiGatewayV2::Integration",
+      "Properties": {
+        "ApiId": {
+          "Ref": "WorkflowApiHttpApiEBE617C3"
+        },
+        "IntegrationType": "AWS_PROXY",
+        "IntegrationUri": {
+          "Fn::GetAtt": ["WorkflowApiApiFunctionFC006D1A", "Arn"]
+        },
+        "PayloadFormatVersion": "2.0"
+      }
+    },
+    "WorkflowApiHttpApiANYproxyApiIntegrationPermissionE004D1CC": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": ["WorkflowApiApiFunctionFC006D1A", "Arn"]
+        },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition"
+              },
+              ":execute-api:us-east-1:000000000000:",
+              {
+                "Ref": "WorkflowApiHttpApiEBE617C3"
+              },
+              "/*/*/{proxy+}"
+            ]
+          ]
+        }
+      }
+    },
+    "WorkflowApiHttpApiANYproxy95EE3B3E": {
+      "Type": "AWS::ApiGatewayV2::Route",
+      "Properties": {
+        "ApiId": {
+          "Ref": "WorkflowApiHttpApiEBE617C3"
+        },
+        "AuthorizationType": "NONE",
+        "RouteKey": "ANY /{proxy+}",
+        "Target": {
+          "Fn::Join": [
+            "",
+            [
+              "integrations/",
+              {
+                "Ref": "WorkflowApiHttpApiANYproxyApiIntegration394A5C90"
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "WorkflowOutboxOutboxDispatcherLogGroup37849CAB": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "LogGroupName": "/aws/lambda/recovery-test-dev-outbox-dispatcher",
+        "RetentionInDays": 7
+      },
+      "UpdateReplacePolicy": "Delete",
+      "DeletionPolicy": "Delete"
+    },
+    "WorkflowOutboxOutboxSweeperLogGroup92C8B315": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "LogGroupName": "/aws/lambda/recovery-test-dev-outbox-sweeper",
+        "RetentionInDays": 7
+      },
+      "UpdateReplacePolicy": "Delete",
+      "DeletionPolicy": "Delete"
+    },
+    "WorkflowOutboxOutboxDispatcherFunctionServiceRoleF5F194CC": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition"
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    "WorkflowOutboxOutboxDispatcherFunctionServiceRoleDefaultPolicy8D30E7D2": {
+      "Type": "AWS::IAM::Policy",
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "dynamodb:ListStreams",
+              "Effect": "Allow",
+              "Resource": "*"
+            },
+            {
+              "Action": [
+                "dynamodb:DescribeStream",
+                "dynamodb:GetRecords",
+                "dynamodb:GetShardIterator"
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": ["WorkflowTableResourceTable7031C5AD", "StreamArn"]
+              }
+            },
+            {
+              "Action": [
+                "dynamodb:BatchGetItem",
+                "dynamodb:Query",
+                "dynamodb:GetItem",
+                "dynamodb:Scan",
+                "dynamodb:ConditionCheckItem",
+                "dynamodb:BatchWriteItem",
+                "dynamodb:PutItem",
+                "dynamodb:UpdateItem",
+                "dynamodb:DeleteItem",
+                "dynamodb:DescribeTable"
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": ["WorkflowTableResourceTable7031C5AD", "Arn"]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": ["WorkflowTableResourceTable7031C5AD", "Arn"]
+                      },
+                      "/index/*"
+                    ]
+                  ]
+                }
+              ]
+            },
+            {
+              "Action": ["dynamodb:GetRecords", "dynamodb:GetShardIterator"],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": ["WorkflowTableResourceTable7031C5AD", "Arn"]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": ["WorkflowTableResourceTable7031C5AD", "Arn"]
+                      },
+                      "/index/*"
+                    ]
+                  ]
+                }
+              ]
+            },
+            {
+              "Action": "events:PutEvents",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": ["WorkflowEventBusAE6D71FF", "Arn"]
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "PolicyName": "WorkflowOutboxOutboxDispatcherFunctionServiceRoleDefaultPolicy8D30E7D2",
+        "Roles": [
+          {
+            "Ref": "WorkflowOutboxOutboxDispatcherFunctionServiceRoleF5F194CC"
+          }
+        ]
+      }
+    },
+    "WorkflowOutboxOutboxDispatcherFunction2B44363C": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Architectures": ["arm64"],
+        "Code": {
+          "S3Bucket": "cdk-hnb659fds-assets-000000000000-us-east-1",
+          "S3Key": "d3d7d18ff7e8349fe2a2ba7d18e68e8c49a9831769343276a051740a8dc75b65.zip"
+        },
+        "Environment": {
+          "Variables": {
+            "JAWSTACK_APP_NAME": "recovery-test",
+            "JAWSTACK_STAGE": "dev",
+            "JAWSTACK_TABLE_NAME": {
+              "Ref": "WorkflowTableResourceTable7031C5AD"
+            },
+            "JAWSTACK_EVENT_BUS_NAME": {
+              "Ref": "WorkflowEventBusAE6D71FF"
+            }
+          }
+        },
+        "FunctionName": "recovery-test-dev-outbox-dispatcher",
+        "Handler": "index.dispatcher",
+        "MemorySize": 384,
+        "ReservedConcurrentExecutions": 7,
+        "Role": {
+          "Fn::GetAtt": ["WorkflowOutboxOutboxDispatcherFunctionServiceRoleF5F194CC", "Arn"]
+        },
+        "Runtime": "nodejs22.x",
+        "Timeout": 30
+      },
+      "DependsOn": [
+        "WorkflowOutboxOutboxDispatcherFunctionServiceRoleDefaultPolicy8D30E7D2",
+        "WorkflowOutboxOutboxDispatcherFunctionServiceRoleF5F194CC"
+      ]
+    },
+    "WorkflowOutboxOutboxSweeperFunctionServiceRoleC89E8E81": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition"
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    "WorkflowOutboxOutboxSweeperFunctionServiceRoleDefaultPolicy34BBAE89": {
+      "Type": "AWS::IAM::Policy",
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "dynamodb:BatchGetItem",
+                "dynamodb:Query",
+                "dynamodb:GetItem",
+                "dynamodb:Scan",
+                "dynamodb:ConditionCheckItem",
+                "dynamodb:BatchWriteItem",
+                "dynamodb:PutItem",
+                "dynamodb:UpdateItem",
+                "dynamodb:DeleteItem",
+                "dynamodb:DescribeTable"
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": ["WorkflowTableResourceTable7031C5AD", "Arn"]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": ["WorkflowTableResourceTable7031C5AD", "Arn"]
+                      },
+                      "/index/*"
+                    ]
+                  ]
+                }
+              ]
+            },
+            {
+              "Action": ["dynamodb:GetRecords", "dynamodb:GetShardIterator"],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": ["WorkflowTableResourceTable7031C5AD", "Arn"]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": ["WorkflowTableResourceTable7031C5AD", "Arn"]
+                      },
+                      "/index/*"
+                    ]
+                  ]
+                }
+              ]
+            },
+            {
+              "Action": "events:PutEvents",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": ["WorkflowEventBusAE6D71FF", "Arn"]
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "PolicyName": "WorkflowOutboxOutboxSweeperFunctionServiceRoleDefaultPolicy34BBAE89",
+        "Roles": [
+          {
+            "Ref": "WorkflowOutboxOutboxSweeperFunctionServiceRoleC89E8E81"
+          }
+        ]
+      }
+    },
+    "WorkflowOutboxOutboxSweeperFunctionF29310FA": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Architectures": ["arm64"],
+        "Code": {
+          "S3Bucket": "cdk-hnb659fds-assets-000000000000-us-east-1",
+          "S3Key": "d3d7d18ff7e8349fe2a2ba7d18e68e8c49a9831769343276a051740a8dc75b65.zip"
+        },
+        "Environment": {
+          "Variables": {
+            "JAWSTACK_APP_NAME": "recovery-test",
+            "JAWSTACK_STAGE": "dev",
+            "JAWSTACK_TABLE_NAME": {
+              "Ref": "WorkflowTableResourceTable7031C5AD"
+            },
+            "JAWSTACK_EVENT_BUS_NAME": {
+              "Ref": "WorkflowEventBusAE6D71FF"
+            }
+          }
+        },
+        "FunctionName": "recovery-test-dev-outbox-sweeper",
+        "Handler": "index.sweeper",
+        "MemorySize": 384,
+        "ReservedConcurrentExecutions": 1,
+        "Role": {
+          "Fn::GetAtt": ["WorkflowOutboxOutboxSweeperFunctionServiceRoleC89E8E81", "Arn"]
+        },
+        "Runtime": "nodejs22.x",
+        "Timeout": 30
+      },
+      "DependsOn": [
+        "WorkflowOutboxOutboxSweeperFunctionServiceRoleDefaultPolicy34BBAE89",
+        "WorkflowOutboxOutboxSweeperFunctionServiceRoleC89E8E81"
+      ]
+    },
+    "WorkflowOutboxOutboxStreamMappingE8DF495C": {
+      "Type": "AWS::Lambda::EventSourceMapping",
+      "Properties": {
+        "BatchSize": 10,
+        "EventSourceArn": {
+          "Fn::GetAtt": ["WorkflowTableResourceTable7031C5AD", "StreamArn"]
+        },
+        "FunctionName": {
+          "Ref": "WorkflowOutboxOutboxDispatcherFunction2B44363C"
+        },
+        "MaximumRetryAttempts": 3,
+        "StartingPosition": "LATEST"
+      }
+    },
+    "WorkflowOutboxOutboxSweeperScheduleE25CFDF3": {
+      "Type": "AWS::Events::Rule",
+      "Properties": {
+        "ScheduleExpression": "rate(5 minutes)",
+        "State": "ENABLED",
+        "Targets": [
+          {
+            "Arn": {
+              "Fn::GetAtt": ["WorkflowOutboxOutboxSweeperFunctionF29310FA", "Arn"]
+            },
+            "Id": "Target0",
+            "RetryPolicy": {
+              "MaximumRetryAttempts": 2
+            }
+          }
+        ]
+      }
+    },
+    "WorkflowOutboxOutboxSweeperScheduleAllowEventRuleRecoveryBaselineWorkflowOutboxOutboxSweeperFunction566E39790AE7D838": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": ["WorkflowOutboxOutboxSweeperFunctionF29310FA", "Arn"]
+        },
+        "Principal": "events.amazonaws.com",
+        "SourceArn": {
+          "Fn::GetAtt": ["WorkflowOutboxOutboxSweeperScheduleE25CFDF3", "Arn"]
+        }
+      }
+    },
+    "WorkflowWorkersprocessLogGroupC2669510": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "LogGroupName": "/aws/lambda/recovery-test-dev-process-worker",
+        "RetentionInDays": 7
+      },
+      "UpdateReplacePolicy": "Delete",
+      "DeletionPolicy": "Delete"
+    },
+    "WorkflowWorkersprocessDlq9443C6A0": {
+      "Type": "AWS::SQS::Queue",
+      "Properties": {
+        "MessageRetentionPeriod": 1209600,
+        "QueueName": "recovery-test-dev-process-dlq"
+      },
+      "UpdateReplacePolicy": "Delete",
+      "DeletionPolicy": "Delete"
+    },
+    "WorkflowWorkersprocessQueue088730D9": {
+      "Type": "AWS::SQS::Queue",
+      "Properties": {
+        "MessageRetentionPeriod": 345600,
+        "QueueName": "recovery-test-dev-process-queue",
+        "RedrivePolicy": {
+          "deadLetterTargetArn": {
+            "Fn::GetAtt": ["WorkflowWorkersprocessDlq9443C6A0", "Arn"]
+          },
+          "maxReceiveCount": 4
+        },
+        "VisibilityTimeout": 72
+      },
+      "UpdateReplacePolicy": "Delete",
+      "DeletionPolicy": "Delete"
+    },
+    "WorkflowWorkersprocessQueuePolicy232CAF10": {
+      "Type": "AWS::SQS::QueuePolicy",
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": ["sqs:SendMessage", "sqs:GetQueueAttributes", "sqs:GetQueueUrl"],
+              "Condition": {
+                "ArnEquals": {
+                  "aws:SourceArn": {
+                    "Fn::GetAtt": ["WorkflowWorkersprocessEventRule82463862", "Arn"]
+                  }
+                }
+              },
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "events.amazonaws.com"
+              },
+              "Resource": {
+                "Fn::GetAtt": ["WorkflowWorkersprocessQueue088730D9", "Arn"]
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "Queues": [
+          {
+            "Ref": "WorkflowWorkersprocessQueue088730D9"
+          }
+        ]
+      }
+    },
+    "WorkflowWorkersprocessFunctionServiceRoleDE922E65": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition"
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    "WorkflowWorkersprocessFunctionServiceRoleDefaultPolicyC7A44263": {
+      "Type": "AWS::IAM::Policy",
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "dynamodb:BatchGetItem",
+                "dynamodb:Query",
+                "dynamodb:GetItem",
+                "dynamodb:Scan",
+                "dynamodb:ConditionCheckItem",
+                "dynamodb:BatchWriteItem",
+                "dynamodb:PutItem",
+                "dynamodb:UpdateItem",
+                "dynamodb:DeleteItem",
+                "dynamodb:DescribeTable"
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": ["WorkflowTableResourceTable7031C5AD", "Arn"]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": ["WorkflowTableResourceTable7031C5AD", "Arn"]
+                      },
+                      "/index/*"
+                    ]
+                  ]
+                }
+              ]
+            },
+            {
+              "Action": ["dynamodb:GetRecords", "dynamodb:GetShardIterator"],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": ["WorkflowTableResourceTable7031C5AD", "Arn"]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": ["WorkflowTableResourceTable7031C5AD", "Arn"]
+                      },
+                      "/index/*"
+                    ]
+                  ]
+                }
+              ]
+            },
+            {
+              "Action": [
+                "sqs:ReceiveMessage",
+                "sqs:ChangeMessageVisibility",
+                "sqs:GetQueueUrl",
+                "sqs:DeleteMessage",
+                "sqs:GetQueueAttributes"
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": ["WorkflowWorkersprocessQueue088730D9", "Arn"]
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "PolicyName": "WorkflowWorkersprocessFunctionServiceRoleDefaultPolicyC7A44263",
+        "Roles": [
+          {
+            "Ref": "WorkflowWorkersprocessFunctionServiceRoleDE922E65"
+          }
+        ]
+      }
+    },
+    "WorkflowWorkersprocessFunction5BAD48DB": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Architectures": ["arm64"],
+        "Code": {
+          "S3Bucket": "cdk-hnb659fds-assets-000000000000-us-east-1",
+          "S3Key": "d3d7d18ff7e8349fe2a2ba7d18e68e8c49a9831769343276a051740a8dc75b65.zip"
+        },
+        "Environment": {
+          "Variables": {
+            "JAWSTACK_APP_NAME": "recovery-test",
+            "JAWSTACK_STAGE": "dev",
+            "JAWSTACK_TABLE_NAME": {
+              "Ref": "WorkflowTableResourceTable7031C5AD"
+            },
+            "JAWSTACK_EVENT_BUS_NAME": {
+              "Ref": "WorkflowEventBusAE6D71FF"
+            },
+            "JAWSTACK_WORKER_NAME": "process"
+          }
+        },
+        "FunctionName": "recovery-test-dev-process-worker",
+        "Handler": "index.handler",
+        "MemorySize": 384,
+        "ReservedConcurrentExecutions": 2,
+        "Role": {
+          "Fn::GetAtt": ["WorkflowWorkersprocessFunctionServiceRoleDE922E65", "Arn"]
+        },
+        "Runtime": "nodejs22.x",
+        "Timeout": 12
+      },
+      "DependsOn": [
+        "WorkflowWorkersprocessFunctionServiceRoleDefaultPolicyC7A44263",
+        "WorkflowWorkersprocessFunctionServiceRoleDE922E65"
+      ]
+    },
+    "WorkflowWorkersprocessFunctionSqsEventSourceRecoveryBaselineWorkflowWorkersprocessQueue48F1C72F3DDE5CA1": {
+      "Type": "AWS::Lambda::EventSourceMapping",
+      "Properties": {
+        "BatchSize": 10,
+        "EventSourceArn": {
+          "Fn::GetAtt": ["WorkflowWorkersprocessQueue088730D9", "Arn"]
+        },
+        "FunctionName": {
+          "Ref": "WorkflowWorkersprocessFunction5BAD48DB"
+        },
+        "ScalingConfig": {
+          "MaximumConcurrency": 2
+        }
+      }
+    },
+    "WorkflowWorkersprocessEventRule82463862": {
+      "Type": "AWS::Events::Rule",
+      "Properties": {
+        "EventBusName": {
+          "Ref": "WorkflowEventBusAE6D71FF"
+        },
+        "EventPattern": {
+          "detail-type": ["workRequest.created"]
+        },
+        "State": "ENABLED",
+        "Targets": [
+          {
+            "Arn": {
+              "Fn::GetAtt": ["WorkflowWorkersprocessQueue088730D9", "Arn"]
+            },
+            "Id": "Target0"
+          }
+        ]
+      }
+    },
+    "WorkflowSchedulerstickLogGroup6BC6DFAE": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "LogGroupName": "/aws/lambda/recovery-test-dev-tick-scheduler",
+        "RetentionInDays": 7
+      },
+      "UpdateReplacePolicy": "Delete",
+      "DeletionPolicy": "Delete"
+    },
+    "WorkflowSchedulerstickFunctionServiceRoleB282CA23": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition"
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    "WorkflowSchedulerstickFunctionServiceRoleDefaultPolicyC3EB2CEE": {
+      "Type": "AWS::IAM::Policy",
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "dynamodb:BatchGetItem",
+                "dynamodb:Query",
+                "dynamodb:GetItem",
+                "dynamodb:Scan",
+                "dynamodb:ConditionCheckItem",
+                "dynamodb:DescribeTable"
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": ["WorkflowTableResourceTable7031C5AD", "Arn"]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": ["WorkflowTableResourceTable7031C5AD", "Arn"]
+                      },
+                      "/index/*"
+                    ]
+                  ]
+                }
+              ]
+            },
+            {
+              "Action": ["dynamodb:GetRecords", "dynamodb:GetShardIterator"],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": ["WorkflowTableResourceTable7031C5AD", "Arn"]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": ["WorkflowTableResourceTable7031C5AD", "Arn"]
+                      },
+                      "/index/*"
+                    ]
+                  ]
+                }
+              ]
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "PolicyName": "WorkflowSchedulerstickFunctionServiceRoleDefaultPolicyC3EB2CEE",
+        "Roles": [
+          {
+            "Ref": "WorkflowSchedulerstickFunctionServiceRoleB282CA23"
+          }
+        ]
+      }
+    },
+    "WorkflowSchedulerstickFunction3425A553": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Architectures": ["arm64"],
+        "Code": {
+          "S3Bucket": "cdk-hnb659fds-assets-000000000000-us-east-1",
+          "S3Key": "d3d7d18ff7e8349fe2a2ba7d18e68e8c49a9831769343276a051740a8dc75b65.zip"
+        },
+        "Environment": {
+          "Variables": {
+            "JAWSTACK_APP_NAME": "recovery-test",
+            "JAWSTACK_STAGE": "dev",
+            "JAWSTACK_TABLE_NAME": {
+              "Ref": "WorkflowTableResourceTable7031C5AD"
+            },
+            "JAWSTACK_SCHEDULE_NAME": "tick",
+            "JAWSTACK_SCHEDULE_TARGET_HANDLER": "tick"
+          }
+        },
+        "FunctionName": "recovery-test-dev-tick-scheduler",
+        "Handler": "index.handler",
+        "MemorySize": 384,
+        "ReservedConcurrentExecutions": 7,
+        "Role": {
+          "Fn::GetAtt": ["WorkflowSchedulerstickFunctionServiceRoleB282CA23", "Arn"]
+        },
+        "Runtime": "nodejs22.x",
+        "Timeout": 12
+      },
+      "DependsOn": [
+        "WorkflowSchedulerstickFunctionServiceRoleDefaultPolicyC3EB2CEE",
+        "WorkflowSchedulerstickFunctionServiceRoleB282CA23"
+      ]
+    },
+    "WorkflowSchedulerstickDlqA73241DF": {
+      "Type": "AWS::SQS::Queue",
+      "Properties": {
+        "MessageRetentionPeriod": 1209600,
+        "QueueName": "recovery-test-dev-tick-scheduler-dlq"
+      },
+      "UpdateReplacePolicy": "Delete",
+      "DeletionPolicy": "Delete"
+    },
+    "WorkflowSchedulerstickInvocationRole31A116FC": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "scheduler.amazonaws.com"
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        }
+      }
+    },
+    "WorkflowSchedulerstickInvocationRoleDefaultPolicy0B1F49CD": {
+      "Type": "AWS::IAM::Policy",
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "lambda:InvokeFunction",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": ["WorkflowSchedulerstickFunction3425A553", "Arn"]
+              }
+            },
+            {
+              "Action": "sqs:SendMessage",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": ["WorkflowSchedulerstickDlqA73241DF", "Arn"]
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "PolicyName": "WorkflowSchedulerstickInvocationRoleDefaultPolicy0B1F49CD",
+        "Roles": [
+          {
+            "Ref": "WorkflowSchedulerstickInvocationRole31A116FC"
+          }
+        ]
+      }
+    },
+    "WorkflowSchedulerstickScheduleBDD53810": {
+      "Type": "AWS::Scheduler::Schedule",
+      "Properties": {
+        "FlexibleTimeWindow": {
+          "Mode": "OFF"
+        },
+        "Name": "recovery-test-dev-tick-schedule",
+        "ScheduleExpression": "rate(1 day)",
+        "State": "ENABLED",
+        "Target": {
+          "Arn": {
+            "Fn::GetAtt": ["WorkflowSchedulerstickFunction3425A553", "Arn"]
+          },
+          "DeadLetterConfig": {
+            "Arn": {
+              "Fn::GetAtt": ["WorkflowSchedulerstickDlqA73241DF", "Arn"]
+            }
+          },
+          "Input": "{\"scheduleName\":\"tick\",\"targetHandler\":\"tick\"}",
+          "RetryPolicy": {
+            "MaximumEventAgeInSeconds": 3600,
+            "MaximumRetryAttempts": 2
+          },
+          "RoleArn": {
+            "Fn::GetAtt": ["WorkflowSchedulerstickInvocationRole31A116FC", "Arn"]
+          }
+        }
+      }
+    }
+  },
+  "Outputs": {
+    "WorkflowApiUrl73FC6AA4": {
+      "Value": {
+        "Fn::GetAtt": ["WorkflowApiHttpApiEBE617C3", "ApiEndpoint"]
+      }
+    }
+  },
+  "Parameters": {
+    "BootstrapVersion": {
+      "Type": "AWS::SSM::Parameter::Value<String>",
+      "Default": "/cdk-bootstrap/hnb659fds/version",
+      "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]"
+    }
+  },
+  "Rules": {
+    "CheckBootstrapVersion": {
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Not": [
+              {
+                "Fn::Contains": [
+                  ["1", "2", "3", "4", "5"],
+                  {
+                    "Ref": "BootstrapVersion"
+                  }
+                ]
+              }
+            ]
+          },
+          "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI."
+        }
+      ]
+    }
+  }
+}

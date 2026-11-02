@@ -2,7 +2,7 @@
 
 Status: reviewed; Phase 0 and baseline A/B are complete. The
 [baseline review](baseline-review.md) clears the prerequisite with explicit timing
-qualifications. Phases 1-6 are complete; Phases 7-14 and post A/B have not started. Based on the [PRD](prd.md) and
+qualifications. Phases 1-7 are complete; Phases 8-14 and post A/B have not started. Based on the [PRD](prd.md) and
 [technical design](technical-design.md); see [Phase 0 evidence](phase-0-evidence.md).
 
 ## Purpose
@@ -392,6 +392,9 @@ configuration probes, endpoint/final-transport tests and clean package/generated
 checks using compiled public exports as well as workspace unit-test aliases.
 
 ## Phase 7: Opt-In Collector Infrastructure
+
+Status: complete; see [Phase 7 evidence](phase-7-evidence.md). Opt-in synthesis and installed
+composition pass; existing consumer migration and live delivery remain later gates.
 
 Depends on: Phase 6.
 

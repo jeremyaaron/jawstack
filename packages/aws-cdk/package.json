@@ -23,7 +23,8 @@
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "recovery.md"
   ],
   "publishConfig": {
     "access": "public"

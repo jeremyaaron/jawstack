@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import { App, Stack } from "aws-cdk-lib";
+import { App, Stack, Tags } from "aws-cdk-lib";
 import { Match, Template } from "aws-cdk-lib/assertions";
 import { NodeHttpHandler } from "@smithy/node-http-handler";
 import { ContentOperationsInfrastructure } from "../../src/infra/stack";
@@ -13,6 +13,12 @@ import { pathToFileURL } from "node:url";
 import { unzipSync } from "fflate";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { Construct } from "constructs";
+import { JawStackResourceWorkflowApp } from "@jawstack/aws-cdk";
+import { defineWorkflow } from "@jawstack/core";
+import { z } from "zod";
+import { contentEventSchemas } from "../../src/shared/contracts";
+import { parseContentEvent } from "../../src/shared/events";
 
 type Resource = { Type: string; Properties: Record<string, unknown> };
 let entrypoints: Awaited<ReturnType<typeof buildInfrastructure>>;
@@ -56,6 +62,181 @@ function synth() {
 }
 
 describe("content application synthesis", () => {
+  it("matches the existing Content collector/queue/log bounds and wiring through the opt-in framework", () => {
+    const reference = synth();
+    const { config } = reference.infrastructure;
+    const definition = defineWorkflow({
+      name: "content-operations",
+      source: config.lab.source,
+      resources: config.resources,
+      commands: { idempotencyTtlSeconds: 604800 },
+      events: Object.entries(contentEventSchemas).map(([eventType, schema]) => ({
+        eventType,
+        schemaVersion: 1,
+        // Keep core's strict-object contract; the original parser below retains wrapper refinements.
+        schema: schema instanceof z.ZodReadonly ? schema.unwrap() : schema,
+        validateIdentity: (event) => {
+          parseContentEvent(event, config.lab.source);
+          return true;
+        },
+      })),
+      consumers: Object.fromEntries(
+        config.profile.workers.map((worker) => [
+          worker.consumer,
+          {
+            recovery:
+              worker.consumer === "publishContent" ? ("application" as const) : ("replay" as const),
+          },
+        ]),
+      ),
+      operations: { resourceType: "contentItem", projection: "contentItem.failures" },
+    });
+    const stack = new Stack(new App({ autoSynth: false }), "ContentManaged", {
+      env: { account: "000000000000", region: "us-east-1" },
+    });
+    const scope = new Construct(stack, "Content");
+    const workflow = new JawStackResourceWorkflowApp(scope, "Workflow", {
+      appName: config.appName,
+      stage: config.stage,
+      resources: config.resources,
+      costProfile: config.costProfile,
+      auth: config.auth,
+      removalPolicy: "destroy",
+      recoverableWorkers: { definition, collectorHandler: entrypoints.collector },
+      entrypoints: {
+        apiHandler: entrypoints.api,
+        outboxHandler: entrypoints.outbox,
+        workerHandlers: Object.fromEntries(
+          config.profile.workers.map((worker) => [worker.consumer, entrypoints.worker]),
+        ),
+        schedulerHandlers: Object.fromEntries(
+          config.profile.schedules.map((job) => [job.targetHandler, entrypoints.scheduler]),
+        ),
+      },
+    });
+    Tags.of(scope).add("jawstack:consumer", "content-operations");
+    Tags.of(scope).add("jawstack:stage", "local");
+    const template = Template.fromStack(stack),
+      resources = template.toJSON().Resources as Record<string, Resource>;
+    const byType = (type: string) => Object.entries(resources).filter(([, r]) => r.Type === type);
+    const identities = (items: Record<string, Resource>) =>
+      Object.fromEntries(
+        Object.entries(items).map(([id, r]) => [
+          id,
+          r.Properties.FunctionName ?? r.Properties.QueueName ?? r.Properties.TableName ?? id,
+        ]),
+      );
+    const normalize = (value: unknown, ids: Record<string, unknown>): unknown => {
+      if (Array.isArray(value)) return value.map((v) => normalize(v, ids));
+      if (value && typeof value === "object")
+        return Object.fromEntries(
+          Object.entries(value).map(([key, v]) => [
+            key,
+            key === "Ref" && typeof v === "string"
+              ? (ids[v] ?? v)
+              : key === "Fn::GetAtt" && Array.isArray(v)
+                ? [ids[v[0]] ?? v[0], v[1]]
+                : normalize(v, ids),
+          ]),
+        );
+      return value;
+    };
+    const oldIds = identities(reference.resources),
+      newIds = identities(resources);
+    template.resourceCountIs("AWS::DynamoDB::Table", 1);
+    template.resourceCountIs("AWS::S3::Bucket", 0);
+    expect(Object.keys(workflow.collectorFunctionsByName).sort()).toEqual(
+      config.profile.workers.map((worker) => worker.consumer).sort(),
+    );
+    for (const worker of config.profile.workers) {
+      const base = `content-operations-local-${worker.consumer.toLowerCase()}`;
+      const old = reference.fn(`${base}-collector`),
+        current = byType("AWS::Lambda::Function").find(
+          ([, r]) => r.Properties.FunctionName === `${base}-collector`,
+        )!;
+      for (const key of [
+        "FunctionName",
+        "Runtime",
+        "Architectures",
+        "Handler",
+        "Timeout",
+        "MemorySize",
+        "ReservedConcurrentExecutions",
+        "DeadLetterConfig",
+      ])
+        expect(current[1].Properties[key]).toEqual(old[1].Properties[key]);
+      expect(workflow.collectorFunctionsByName[worker.consumer]!.node.id).toBe(
+        `${worker.consumer}Collector`,
+      );
+      expect(current[0]).not.toBe(old[0]); // Moving construct ownership changes logical IDs, not physical names.
+      const vars = (current[1].Properties.Environment as { Variables: Record<string, unknown> })
+        .Variables;
+      expect(vars).toMatchObject({
+        JAWSTACK_WORKER_NAME: worker.consumer,
+        JAWSTACK_WORKFLOW_ROLE: "collector",
+        JAWSTACK_WORKFLOW_HASH: definition.manifest.hash,
+      });
+      for (const suffix of ["queue", "dlq"]) {
+        const name = `${base}-${suffix}`;
+        const before = reference
+          .byType("AWS::SQS::Queue")
+          .find(([, r]) => r.Properties.QueueName === name)![1];
+        const after = byType("AWS::SQS::Queue").find(
+          ([, r]) => r.Properties.QueueName === name,
+        )![1];
+        expect(normalize(after.Properties, newIds)).toEqual(normalize(before.Properties, oldIds));
+      }
+      const oldMapping = reference
+        .byType("AWS::Lambda::EventSourceMapping")
+        .find(
+          ([, r]) => JSON.stringify(r.Properties.FunctionName) === JSON.stringify({ Ref: old[0] }),
+        )![1];
+      const newMapping = byType("AWS::Lambda::EventSourceMapping").find(
+        ([, r]) =>
+          JSON.stringify(r.Properties.FunctionName) === JSON.stringify({ Ref: current[0] }),
+      )![1];
+      expect(normalize(newMapping.Properties, newIds)).toEqual(
+        normalize(oldMapping.Properties, oldIds),
+      );
+      const logName = `/aws/lambda/${base}-collector`;
+      const beforeLog = reference
+        .byType("AWS::Logs::LogGroup")
+        .find(([, r]) => r.Properties.LogGroupName === logName)![1];
+      const afterLog = byType("AWS::Logs::LogGroup").find(
+        ([, r]) => r.Properties.LogGroupName === logName,
+      )![1];
+      expect(afterLog).toMatchObject({ Properties: beforeLog.Properties });
+      const role = (current[1].Properties.Role as { "Fn::GetAtt": string[] })["Fn::GetAtt"][0];
+      const policies = byType("AWS::IAM::Policy").filter(([, r]) =>
+        (r.Properties.Roles as { Ref: string }[]).some((v) => v.Ref === role),
+      );
+      const statements = policies.flatMap(
+        ([, r]) =>
+          (
+            r.Properties.PolicyDocument as {
+              Statement: { Action: string | string[]; Resource: unknown }[];
+            }
+          ).Statement,
+      );
+      const actions = statements.flatMap((s) => [s.Action].flat());
+      expect(actions.filter((a) => a.startsWith("dynamodb:")).sort()).toEqual(
+        [
+          "dynamodb:GetItem",
+          "dynamodb:Query",
+          "dynamodb:PutItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:DescribeTable",
+          "dynamodb:ListTagsOfResource",
+        ].sort(),
+      );
+      expect(actions.some((a) => /^(s3|events|scheduler|iam):/.test(a))).toBe(false);
+      const oldConsume = reference
+        .policy(`${base}-collector`)
+        .filter((s) => [s.Action].flat().includes("sqs:ReceiveMessage"));
+      const newConsume = statements.filter((s) => [s.Action].flat().includes("sqs:ReceiveMessage"));
+      expect(normalize(newConsume, newIds)).toEqual(normalize(oldConsume, oldIds));
+    }
+  });
   it("uses the lab profile for every declared consumer, due job and transport bound", () => {
     const h = synth();
     const { profile } = h.infrastructure.config;
