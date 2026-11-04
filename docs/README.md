@@ -24,6 +24,8 @@ They are distinct from the design intent recorded in iteration plans.
 - [Content Operations](../apps/content-operations/README.md): seeded memory walkthrough,
   explicit Hobby lab, architecture/service matrix, verification, and recovery.
 - [Content Workbench](../apps/content-operations/WORKBENCH.md): five views and browser/CI acceptance.
+- [Report Runs](../apps/report-runs/README.md): independent headless inventory reports,
+  public memory/local workflow composition, verified stored export and explicit Hobby lab.
 
 ## Development Iterations
 
@@ -36,7 +38,8 @@ are planning identifiers, not framework versions.
   [acceptance outcome](iterations/002-content-operations/outcome.md), and observed local evidence.
 - [Iteration 3: Framework Leverage](iterations/003-framework-leverage/README.md): reviewed
   baselines, shared command/delivery/recovery adapters and the migrated Content consumer.
-  Independent Report Runs and final post-extraction leverage evidence remain planned.
+  Independent Report Runs has actual local happy-path evidence; isolated installation,
+  the full Report fault matrix and final post-extraction leverage evidence remain planned.
 
 ## Internal Notes
 

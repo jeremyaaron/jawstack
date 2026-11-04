@@ -1,0 +1,38 @@
+{
+  "name": "report-runs",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit -p tsconfig.json && tsx scripts/build.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "eslint src scripts test *.ts",
+    "test": "vitest run",
+    "dev:api": "tsx scripts/api.ts memory",
+    "dev:api:local": "tsx scripts/api.ts localstack",
+    "cli": "tsx scripts/cli.ts",
+    "seed": "tsx scripts/seed.ts",
+    "synth:local": "tsx scripts/synth.ts",
+    "local:up": "tsx scripts/lab.ts up",
+    "local:provision": "tsx scripts/lab.ts provision",
+    "local:down": "tsx scripts/lab.ts down",
+    "verify:local": "tsx scripts/lab.ts verify"
+  },
+  "dependencies": {
+    "@jawstack/core": "workspace:*",
+    "@jawstack/aws-runtime": "workspace:*",
+    "@aws-sdk/client-dynamodb": "3.1075.0",
+    "@aws-sdk/client-eventbridge": "3.1075.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@jawstack/aws-cdk": "workspace:*",
+    "@jawstack/local-lab": "workspace:*",
+    "aws-cdk-lib": "^2.260.0",
+    "constructs": "^10.6.0",
+    "esbuild": "^0.28.1",
+    "fflate": "^0.8.2",
+    "tsx": "^4.20.6",
+    "vitest": "4.1.9"
+  }
+}

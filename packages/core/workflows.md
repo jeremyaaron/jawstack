@@ -206,7 +206,10 @@ returns a paged summary list, not the private original envelope. Pages default t
 maximum 100. Root operations
 authorization must explicitly return `true`; absence/errors deny. `replay` requires a UUID
 request ID, explicit `replay` consumer policy and an unresolved reconciled latest generation.
-An optional eligibility hook may only further restrict new requests. Existing request IDs
+An optional eligibility hook may only further restrict new requests.
+Backend `authorizeReplay` also receives a detached frozen
+`original` fact, so eligibility can compare its immutable intent/digest against business
+authority. This private hook value is never added to inspection/HTTP summaries. Existing request IDs
 return recorded history with fresh root authorization. A queued cycle does not consume
 another generation. Three cycles are allowed; history has no TTL. `application` policy
 permits inspection/collection but forbids generic replay.

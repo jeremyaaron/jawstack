@@ -6,11 +6,11 @@ release the framework.
 
 ## Index
 
-| Iteration                                                   | Status            | Outcome                                                                                                                                |
-| ----------------------------------------------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| [001: Foundation](001-foundation/README.md)                 | Archived baseline | Merged and tagged `v0.0.1` in Git; npm publication and `0.1.0` deferred.                                                               |
-| [002: Content Operations](002-content-operations/README.md) | Complete          | Maintained editorial consumer, additive framework contracts, memory/browser and owned Hobby acceptance; see its outcome report.        |
-| [003: Framework Leverage](003-framework-leverage/README.md) | Phase 1 complete  | Baselines reviewed; typed records and logical commit plans verified. Scoped execution, storage and consumer migrations remain planned. |
+| Iteration                                                   | Status               | Outcome                                                                                                                                          |
+| ----------------------------------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [001: Foundation](001-foundation/README.md)                 | Archived baseline    | Merged and tagged `v0.0.1` in Git; npm publication and `0.1.0` deferred.                                                                         |
+| [002: Content Operations](002-content-operations/README.md) | Complete             | Maintained editorial consumer, additive framework contracts, memory/browser and owned Hobby acceptance; see its outcome report.                  |
+| [003: Framework Leverage](003-framework-leverage/README.md) | Phases 0-12 complete | Public command/delivery/recovery composition, migrated Content and independent Report verified; installed/fault and final leverage gates remain. |
 
 ## Planning Flow
 

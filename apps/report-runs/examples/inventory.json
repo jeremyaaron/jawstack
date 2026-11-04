@@ -1,0 +1,6 @@
+{
+  "items": [
+    { "itemId": "B", "label": "Café", "quantity": 0 },
+    { "itemId": "A", "label": "Stock", "quantity": 7 }
+  ]
+}

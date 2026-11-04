@@ -41,6 +41,7 @@ export type FailureHooks = Readonly<{
     input: Readonly<{
       auth: WorkflowReadonly<AuthContext>;
       failure: WorkflowReadonly<FailureSummary>;
+      original: WorkflowReadonly<FailureRecord["original"]>;
     }>,
   ) => boolean | Promise<boolean>;
 }>;
@@ -382,7 +383,11 @@ export function createWorkflowFailureService(options: {
         try {
           if (
             (await validateReadOnly(() =>
-              eligible({ auth, failure: freeze(protocol.summary(old)) }),
+              eligible({
+                auth,
+                failure: freeze(protocol.summary(old)),
+                original: freeze(jsonCopy(old.original)),
+              }),
             )) !== true
           )
             forbidden();

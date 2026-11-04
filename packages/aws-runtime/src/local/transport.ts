@@ -1,5 +1,6 @@
 import { isIP } from "node:net";
 import { NodeHttpHandler } from "@smithy/node-http-handler";
+import { JawStackDefinitionError } from "@jawstack/core";
 import {
   localConfigurationError,
   localExecution,
@@ -8,7 +9,8 @@ import {
 } from "./bindings";
 
 const hostEndpoint = "http://127.0.0.1:4566",
-  lambdaEndpoint = "http://localstack:4566";
+  lambdaEndpoint = "http://localstack:4566",
+  emulatorCredentialEndpoint = "http://127.0.0.1:9001/2021-04-23/credentials";
 function privateAddress(host: string) {
   const parts = host.split(".").map(Number);
   return (
@@ -20,6 +22,11 @@ function privateAddress(host: string) {
 }
 function environment(execution: LocalWorkflowExecution) {
   const env = process.env;
+  const emulatorRuntime =
+    execution.kind === "lambda" &&
+    env.AWS_LAMBDA_RUNTIME_API === "127.0.0.1:9001" &&
+    env.AWS_LAMBDA_FUNCTION_NAME === execution.functionName;
+  const rejected: string[] = [];
   for (const [key, value] of Object.entries(env)) {
     if (!value || !key.startsWith("AWS_")) continue;
     if (["AWS_REGION", "AWS_DEFAULT_REGION"].includes(key) && value === "us-east-1") continue;
@@ -51,7 +58,26 @@ function environment(execution: LocalWorkflowExecution) {
       )
         continue;
       if (key === "AWS_SECRET_ACCESS_KEY" && value === "test") continue;
+      if (emulatorRuntime && key === "AWS_LAMBDA_METADATA_API" && value === "127.0.0.1:9001")
+        continue;
+      if (
+        emulatorRuntime &&
+        key === "AWS_LAMBDA_METADATA_TOKEN" &&
+        /^[\x21-\x7e]{1,4096}$/.test(value)
+      )
+        continue;
+      if (
+        emulatorRuntime &&
+        env.AWS_CONTAINER_CREDENTIALS_FULL_URI === emulatorCredentialEndpoint &&
+        (key === "AWS_CONTAINER_CREDENTIALS_FULL_URI" ||
+          (key === "AWS_CONTAINER_AUTHORIZATION_TOKEN" &&
+            /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value)))
+      )
+        continue;
       if (key === "AWS_EXECUTION_ENV" && /^AWS_Lambda_nodejs(?:22|24)\.x$/.test(value)) continue;
+      if (key === "AWS_EXECUTION_ENV" && value === "AWS_Lambda_rapid" && emulatorRuntime) continue;
+      if (key === "AWS_ACCOUNT_ID" && value === "000000000000") continue;
+      if (key === "AWS_LAMBDA_FUNCTION_TIMEOUT" && value === "30") continue;
       if (key === "AWS_LAMBDA_FUNCTION_VERSION" && value === "$LATEST") continue;
       if (key === "AWS_LAMBDA_FUNCTION_MEMORY_SIZE" && value === "256") continue;
       if (key === "AWS_LAMBDA_INITIALIZATION_TYPE" && value === "on-demand") continue;
@@ -61,9 +87,17 @@ function environment(execution: LocalWorkflowExecution) {
         continue;
       if (key === "AWS_LAMBDA_RUNTIME_API" && /^127\.0\.0\.1:\d{1,5}$/.test(value)) continue;
       if (key === "AWS_XRAY_CONTEXT_MISSING" && value === "LOG_ERROR") continue;
+      if (key === "AWS_XRAY_DAEMON_ADDRESS" && value === "127.0.0.1:2000") continue;
     }
-    localConfigurationError();
+    // Diagnose bounded setting names only, never credentials or other environment values.
+    const name = /^AWS_[A-Z0-9_]{1,64}$/.test(key) ? key : "unrecognized AWS setting";
+    if (rejected.length < 16) rejected.push(name);
   }
+  if (rejected.length)
+    throw new JawStackDefinitionError(
+      "workflow.local",
+      `Invalid or unsafe local workflow environment settings: ${rejected.join(", ")}.`,
+    );
   if (execution.kind === "lambda" && env.AWS_LAMBDA_FUNCTION_NAME !== execution.functionName)
     localConfigurationError();
 }

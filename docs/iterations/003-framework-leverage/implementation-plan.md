@@ -545,6 +545,10 @@ against migrated bundles. Record archive/profile identities and cleanup, not pri
 
 ## Phase 12: Independent Report Runs Consumer
 
+Status: complete; see [Phase 12 evidence](phase-12-evidence.md). Public workflow composition,
+headless HTTP/CLI, clean release and actual local happy path with owned teardown passed.
+Full live fault/reset and isolated installed-consumer acceptance remain Phase 13.
+
 Depends on: Phase 11.
 
 Goal: demonstrate a useful, small async application built from the new public contracts.

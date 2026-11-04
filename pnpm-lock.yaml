@@ -230,6 +230,49 @@ importers:
         specifier: ^4.1.9
         version: 4.1.9(@types/node@22.20.0)(jsdom@26.1.0)(vite@8.1.0(@types/node@22.20.0)(esbuild@0.28.1)(sass@1.97.3)(tsx@4.22.4)(yaml@2.9.0))
 
+  apps/report-runs:
+    dependencies:
+      '@aws-sdk/client-dynamodb':
+        specifier: 3.1075.0
+        version: 3.1075.0
+      '@aws-sdk/client-eventbridge':
+        specifier: 3.1075.0
+        version: 3.1075.0
+      '@jawstack/aws-runtime':
+        specifier: workspace:*
+        version: link:../../packages/aws-runtime
+      '@jawstack/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@jawstack/aws-cdk':
+        specifier: workspace:*
+        version: link:../../packages/aws-cdk
+      '@jawstack/local-lab':
+        specifier: workspace:*
+        version: link:../../tooling/local-lab
+      aws-cdk-lib:
+        specifier: ^2.260.0
+        version: 2.260.0(constructs@10.6.0)
+      constructs:
+        specifier: ^10.6.0
+        version: 10.6.0
+      esbuild:
+        specifier: ^0.28.1
+        version: 0.28.1
+      fflate:
+        specifier: ^0.8.2
+        version: 0.8.3
+      tsx:
+        specifier: ^4.20.6
+        version: 4.22.4
+      vitest:
+        specifier: 4.1.9
+        version: 4.1.9(@types/node@22.20.0)(jsdom@26.1.0)(vite@8.1.0(@types/node@22.20.0)(esbuild@0.28.1)(sass@1.97.3)(tsx@4.22.4)(yaml@2.9.0))
+
   packages/angular:
     dependencies:
       '@jawstack/core':

@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "paths": {
+      "@jawstack/core": ["../../packages/core/src/index.ts"],
+      "@jawstack/aws-runtime": ["../../packages/aws-runtime/src/index.ts"],
+      "@jawstack/aws-runtime/local": ["../../packages/aws-runtime/src/local.ts"],
+      "@jawstack/aws-cdk": ["../../packages/aws-cdk/src/index.ts"]
+    }
+  },
+  "include": ["src/**/*.ts", "scripts/**/*.ts", "test/**/*.ts", "*.ts"]
+}

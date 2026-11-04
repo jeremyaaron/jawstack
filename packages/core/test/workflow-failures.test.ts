@@ -583,6 +583,22 @@ describe("authorized recorded replay", () => {
     });
     expect(h.memory.store.outbox).toHaveLength(0);
   });
+  it("provides detached frozen original facts only to backend replay eligibility", async () => {
+    const hook = vi.fn(({ original }: { original: Readonly<JawStackEvent> }) => {
+      expect(Object.isFrozen(original)).toBe(true);
+      expect(Object.isFrozen(original.payload)).toBe(true);
+      expect(Reflect.set(original, "eventId", "rewritten")).toBe(false);
+      return true;
+    });
+    const h = harness({ hooks: { deliver: { authorizeReplay: hook } } });
+    await h.service.collect("deliver", event());
+    const summary = await h.service.inspect(operator(), { id: h.id });
+    expect(summary).not.toHaveProperty("original");
+    await h.service.replay(h.id, operator(), randomUUID());
+    expect(hook).toHaveBeenCalledTimes(1);
+    expect(hook.mock.calls[0]![0].original).toEqual(event());
+    expect((await h.row()).original).toEqual(event());
+  });
   it("snapshots authorization and prevents writes from policy hooks", async () => {
     const entered = deferred(),
       resume = deferred();

@@ -252,6 +252,120 @@ describe("guarded local AWS transport", () => {
     transport.requestHandler.destroy();
     await h.runtime.close();
   });
+  it("accepts explicit emulator metadata without selecting endpoints or credentials from it", async () => {
+    const h = harness("lambda");
+    vi.stubEnv("AWS_XRAY_DAEMON_ADDRESS", "127.0.0.1:2000");
+    vi.stubEnv("AWS_ACCOUNT_ID", "000000000000");
+    vi.stubEnv("AWS_LAMBDA_FUNCTION_TIMEOUT", "30");
+    vi.stubEnv("AWS_EXECUTION_ENV", "AWS_Lambda_rapid");
+    vi.stubEnv("AWS_LAMBDA_RUNTIME_API", "127.0.0.1:9001");
+    vi.stubEnv(
+      "AWS_CONTAINER_CREDENTIALS_FULL_URI",
+      "http://127.0.0.1:9001/2021-04-23/credentials",
+    );
+    vi.stubEnv("AWS_CONTAINER_AUTHORIZATION_TOKEN", "20000000-0000-4000-8000-000000000001");
+    vi.stubEnv("AWS_LAMBDA_METADATA_API", "127.0.0.1:9001");
+    vi.stubEnv("AWS_LAMBDA_METADATA_TOKEN", "emulator-only-metadata-token");
+    const t = createLocalAwsTransport({ execution: h.options.execution });
+    expect(t.endpoint).toBe("http://localstack:4566");
+    expect(await t.credentials()).toEqual({ accessKeyId: "test", secretAccessKey: "test" });
+    expect(h.send).not.toHaveBeenCalled();
+    t.requestHandler.destroy();
+    await h.runtime.close();
+  });
+  it("diagnoses bounded setting names without exposing values or malformed environment keys", async () => {
+    const h = harness("lambda");
+    vi.stubEnv("AWS_LAMBDA_RUNTIME_API", "private-value");
+    expect(() => createLocalAwsTransport({ execution: h.options.execution })).toThrow(
+      /unsafe.*AWS_LAMBDA_RUNTIME_API/,
+    );
+    vi.stubEnv("AWS_LAMBDA_RUNTIME_API", undefined);
+    vi.stubEnv("AWS_PRIVATE_VALUE", "private-value");
+    expect(() => createLocalAwsTransport({ execution: h.options.execution })).toThrow(
+      /unsafe.*AWS_PRIVATE_VALUE/,
+    );
+    vi.stubEnv("AWS_PRIVATE_VALUE", undefined);
+    vi.stubEnv("AWS_bad\nname", "private-value");
+    try {
+      createLocalAwsTransport({ execution: h.options.execution });
+      throw new Error("Expected rejection.");
+    } catch (error) {
+      expect(String(error)).toContain("unrecognized AWS setting");
+      expect(String(error)).not.toMatch(/bad|private-value/);
+    }
+    expect(h.send).not.toHaveBeenCalled();
+    await h.runtime.close();
+  });
+  it.each([
+    ["AWS_XRAY_DAEMON_ADDRESS", "8.8.8.8:2000"],
+    ["AWS_XRAY_DAEMON_ADDRESS", "127.0.0.1:443"],
+    ["AWS_ACCOUNT_ID", "123456789012"],
+    ["AWS_LAMBDA_FUNCTION_TIMEOUT", "29"],
+    ["AWS_EXECUTION_ENV", "AWS_Lambda_rapid"],
+    ["AWS_CONTAINER_CREDENTIALS_FULL_URI", "http://127.0.0.1:9001/2021-04-23/credentials"],
+    ["AWS_CONTAINER_AUTHORIZATION_TOKEN", "20000000-0000-4000-8000-000000000001"],
+    ["AWS_LAMBDA_METADATA_API", "127.0.0.1:9001"],
+    ["AWS_LAMBDA_METADATA_TOKEN", "emulator-only-metadata-token"],
+  ])("rejects unreviewed Lambda metadata %s=%s before transport", async (key, value) => {
+    const h = harness("lambda");
+    vi.stubEnv(key, value);
+    expect(() => createLocalAwsTransport({ execution: h.options.execution })).toThrow(/unsafe/);
+    expect(h.send).not.toHaveBeenCalled();
+    await h.runtime.close();
+  });
+  it.each([
+    ["AWS_CONTAINER_CREDENTIALS_FULL_URI", "http://169.254.170.2/credentials"],
+    ["AWS_CONTAINER_CREDENTIALS_FULL_URI", "http://127.0.0.1:9001/other"],
+    ["AWS_CONTAINER_CREDENTIALS_FULL_URI", "http://user@127.0.0.1:9001/2021-04-23/credentials"],
+    ["AWS_CONTAINER_AUTHORIZATION_TOKEN", "unbounded-or-unreviewed-token"],
+    ["AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "/credentials"],
+    ["AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE", "/private/token"],
+    ["AWS_LAMBDA_RUNTIME_API", "127.0.0.1:9002"],
+    ["AWS_LAMBDA_FUNCTION_NAME", "different-function"],
+    ["AWS_LAMBDA_METADATA_API", "169.254.100.1:9001"],
+    ["AWS_LAMBDA_METADATA_API", "127.0.0.1:9002"],
+    ["AWS_LAMBDA_METADATA_TOKEN", "x".repeat(4097)],
+    ["AWS_LAMBDA_METADATA_TOKEN", "line\nbreak"],
+  ])("rejects credential provider overrides inside emulator metadata: %s", async (key, value) => {
+    const h = harness("lambda");
+    vi.stubEnv("AWS_LAMBDA_RUNTIME_API", "127.0.0.1:9001");
+    vi.stubEnv(
+      "AWS_CONTAINER_CREDENTIALS_FULL_URI",
+      "http://127.0.0.1:9001/2021-04-23/credentials",
+    );
+    vi.stubEnv(key, value);
+    expect(() => createLocalAwsTransport({ execution: h.options.execution })).toThrow(/unsafe/);
+    expect(h.send).not.toHaveBeenCalled();
+    await h.runtime.close();
+  });
+  it.each([
+    ["AWS_XRAY_DAEMON_ADDRESS", "127.0.0.1:2000"],
+    ["AWS_ACCOUNT_ID", "000000000000"],
+    ["AWS_LAMBDA_FUNCTION_TIMEOUT", "30"],
+    ["AWS_CONTAINER_CREDENTIALS_FULL_URI", "http://127.0.0.1:9001/2021-04-23/credentials"],
+    ["AWS_CONTAINER_AUTHORIZATION_TOKEN", "20000000-0000-4000-8000-000000000001"],
+    ["AWS_LAMBDA_METADATA_API", "127.0.0.1:9001"],
+    ["AWS_LAMBDA_METADATA_TOKEN", "emulator-only-metadata-token"],
+  ])("does not extend host policy for emulator-only %s", (key, value) => {
+    cleanEnvironment();
+    vi.stubEnv(key, value);
+    expect(() => createLocalAwsTransport({ execution: { kind: "host" } })).toThrow(/unsafe/);
+  });
+  it("reports multiple rejected setting names before any SDK use without their values", async () => {
+    const h = harness("lambda");
+    vi.stubEnv("AWS_PROFILE", "private-profile");
+    vi.stubEnv("AWS_ENDPOINT_URL_DYNAMODB", "https://private-endpoint");
+    try {
+      createLocalAwsTransport({ execution: h.options.execution });
+      throw new Error("Expected rejection.");
+    } catch (error) {
+      expect(String(error)).toContain("AWS_PROFILE");
+      expect(String(error)).toContain("AWS_ENDPOINT_URL_DYNAMODB");
+      expect(String(error)).not.toContain("private-");
+    }
+    expect(h.send).not.toHaveBeenCalled();
+    await h.runtime.close();
+  });
   it.each(["1.2.3.4", "127.0.0.1", "169.254.169.254", "172.40.0.1", "localstack.attacker"])(
     "rejects injected endpoint metadata at %s",
     async (host) => {

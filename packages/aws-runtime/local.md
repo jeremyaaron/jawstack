@@ -185,6 +185,26 @@ Emulator credentials are never used; a fixed provider returns fresh mutable `tes
 identities so SDK feature annotations work without sharing/fixing a frozen SDK identity. See
 [LocalStack credential conventions](https://docs.localstack.cloud/aws/connecting/credentials/).
 
+Reviewed Lambda-only metadata also permits the dummy `AWS_ACCOUNT_ID=000000000000`,
+`AWS_LAMBDA_FUNCTION_TIMEOUT=30` and `AWS_XRAY_DAEMON_ADDRESS=127.0.0.1:2000`.
+`AWS_Lambda_rapid` execution metadata requires the validated dummy-account invocation ARN,
+matching function name and `AWS_LAMBDA_RUNTIME_API=127.0.0.1:9001`.
+These fields never choose an SDK destination or credential;
+host mode still refuses them. See LocalStack's
+[runtime environment construction](https://github.com/localstack/localstack/blob/master/localstack-core/localstack/services/lambda_/invocation/execution_environment.py).
+
+The same runtime context permits only the injected container-credential URI
+`http://127.0.0.1:9001/2021-04-23/credentials` and a UUID-v4 authorization token alongside
+that exact URI. Neither is read by the SDK credential provider; relative URIs, token files,
+alternate destinations and host-mode inheritance still fail before transport. See the
+[LocalStack runtime endpoint discussion](https://discuss.localstack.cloud/t/lambda-runtime-api-endpoint-aws-lambda-runtime-api-not-defined/721.html).
+The current metadata endpoint pair is also ignored: only
+`AWS_LAMBDA_METADATA_API=127.0.0.1:9001` and a 1-4096-character visible-ASCII
+`AWS_LAMBDA_METADATA_TOKEN` are permitted in that same Lambda context. Link-local/remote
+metadata endpoints and control characters fail; no metadata requests are made. See
+[AWS's reserved runtime variables](https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html#configuration-envvars-runtime).
+Rejected settings identify at most sixteen bounded AWS variable names, never values.
+
 The guard is deliberate local policy, not a sandbox against malicious application code,
 DNS/network administrators or a production cloud authentication/deployment facility. Real
 AWS deployment and IAM enforcement, actual Lambda environment/queue delivery and complete
